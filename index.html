@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Der Lernende – Souls-like Bosskampf</title>
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="hud"></canvas>
+<div id="safe"></div>
+<button id="menuBtn" aria-label="Pause">☰</button>
+
+<div id="touch">
+  <div id="stickZone"><div id="stick"><div id="knob"></div></div></div>
+  <div class="tb" id="bLight" data-a="light"><span>⚔</span>Angriff</div>
+  <div class="tb" id="bHeavy" data-a="heavy"><span>⚒</span>Schwer</div>
+  <div class="tb" id="bRoll" data-a="roll"><span>↻</span>Rolle</div>
+  <div class="tb" id="bHeal" data-a="heal"><span>✚</span>Heilen</div>
+</div>
+
+<div class="overlay show" id="menu"><div class="panel">
+  <h1>DER LERNENDE</h1>
+  <p class="sub">Ein Souls-like Bosskampf. Vargoth beobachtet jede deiner Bewegungen – und kommt jede Runde mit einer neuen Taktik gegen dich zurück.</p>
+  <div class="rule"></div>
+  <div class="controls" id="ctrlKeys">
+    <b>WASD / Pfeile</b><span>Bewegen (Kamera bleibt auf den Boss gerichtet)</span>
+    <b>Leertaste / Shift</b><span>Ausweichrolle (unverwundbar während der Rolle)</span>
+    <b>J / Linksklick</b><span>Leichter Angriff (3er-Kombo)</span>
+    <b>K / Rechtsklick</b><span>Schwerer Angriff (bricht Haltung)</span>
+    <b>E</b><span>Heiltrank trinken (3 pro Runde)</span>
+    <b>Esc / P</b><span>Pause</span>
+  </div>
+  <div class="controls" id="ctrlTouch" style="display:none">
+    <b>Linke Hälfte</b><span>Wischen zum Bewegen</span>
+    <b>Rechte Knöpfe</b><span>Angriff, Schwer, Rolle, Heilen</span>
+    <b>Tipp</b><span>Im Querformat spielt es sich am besten</span>
+  </div>
+  <div class="rule"></div>
+  <p class="sub" id="memInfo"></p>
+  <button class="btn" id="startBtn">Kampf beginnen</button><br>
+  <button class="btn ghost" id="resetBtn1" style="display:none">Gedächtnis des Bosses löschen</button>
+</div></div>
+
+<div class="overlay" id="summary"><div class="panel" id="sumPanel"></div></div>
+
+<div class="overlay" id="pause"><div class="panel">
+  <h2 class="win">PAUSE</h2>
+  <div class="rule"></div>
+  <button class="btn" id="resumeBtn">Weiter</button><br>
+  <button class="btn ghost" id="restartBtn">Runde aufgeben</button>
+  <button class="btn ghost" id="resetBtn2">Gedächtnis löschen</button>
+</div></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
