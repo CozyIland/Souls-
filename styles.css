@@ -35,6 +35,7 @@ h3 { font-weight: normal; letter-spacing: 0.15em; color: var(--gold); font-size:
   border-radius: 3px; cursor: pointer; box-shadow: 0 0 18px rgba(217, 181, 108, 0.15) inset;
 }
 .btn:active { transform: scale(0.97); }
+.btn.padFocus { outline: 2px solid var(--gold); outline-offset: 3px; box-shadow: 0 0 22px rgba(217, 181, 108, 0.55); }
 .btn.ghost { background: transparent; border-color: #5a4a33; color: #a99877; font-size: 14px; padding: 9px 16px; }
 .controls { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; text-align: left; max-width: 440px; margin: 0 auto; font-size: 15px; color: #cdbf9f; }
 .controls b { color: var(--gold); font-weight: normal; white-space: nowrap; }

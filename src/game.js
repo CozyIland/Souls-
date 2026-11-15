@@ -6,7 +6,7 @@ import {
 } from './util.js';
 import { mem, T, updateTraits } from './memory.js';
 import { sfx, noise } from './audio.js';
-import { input } from './input.js';
+import { input, rumble } from './input.js';
 
 // ================================================================
 //  Spielzustand
@@ -229,6 +229,7 @@ function checkPlayerHit(a) {
   sparks(hx, hy, heavy ? 22 : 12, '255,210,140', heavy ? 480 : 340); blood(hx, hy, ang, heavy ? 8 : 4);
   G.hitstop = heavy ? 0.085 : 0.05; G.shake = Math.max(G.shake, heavy ? 7 : 3.5);
   sfx.hit(heavy); dmgText(b.x, b.y, 110, a.dmg);
+  rumble(heavy ? 0.45 : 0.15, heavy ? 0.6 : 0.35, heavy ? 120 : 70);
   bossTakeDamage(a.dmg, heavy);
 }
 
@@ -240,7 +241,7 @@ function hurtPlayer(dmg, ang, src) {
   p.state = 'hurt'; p.t = 0;
   p.vx = Math.cos(ang) * 330; p.vy = Math.sin(ang) * 330;
   G.hitstop = 0.1; G.shake = Math.max(G.shake, 11);
-  blood(p.x, p.y, ang, 14); sparks(p.x, p.y, 8, '255,120,90', 300); sfx.hurt();
+  blood(p.x, p.y, ang, 14); sparks(p.x, p.y, 8, '255,120,90', 300); sfx.hurt(); rumble(0.85, 0.6, 240);
   const at = src === undefined ? B.atk : src;
   if (at && !at.hit) { at.hit = true; if (at.done && mem.atk[at.name]) mem.atk[at.name].h++; }
   if (p.hp <= 0) { p.hp = 0; p.state = 'dead'; p.t = 0; roundEnd(false); }
@@ -373,7 +374,7 @@ function enterPhase() {
       noise(0.4, 300, 900, 'bandpass', 0.3); break;
     }
     case 'land': {
-      b.airborne = false; b.z = 0; G.shake = Math.max(G.shake, 15); sfx.slam();
+      b.airborne = false; b.z = 0; G.shake = Math.max(G.shake, 15); sfx.slam(); rumble(0.6, 0.3, 260);
       dust(b.x, b.y, 22, 260, 1.4); ring(b.x, b.y, ph.r, '255,170,90'); sparks(b.x, b.y, 24, '255,170,90', 420);
       if (dist(b, p) < ph.r + p.r) hurtPlayer(ph.dmg, Math.atan2(p.y - b.y, p.x - b.x));
       if (T.rollSpam > 0.12 && Math.random() < 0.3 + T.rollSpam) {
@@ -692,7 +693,7 @@ export function roundEnd(win) {
   if (G.state === 'ending') return;
   G.state = 'ending'; G.endTimer = 0; G.result = win;
   mem.rounds++; if (win) mem.wins++; else mem.losses++;
-  if (win) sfx.win(); else sfx.death();
+  if (win) sfx.win(); else { sfx.death(); rumble(1, 0.8, 600); }
 }
 
 /** Spieler gibt die Runde auf */

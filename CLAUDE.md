@@ -7,7 +7,7 @@
   Das Gedächtnis liegt im `localStorage` (Schlüssel `der-lernende-boss-v1`).
 - Ziel für später: grafisch aufwändiger werden und als Anwendung auf **Steam** erscheinen
   (dann z. B. mit Electron oder Tauri verpackt).
-- Läuft im Browser auf PC **und** Handy. Die Touch-Steuerung muss bei jeder Änderung weiter funktionieren.
+- Läuft im Browser auf PC **und** Handy. Die Touch-Steuerung (und am PC Tastatur und Xbox-Controller) muss bei jeder Änderung weiter funktionieren.
 
 ## Über den Entwickler
 - Kann selbst nicht programmieren und arbeitet meist **vom Handy** über Claude Code.
@@ -23,7 +23,12 @@
   - `src/game.js` – Kampflogik: Spielerin, Vargoth, Angriffe, Lernen, Runden, Effekt-Daten
   - `src/memory.js` – Gedächtnis des Bosses + „Erkenntnisse“ (traits)
   - `src/ui.js` – Hauptmenü, Pause, Zusammenfassung „Was Vargoth gelernt hat“
-  - `src/input.js` – Tastatur, Maus, Touch; Bewegung relativ zur Kamera
+  - `src/input.js` – Tastatur, Maus, Touch, Controller; Bewegung relativ zur Kamera
+    - Controller (Xbox/Gamepad-API, Belegung „standard“): `pollPad(dt)` läuft jedes Bild aus `main.js` (auch Menü/Pause).
+      Spiel: linker Stick/Steuerkreuz → `input.gx/gy`, B oder A Rolle, RB leicht, RT schwer, X Heilen, Start Pause.
+      Menüs (`.overlay.show`): Knöpfe `.btn` mit `.padFocus` wählen, A/Start drücken, B/Start schließt die Pause,
+      rechter Stick blättert; auf der Zusammenfassung 0,8 s Sperre gegen Hämmern. Menü zeigt `#ctrlPad` statt Tastatur.
+      Rütteln über `rumble(stark, schwach, ms)` (Treffer, eigener Treffer, Sprungschlag, Tod) in `game.js`.
   - `src/audio.js` – synthetische Soundeffekte
   - `src/render/arena3d.js` – Arena, Licht, Feuersäulen
   - `src/render/boss3d.js` – Vargoth-Modell (Grundformen) + Animation

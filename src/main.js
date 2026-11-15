@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { isTouch } from './util.js';
-import { setupInput, readMove } from './input.js';
+import { setupInput, readMove, pollPad } from './input.js';
 import { G, update, updateMenu } from './game.js';
 import { setupUi, showMenu, showSummary, togglePause } from './ui.js';
 import { Arena } from './render/arena3d.js';
@@ -57,6 +57,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.033, Math.max(0, (now - lastT) / 1000));
   lastT = now;
+  pollPad(dt);
 
   if (G.state === 'menu') {
     updateMenu(dt);

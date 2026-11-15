@@ -10,14 +10,17 @@ ausweichst, bestraft Heilen und kontert, wenn du zu gierig angreifst.
 3. Nach ca. 1 Minute läuft das Spiel unter **https://cozyiland.github.io/Souls-/**
 
 ## Steuerung
-| | PC | Handy |
-|---|---|---|
-| Bewegen | WASD / Pfeile | linke Bildschirmhälfte wischen |
-| Rolle | Leertaste / Shift | „Rolle“ |
-| Leichter Angriff (3er-Kombo) | J / Linksklick | „Angriff“ |
-| Schwerer Angriff | K / Rechtsklick | „Schwer“ |
-| Heiltrank (3 pro Runde) | E | „Heilen“ |
-| Pause | Esc / P | ☰ |
+| | PC | Xbox-Controller | Handy |
+|---|---|---|---|
+| Bewegen | WASD / Pfeile | linker Stick / Steuerkreuz | linke Bildschirmhälfte wischen |
+| Rolle | Leertaste / Shift | B (oder A) | „Rolle“ |
+| Leichter Angriff (3er-Kombo) | J / Linksklick | RB | „Angriff“ |
+| Schwerer Angriff | K / Rechtsklick | RT | „Schwer“ |
+| Heiltrank (3 pro Runde) | E | X | „Heilen“ |
+| Pause | Esc / P | Start | ☰ |
+
+Controller: In Menüs mit Steuerkreuz/Stick wählen, A bestätigen, B zurück, rechter Stick blättert.
+Der Browser erkennt den Controller erst, wenn du auf der Seite einmal eine Taste drückst.
 
 Die Kamera bleibt immer hinter dir und auf Vargoth gerichtet (Lock-on).
 

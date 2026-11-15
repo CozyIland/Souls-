@@ -1,10 +1,10 @@
-// Eingabe: Tastatur, Maus und Touch (Joystick + Knöpfe).
+// Eingabe: Tastatur, Maus, Touch (Joystick + Knöpfe) und Controller (Xbox / Gamepad).
 // Bewegung wird relativ zur Kamera umgerechnet: „vorwärts“ = in Blickrichtung.
 import { norm } from './util.js';
 import { initAudio } from './audio.js';
 
 export const keys = {};
-export const input = { mx: 0, my: 0, buf: null, bufT: 0, jx: 0, jy: 0 };
+export const input = { mx: 0, my: 0, buf: null, bufT: 0, jx: 0, jy: 0, gx: 0, gy: 0 };
 
 export function press(a) {
   input.buf = a;
@@ -18,6 +18,9 @@ export function press(a) {
  * hooks.isMenu()
  */
 export function setupInput(canvas, hooks) {
+  padHooks = hooks;
+  window.addEventListener('gamepadconnected', () => padUi(true));
+  window.addEventListener('gamepaddisconnected', () => { if (!firstPad()) padUi(false); });
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
     keys[e.code] = true;
@@ -93,11 +96,98 @@ export function readMove(fx, fy) {
   if (keys.KeyD || keys.ArrowRight) x += 1;
   if (keys.KeyW || keys.ArrowUp) y -= 1;
   if (keys.KeyS || keys.ArrowDown) y += 1;
-  x += input.jx; y += input.jy;
+  x += input.jx + input.gx; y += input.jy + input.gy;
   const l = Math.hypot(x, y);
   if (l > 1) { x /= l; y /= l; }
   // vorwärts = -y, rechts = x
   const rx = -fy, ry = fx;
   input.mx = fx * -y + rx * x;
   input.my = fy * -y + ry * x;
+}
+
+// ---------- Controller (Xbox / Gamepad) ----------
+// Belegung wie in Souls-Spielen: linker Stick / Steuerkreuz laufen, B (oder A) Rolle, RB leichter Angriff,
+// RT schwerer Angriff, X Heiltrank, Start Pause. In Menüs: Steuerkreuz / Stick wählen, A bestätigen, B zurück,
+// rechter Stick blättert. Browser zeigen einen Controller erst nach dem ersten Tastendruck.
+const PB = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, VIEW: 8, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
+const pad = { prev: [], focus: 0, ov: null, navT: 0, guard: 0, on: false };
+let padHooks = null;
+
+function firstPad() {
+  const list = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (const g of list) if (g && g.connected) return g;
+  return null;
+}
+
+/** Steuerungs-Hinweis im Hauptmenü: Controller-Belegung statt Tastatur/Touch */
+function padUi(on) {
+  pad.on = on;
+  const c = document.getElementById('ctrlPad'), k = document.getElementById('ctrlKeys'), t = document.getElementById('ctrlTouch');
+  if (!c) return;
+  c.style.display = on ? 'grid' : 'none';
+  if (on) { k.style.display = 'none'; t.style.display = 'none'; }
+  else if (padHooks && padHooks.isTouch) t.style.display = 'grid';
+  else k.style.display = 'grid';
+}
+
+/** Rütteln (wenn der Controller das kann); stark/schwach 0..1, Dauer in ms */
+export function rumble(strong, weak, ms) {
+  const g = pad.on ? firstPad() : null, a = g && g.vibrationActuator;
+  if (!a || !a.playEffect) return;
+  try { a.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: weak }).catch(() => {}); } catch (e) { /* ignorieren */ }
+}
+
+/** Jedes Bild aufrufen (auch im Menü und in der Pause) */
+export function pollPad(dt) {
+  input.gx = 0; input.gy = 0;
+  const gp = firstPad();
+  if (!gp) { pad.prev = []; return; }
+  if (!pad.on) padUi(true);
+  const now = gp.buttons.map((b) => b.pressed || b.value > 0.4);
+  const prev = pad.prev;
+  const hit = (i) => now[i] && !prev[i];
+  pad.prev = now;
+  const dz = (v) => (Math.abs(v || 0) < 0.18 ? 0 : (v - Math.sign(v) * 0.18) / 0.82);
+  const lx = dz(gp.axes[0]), ly = dz(gp.axes[1]), ry = dz(gp.axes[3]);
+  if (now.some(Boolean)) initAudio();
+
+  const ov = document.querySelector('.overlay.show');
+  if (ov) { padMenu(ov, now, hit, ly, ry, dt); return; }
+  if (pad.ov) { pad.ov.querySelectorAll('.padFocus').forEach((b) => b.classList.remove('padFocus')); pad.ov = null; }
+  if (!padHooks || padHooks.isMenu()) return;
+  if (hit(PB.START)) { padHooks.togglePause(); return; }
+  if (padHooks.isPaused()) return;
+
+  let x = lx, y = ly;
+  if (now[PB.LEFT]) x -= 1;
+  if (now[PB.RIGHT]) x += 1;
+  if (now[PB.UP]) y -= 1;
+  if (now[PB.DOWN]) y += 1;
+  input.gx = x; input.gy = y;
+  if (hit(PB.B) || hit(PB.A)) press('roll');
+  else if (hit(PB.RB)) press('light');
+  else if (hit(PB.RT)) press('heavy');
+  else if (hit(PB.X)) press('heal');
+}
+
+/** Menüs mit dem Controller: Knopf wählen und drücken */
+function padMenu(ov, now, hit, ly, ry, dt) {
+  const btns = [...ov.querySelectorAll('.btn')].filter((b) => b.offsetParent !== null);
+  // Nach einer Runde kurz warten, damit Hämmern auf A die Zusammenfassung nicht überspringt
+  if (pad.ov !== ov) { pad.ov = ov; pad.focus = 0; pad.navT = 0; pad.guard = performance.now() + (ov.id === 'summary' ? 800 : 0); }
+  pad.navT -= dt;
+  if (ry) ov.scrollTop += ry * dt * 700;
+  if (!btns.length) return;
+  pad.focus = Math.min(pad.focus, btns.length - 1);
+  let dir = 0;
+  if (hit(PB.UP) || hit(PB.LEFT)) dir = -1;
+  else if (hit(PB.DOWN) || hit(PB.RIGHT)) dir = 1;
+  else if (Math.abs(ly) > 0.6 && pad.navT <= 0) { dir = Math.sign(ly); pad.navT = 0.3; }
+  if (Math.abs(ly) < 0.3) pad.navT = 0;
+  if (dir) pad.focus = (pad.focus + dir + btns.length) % btns.length;
+  btns.forEach((b, i) => b.classList.toggle('padFocus', i === pad.focus));
+  if (dir) btns[pad.focus].scrollIntoView({ block: 'nearest' });
+  if (performance.now() < pad.guard) return;
+  if (ov.id === 'pause' && (hit(PB.B) || hit(PB.START))) { padHooks.togglePause(); return; }
+  if (hit(PB.A) || hit(PB.START)) btns[pad.focus].click();
 }
