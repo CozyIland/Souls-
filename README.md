@@ -22,7 +22,14 @@ ausweichst, bestraft Heilen und kontert, wenn du zu gierig angreifst.
 Die Kamera bleibt immer hinter dir und auf Vargoth gerichtet (Lock-on).
 
 ## Die Heldin
-Das Modell `models/heldin.glb` stammt aus Meshy AI und wurde für Handys verkleinert.
-Es hat noch keine Farben/Texturen und kein Skelett.
-Wenn du in Meshy **mit Texturen** (am besten als **GLB**) und **mit Rigging/Animationen**
-exportierst, kann die Figur farbig werden und richtig laufen, rollen und zuschlagen.
+Das Modell `models/heldin.glb` stammt aus Meshy AI: mit Farben, Mixamo-Skelett und den
+Animationen **Walking** und **Running**. Fürs Handy sind die Texturen verkleinert
+(Original: `models/quelle/heldin-meshy.glb`).
+Stehen, Schwertarm, Rolle, Heiltrank, Treffer und Fallen bewegt der Code über das Skelett.
+Wenn du in Meshy weitere Animationen hinzufügst (z. B. Idle, Angriff, Roll Dodge, Treffer, Tod)
+und wieder als **GLB** mit **Mixamo**-Skelett, **Mit Haut** und **Alle hinzugefügt** exportierst,
+können sie eingebaut werden.
+
+## Offline spielen (eine Datei zum Antippen)
+`node tools/einzeldatei.mjs` baut `Der-Lernende.html`: Three.js, Code und Modell stecken darin,
+die Datei läuft ohne Internet und ohne Server (Einrichtung siehe Kopf von `tools/einzeldatei.mjs`).

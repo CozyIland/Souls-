@@ -27,14 +27,35 @@
   - `src/audio.js` – synthetische Soundeffekte
   - `src/render/arena3d.js` – Arena, Licht, Feuersäulen
   - `src/render/boss3d.js` – Vargoth-Modell (Grundformen) + Animation
-  - `src/render/player3d.js` – Heldin (`models/heldin.glb`) + Schwert + Animation per Code
+  - `src/render/player3d.js` – Heldin (`models/heldin.glb`) mit Skelett, Schwert, Trank, Begleitlicht
   - `src/render/fx3d.js` – Partikel, Ringe, Bodenwarnungen, Flammenkugeln
   - `src/render/camera3d.js` – Lock-on-Kamera
   - `src/render/hud.js` – 2D-HUD über dem 3D-Bild
-- `models/heldin.glb`: aus einem Meshy-FBX auf ~50k Dreiecke verkleinert, 1,6 m groß,
-  schaut nach +Z, **ohne Texturen und ohne Skelett** (Animation nur als Ganzes + Schwert).
+- `models/heldin.glb`: Meshy-Modell (Chibi-Mädchen, braune Jacke, Jeans, lange schwarze Haare),
+  ~10k Dreiecke, 1,7 m groß, schaut nach +Z, **mit Farben** (Texturen 1024 px JPEG, Metall aus)
+  und **Mixamo-Skelett** (44 Knochen; Three.js macht aus `mixamorig:Hips` → `mixamorigHips`).
+  Animationen in der Datei: nur `Walking` (passt zu 0,94 m/s) und `Running` (2,94 m/s), beide auf der Stelle.
+  Original (12,5 MB, Texturen 2048 px PNG): `models/quelle/heldin-meshy.glb`;
+  `python3 tools/glb_klein.py models/quelle/heldin-meshy.glb models/heldin.glb` erzeugt daraus genau die Spiel-Datei.
+- Heldin-Animation in `player3d.js` (`poseRig`):
+  - Laufen/Rennen: der Code setzt die Zeit der Animationen selbst (`phase`), Schrittlänge passend zum Tempo
+    (`WALK_V`/`RUN_V`), Mischung über das Tempo. Beim Laufen dreht sie sich in Laufrichtung, sonst zum Boss.
+  - Alles andere per Code über Knochen: `aim(knochen, kind, richtung, anteil)` richtet einen Knochen aus,
+    `bend(knochen, achse, winkel)` beugt ihn; Richtungen „im Körper“ über `bodyDir` (x = links, y = oben, z = vorn).
+    Schwertarm folgt der Klinge (`swordA`/`tilt`), linker Arm hängt bzw. führt den Trank zum Mund,
+    Rücken beugt/dreht sich beim Schlag, Rolle = einrollen (`tuck`), Tod = Arme zur Seite.
+  - **Wichtig:** Der Mixer schreibt Knochen nur, wenn sich die Animation ändert. Deshalb wird die reine
+    Animationshaltung in `animQ`/`animP` gemerkt und jedes Bild zuerst zurückgesetzt – sonst addieren sich Drehungen.
+  - Schwert und Trank sitzen an der Faust (`RightHand`/`LeftHand` → `RightHandMiddle1`), Nachbilder der Rolle
+    sind eigene Kopien mit eingefrorener Haltung (`snapshot`).
+  - Begleitlicht `fill` (Punktlicht von der Kameraseite), weil die dunkle Heldin sonst im Kampfplatz verschwindet.
+  - Modelle ohne Skelett laufen weiter wie früher (Bewegung als Ganzes, Schwert an `HAND`).
+- Offline-Datei zum Antippen: `node tools/einzeldatei.mjs` (einmalig `cd tools && npm i --no-save esbuild@0.24.0 three@0.170.0`)
+  baut `Der-Lernende.html` mit Three.js, Code und Modell (Modell wird ohne fetch aus Base64 gelesen,
+  weil manche Handy-Vorschauen Ladeanfragen sperren). Nicht committen – an die Nutzerin schicken.
 
 ## Arbeitsweise
 - Nach Änderungen alle Dateien mit `node --check src/*.js src/render/*.js` prüfen.
 - Klare deutsche Commit-Nachrichten.
-- Gespielt wird über GitHub Pages (siehe README).
+- Gespielt wird über GitHub Pages (siehe README) oder über die Offline-Datei:
+  nach jeder fertigen Änderung `Der-Lernende.html` neu bauen und direkt mitschicken (zum Antippen am Handy).

@@ -69,7 +69,7 @@ function frame(now) {
   camCtl.update(dt);
   arena.update(dt);
   boss.update(dt);
-  player.update(dt);
+  player.update(dt, camera);
   fx.update(camera, renderer);
   renderer.render(scene, camera);
   hud.draw(camera);
