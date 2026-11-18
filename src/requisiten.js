@@ -370,6 +370,7 @@ export function dummy(scene, x, z) {
   mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.18, 12), m.rust, g, 0, 2.0, 0, 0.015);
   const x1 = box(g, toon(0x1a0e0a), 0.16, 0.03, 0.02, -0.08, 1.82, 0.21, 0, 0, 0.7); const x2 = x1.clone(); x2.rotation.z = -0.7; g.add(x2);
   mesh(new THREE.SphereGeometry(0.03, 6, 6), toon(0x1a0e0a), g, 0.08, 1.83, 0.2);
+  g.traverse((o) => { o.userData.noMerge = true; }); // eigene Meshes, damit sie bei Treffern wackeln können
   g.position.set(x, 0, z); g.rotation.y = R() * TAU;
   scene.add(g);
   block(x, z, 0.5, 0.5);

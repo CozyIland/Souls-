@@ -5,6 +5,7 @@ import { buildWorld, updateWorld, targets, blockers } from './world.js';
 import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
 import { makeComposer } from './bildfilter.js';
+import { setupCards, throwCard, updateCards } from './karten.js';
 
 // ---------- Renderer ----------
 const canvas = document.getElementById('c');
@@ -27,6 +28,8 @@ const cam = new OrbitCam(camera);
 const fill = new THREE.PointLight(0xffe2c8, 9, 8, 1.4);
 scene.add(fill);
 cam.blockers = blockers;
+setupCards(scene, targets);
+player.onThrow = (from, dir, suit) => throwCard(from, dir, cam.lock, suit);
 const post = makeComposer(renderer, scene, camera);
 cam.yaw = 0;
 
@@ -74,10 +77,10 @@ function hud(dt) {
   hintT -= dt;
   hint.style.display = hintT > 0 ? 'block' : 'none';
   hint.textContent = inp.touch
-    ? 'Links ziehen: Laufen · Rechts wischen: Kamera · ⟲ tippen: Rolle, halten: Rennen · ◎: Ziel'
+    ? 'Links ziehen: Laufen · Rechts wischen: Kamera · 🃏: Karte werfen · ⟲ tippen: Rolle, halten: Rennen · ◎: Ziel'
     : inp.pad
-    ? 'B tippen: Rolle · B halten: Rennen · R3: Ziel erfassen · Start: Steuerung'
-    : 'WASD · Maus (ins Bild klicken) · Leertaste: Rolle · Shift: Rennen · Q: Ziel · Esc: Steuerung';
+    ? 'LB/RB: Karte werfen · B tippen: Rolle · B halten: Rennen · R3: Ziel · Start: Steuerung'
+    : 'WASD · Maus (ins Bild klicken) · Linksklick/F: Karte · Leertaste: Rolle · Shift: Rennen · Q: Ziel · Esc: Steuerung';
   $('ctrlPad').style.display = inp.pad ? 'grid' : 'none';
   $('ctrlTouch').style.display = inp.touch ? 'grid' : 'none';
   $('ctrlKeys').style.display = inp.pad || inp.touch ? 'none' : 'grid';
@@ -108,12 +111,13 @@ function frame(now) {
     // Stick relativ zur Kamera: oben = vorwärts (von der Kamera weg), rechts = (−f.z, f.x)
     mv.x = f.x * -inp.my - f.z * inp.mx;
     mv.z = f.z * -inp.my + f.x * inp.mx;
-    player.update(dt, mv, inp.run, inp.roll, cam.lock ? cam.lock.pos : null);
+    player.update(dt, mv, inp.run, inp.roll, cam.lock ? cam.lock.pos : null, inp.card, f);
     cam.update(dt, player, cam.lock ? 0 : inp.cx, cam.lock ? 0 : inp.cy);
     hud(dt);
   }
   fill.position.set(player.pos.x + (camera.position.x - player.pos.x) * 0.35, 2.4, player.pos.z + (camera.position.z - player.pos.z) * 0.35);
   updateWorld(dt, time, world, player.pos);
+  if (state !== 'pause') updateCards(dt);
   post.render(time);
 }
 setState('title');

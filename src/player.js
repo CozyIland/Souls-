@@ -8,6 +8,7 @@ import { part, toon, GRADIENT, skinOutline } from './toon.js';
 import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 import { resolve } from './kollision.js';
 import { ladeModell } from './modelle.js';
+import { cardMesh, nextSuit } from './karten.js';
 
 const MODEL_URL = 'models/magier.glb';
 const WALK = 3.4, RUN = 5.8;          // m/s (Joggen, Rennen)
@@ -16,29 +17,17 @@ const ROLL_T = 0.6, ROLL_V = 8.5;     // Dauer (s), Anfangstempo (m/s)
 const ROLL_COST = 22, RUN_COST = 16;  // Ausdauer
 const RADIUS = 0.38;
 const CENTER = 0.9;                   // Drehpunkt für die Rolle (Körpermitte)
-
-// Spielkarten-Bilder (einmal gemalt)
-function canvasCard(draw) {
-  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 96;
-  draw(cv.getContext('2d'));
-  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-function cardTex(suit, col) {
-  return canvasCard((g) => {
-    g.fillStyle = '#f1e6cc'; g.fillRect(0, 0, 64, 96);
-    g.strokeStyle = '#b58a3a'; g.lineWidth = 2; g.strokeRect(4, 4, 56, 88);
-    g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = 'bold 40px serif'; g.fillText(suit, 32, 50);
-    g.font = 'bold 16px serif'; g.fillText(suit, 13, 14); g.fillText(suit, 51, 82);
-  });
-}
-const CARD_BACK = canvasCard((g) => {
-  g.fillStyle = '#5a0f14'; g.fillRect(0, 0, 64, 96);
-  g.strokeStyle = '#d4a548'; g.lineWidth = 3; g.strokeRect(5, 5, 54, 86);
-  g.lineWidth = 1.2;
-  for (let i = -96; i < 96; i += 9) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 96, 96); g.moveTo(i + 96, 0); g.lineTo(i, 96); g.stroke(); }
-  g.fillStyle = '#d4a548'; g.beginPath(); g.arc(32, 48, 9, 0, Math.PI * 2); g.fill();
-});
+// Kartenwurf: in den Mantel greifen, Karte ziehen, aus dem Handgelenk nach vorn schleudern
+const THROW_T = 0.62, RELEASE = 0.39, THROW_COST = 12;
+// Schlüsselhaltungen des rechten Arms (Richtungen im Körper: x links, y oben, z vorn) + Schulterdrehung
+const THROW_K = [
+  [0.00, [-0.28, -1, 0.04], [-0.1, -1, 0.3], 0],
+  [0.17, [0.3, -0.62, 0.72], [0.95, 0.3, -0.1], 0.15],   // Hand greift links in den Mantel
+  [0.29, [0.38, -0.32, 0.86], [0.92, 0.32, 0.3], 0.38],  // Karte gezogen, ausholen
+  [0.39, [-0.3, 0.05, 1], [-0.42, 0.06, 1], -0.22],      // Wurf: Arm schnellt nach vorn
+  [0.50, [-0.72, -0.15, 0.66], [-0.84, -0.2, 0.5], -0.3], // Ausschwingen
+  [0.62, [-0.28, -1, 0.04], [-0.1, -1, 0.3], 0],
+];
 
 const smooth = (t) => { const c = clamp(t, 0, 1); return c * c * (3 - 2 * c); };
 
@@ -99,7 +88,9 @@ export class Player {
     this.yaw = Math.PI;               // Blickrichtung (Modell schaut nach +Z bei yaw 0)
     this.hp = 100; this.maxHp = 100;
     this.st = 100; this.maxSt = 100; this.stDelay = 0; this.exhausted = false;
-    this.state = 'idle';              // idle | roll
+    this.state = 'idle';              // idle | roll | throw
+    this.onThrow = null;              // (Startpunkt, Richtung) → Karte losschicken
+    this.queued = false;
     this.t = 0; this.walk = 0; this.moveK = 0; this.time = 0;
     this.rollDir = new THREE.Vector2(0, 1);
     this.root = new THREE.Group();
@@ -173,23 +164,10 @@ export class Player {
     this.runA = mk(/run/i);
     this.phase = 0; this.walkW = 0; this.revK = 1;
 
-    // Kartenfächer in der linken Hand: Vorderseite hell mit Zeichen, Rückseite dunkelrot mit Goldrand
-    this.fan = new THREE.Group();
-    const cw = 0.095, ch = 0.14;
-    const front = new THREE.PlaneGeometry(cw, ch); front.translate(0, ch * 0.42, 0.0012);
-    const back = new THREE.PlaneGeometry(cw, ch); back.rotateY(Math.PI); back.translate(0, ch * 0.42, -0.0012);
-    const edge = new THREE.BoxGeometry(cw + 0.006, ch + 0.006, 0.0016); edge.translate(0, ch * 0.42, 0);
-    const SUIT = ['♠', '♥', '♦', '♣', '♠'];
-    for (let i = 0; i < 5; i++) {
-      const c = new THREE.Group();
-      c.add(new THREE.Mesh(front, toon(0xffffff, { map: cardTex(SUIT[i], i % 3 === 1 || i === 2 ? '#a3161a' : '#15121a') })));
-      c.add(new THREE.Mesh(back, toon(0xffffff, { map: CARD_BACK })));
-      c.add(new THREE.Mesh(edge, toon(0x15100c)));
-      c.rotation.set(0, 0, 0.6 - i * 0.3); c.position.set((i - 2) * 0.006, 0, (2 - i) * 0.003);
-      c.traverse((m) => { if (m.isMesh) m.castShadow = true; });
-      this.fan.add(c);
-    }
-    this.root.parent.add(this.fan);
+    // Karte in der rechten Hand (nur während des Wurfs zu sehen)
+    this.handCard = cardMesh('♠');
+    this.handCard.visible = false;
+    this.root.parent.add(this.handCard);
   }
 
   /** Wie weit kommt die Figur pro Durchlauf der Animation? (aus der Fußbewegung gemessen) */
@@ -213,9 +191,9 @@ export class Player {
 
   /**
    * dt; mv = Bewegung in Weltrichtung (x, z, Länge 0..1); run/roll aus der Eingabe;
-   * lockTarget = erfasstes Ziel (Vector3) oder null
+   * lockTarget = erfasstes Ziel (Vector3) oder null; thr = Karte werfen; aimDir = Kamerarichtung (x, z) ohne Ziel
    */
-  update(dt, mv, run, roll, lockTarget) {
+  update(dt, mv, run, roll, lockTarget, thr, aimDir) {
     this.t += dt; this.time += dt;
     const ml = Math.hypot(mv.x, mv.z);
 
@@ -224,6 +202,21 @@ export class Player {
     else if (this.state !== 'roll') this.st = Math.min(this.maxSt, this.st + 38 * dt);
     if (this.exhausted && this.st > 30) this.exhausted = false;
 
+    // Wurf: nach dem Loslassen darf man mit einer Rolle abbrechen oder gleich die nächste Karte vormerken
+    if (this.state === 'throw') {
+      if (thr && this.t > 0.3) this.queued = true;
+      if (this.t > RELEASE && !this.released) {
+        this.released = true;
+        if (this.onThrow) this.onThrow(this.throwFrom(), this.throwDir(lockTarget), this.suit);
+      }
+      if (roll && this.t > RELEASE + 0.03) { this.state = 'idle'; this.t = 0; }
+      else if (this.t >= THROW_T) { this.state = 'idle'; this.t = 0; if (this.queued) { this.queued = false; thr = true; } }
+    }
+    if (this.state === 'idle' && thr && this.st > 0 && !this.exhausted) {
+      this.state = 'throw'; this.t = 0; this.released = false; this.queued = false; this.suit = nextSuit();
+      this.st -= THROW_COST; this.stDelay = 0.7; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
+      roll = false;
+    }
     if (this.state === 'idle') {
       if (roll && this.st > 0 && !this.exhausted) {
         this.state = 'roll'; this.t = 0;
@@ -244,14 +237,16 @@ export class Player {
     } else {
       const running = run && ml > 0.3 && !this.exhausted && this.st > 0;
       if (running) { this.st -= RUN_COST * dt; this.stDelay = 0.5; if (this.st <= 0) { this.st = 0; this.exhausted = true; } }
-      const spd = (running ? RUN : lockTarget ? LOCK_WALK : WALK) * Math.min(1, ml);
+      const throwing = this.state === 'throw';
+      const spd = (running && !throwing ? RUN : lockTarget || throwing ? LOCK_WALK : WALK) * Math.min(1, ml) * (throwing ? 0.5 : 1);
       this.vel.x = lerp(this.vel.x, mv.x * spd, damp(12, dt));
       this.vel.y = lerp(this.vel.y, mv.z * spd, damp(12, dt));
       let want = null;
-      if (lockTarget && !running) want = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
+      if (lockTarget && (!running || throwing)) want = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
+      else if (throwing && aimDir && this.t < RELEASE) want = Math.atan2(aimDir.x, aimDir.z); // ohne Ziel: in Blickrichtung der Kamera
       else if (ml > 0.1) want = Math.atan2(mv.x, mv.z);
-      if (want !== null) this.yaw += angDiff(this.yaw, want) * damp(running ? 10 : 13, dt);
-      this.running = running;
+      if (want !== null) this.yaw += angDiff(this.yaw, want) * damp(throwing ? 22 : running ? 10 : 13, dt);
+      this.running = running && !throwing;
     }
 
     this.pos.x += this.vel.x * dt; this.pos.z += this.vel.y * dt;
@@ -259,6 +254,17 @@ export class Player {
     this.root.position.copy(this.pos);
     this.root.rotation.y = this.yaw;
     if (this.rig) this.animateRig(dt); else this.animateSimple(dt);
+  }
+
+  /** Startpunkt der Karte: rechte Hand (ohne Skelett: vor der Brust) */
+  throwFrom() {
+    if (this.rig) { const p = new THREE.Vector3(); this.rig.RightHand.getWorldPosition(p); return p; }
+    return new THREE.Vector3(this.pos.x + Math.sin(this.yaw) * 0.4, 1.3, this.pos.z + Math.cos(this.yaw) * 0.4);
+  }
+  throwDir(lockTarget) {
+    const from = this.throwFrom();
+    if (lockTarget) return new THREE.Vector3().subVectors(lockTarget, from);
+    return new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); // waagerecht geradeaus
   }
 
   // ---------- Platzhalter-Bewegung ----------
@@ -332,16 +338,30 @@ export class Player {
     bend(R.Spine1, AX, Math.sin(t * 1.8) * 0.02 * still + tuck * 0.45 + lean * 0.3);
     bend(R.Spine2, AX, Math.sin(t * 1.8 + 0.4) * 0.015 * still + tuck * 0.35);
     bend(R.Neck, AX, tuck * 0.4 - lean * 0.3);
-    // Stehen: Arme aus der A-Haltung locker herunter, linke Hand hält die Karten vor dem Körper
+    // Stehen: Arme aus der A-Haltung locker herunter
     const ak = still * (1 - tuck);
     aim(R.RightArm, R.RightForeArm, bodyDir(-0.28, -1, 0.04, vB), ak);
     aim(R.RightForeArm, R.RightHand, bodyDir(-0.1, -1, 0.3, vB), ak);
-    // Linke Hand hält die Karten vor dem Bauch – auch beim Laufen (dann etwas schwächer)
-    const ck = (1 - tuck) * (0.75 + 0.25 * still);
-    aim(R.LeftArm, R.LeftForeArm, bodyDir(0.32, -1, 0.18, vB), ck);
-    aim(R.LeftForeArm, R.LeftHand, bodyDir(-0.55, 0.38, 0.85, vB), ck);
-    // Handfläche zum Körper (wie beim Kartenspielen: Blatt vor der Brust, Handrücken zum Gegner)
-    palmTo(R.LeftForeArm, R.LeftHand, bodyDir(-0.35, 0.1, -1, vC), ck);
+    aim(R.LeftArm, R.LeftForeArm, bodyDir(0.28, -1, 0.06, vB), ak);
+    aim(R.LeftForeArm, R.LeftHand, bodyDir(0.08, -1, 0.32, vB), ak);
+    // Kartenwurf (rechter Arm, Schultern drehen mit; linke Hand hält den Mantel auf)
+    let tw = 0;
+    if (this.state === 'throw') {
+      const tt = this.t;
+      const w = smooth(tt / 0.08) * (1 - smooth((tt - 0.5) / 0.12));
+      let i = 0; while (i < THROW_K.length - 2 && tt > THROW_K[i + 1][0]) i++;
+      const a0 = THROW_K[i], a1 = THROW_K[i + 1], u = smooth((tt - a0[0]) / (a1[0] - a0[0]));
+      const ax = (j) => a0[1][j] + (a1[1][j] - a0[1][j]) * u;
+      const fx = (j) => a0[2][j] + (a1[2][j] - a0[2][j]) * u;
+      const armD = bodyDir(ax(0), ax(1), ax(2), new THREE.Vector3()), foreD = bodyDir(fx(0), fx(1), fx(2), new THREE.Vector3());
+      tw = a0[3] + (a1[3] - a0[3]) * u;
+      bend(R.Spine1, AY, tw * 0.5 * w); bend(R.Spine2, AY, tw * 0.5 * w);
+      aim(R.RightArm, R.RightForeArm, armD, w);
+      aim(R.RightForeArm, R.RightHand, foreD, w);
+      const open = smooth(tt / 0.1) * (1 - smooth((tt - 0.3) / 0.1)); // linke Hand zieht den Mantel auf
+      aim(R.LeftArm, R.LeftForeArm, bodyDir(0.4, -0.7, 0.45, vB), open * 0.8);
+      aim(R.LeftForeArm, R.LeftHand, bodyDir(-0.6, 0.1, 0.8, vB), open * 0.8);
+    }
     // Hüfte und Knie leicht gebeugt beim Stehen (wirkt kampfbereit)
     if (still > 0.01) {
       bend(R.Hips, AX, 0); // Hüfte bleibt
@@ -361,20 +381,16 @@ export class Player {
       aim(R.RightForeArm, R.RightHand, bodyDir(0.4, 0.1, 1, vB), tuck);
     }
 
-    // 4) Kartenfächer: vor der linken Hand, aufgefächert nach oben
-    R.LeftHand.updateWorldMatrix(true, false);
-    R.LeftForeArm.getWorldPosition(vC);
-    R.LeftHand.getWorldPosition(vB);
-    vA.subVectors(vB, vC).normalize();         // Unterarm-Richtung
-    // Fächer steht in der Hand nach oben, Bildseite zum Magier (die Kamera hinter ihm sieht die Zeichen),
-    // Rückseite zum Gegner. Ausrichtung am Körper – so wackelt er nicht mit jeder Fingerstellung.
-    const fb = 1 - tuck;
-    this.fan.position.copy(vB).addScaledVector(vA, 0.06 + 0.06 * fb);
-    bodyDir(0, 0, -1, vC); this.fan.position.addScaledVector(vC, 0.035 * fb);
-    this.fan.quaternion.copy(qBody);
-    this.fan.rotateY(Math.PI - 0.25);
-    this.fan.rotateX(0.3 - tuck * 1.2);
-    this.fan.rotateZ(0.15);
-    this.fan.visible = true;
+    // 4) Karte in der rechten Hand: taucht beim Ziehen aus dem Mantel auf, verschwindet beim Loslassen
+    const show = this.state === 'throw' && this.t > 0.2 && !this.released;
+    this.handCard.visible = show;
+    if (show) {
+      R.RightForeArm.getWorldPosition(vC);
+      R.RightHand.getWorldPosition(vB);
+      vA.subVectors(vB, vC).normalize();
+      this.handCard.position.copy(vB).addScaledVector(vA, 0.1);
+      this.handCard.lookAt(vC.copy(this.handCard.position).add(vA));
+      this.handCard.rotateZ(Math.PI / 2 - 0.3);
+    }
   }
 }
