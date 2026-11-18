@@ -41,10 +41,18 @@
   (Oberarm, Unterarm, Klinge, Schulterdrehung, Vorbeugen) über `attackPose`; Schwungspur `Trail`. In `player.js`: Zustand
   `attack` (`startAttack`, Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
   nach 3 s Ruhe zurück in den Stock; Kartenwurf steckt sie sofort weg), Treffer über `targets`/`onHit`, `hitStop` (main.js
-  verlangsamt dann kurz). Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
+  verlangsamt dann kurz). **Degen ist immer gezogen** (nur beim Kartenwurf kurz im Stock). Schaden: `damage(n, dir)` → `hurt`
+  (0,42 s, danach 0,5 s unverwundbar `iframe`) oder `dead`; `revive`. Ohne Ziel dreht ein Schlag zum nächsten Gegner vorn. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
 - `src/karten.js` – fliegende Karten (`throwCard`, `updateCards`): drehen sich flach, Leuchtspur, lenken leicht zum Ziel,
   bleiben in Puppen (wackeln, `hitT`) und Wänden stecken, Funken, Rütteln. Bilder in `src/kartenbild.js`.
   Eingabe `inp.card`: LB oder F, Handy-Knopf `#tCard` 🃏.
+- `src/hund.js` – **Streunende Hunde** (`spawnDogs`, `updateDogs`, `resetDogs`, `dogs`): Modell aus Grundformen (`buildDog`:
+  Rumpf mit Rippen, Kopf mit Kiefer `jaw`, Ohren, Schwanz, 4 Beine mit Knie), Trab per Code. Zustände idle (streunen) →
+  growl (knurren, ab 13 m) → chase → circle (umkreisen, solange `cool` läuft) → wind (ducken) → leap (Sprung + Biss 15 Schaden,
+  `player.damage`) → rec (verwundbar) · hurt (Treffer, schwer = länger) · dead (umfallen, ausblenden, kommt nach 25 s wieder,
+  wenn man weit weg ist). 60 Leben; Treffer über `onHit(dmg, dir, heavy)` – Ziele mit `onHit` sind Gegner (`targets` enthält
+  Puppen und Hunde, `dead` wird überall übersprungen). Lebensleisten `.ebar`, roter Rand `#hurtFx`, Tod: `#death` „GESTORBEN“,
+  nach 4 s am Spieltisch (`REST`) wieder aufstehen (`player.revive`), Hunde zurück.
 - `src/kollision.js` – `colliders`, `block`, `blockRot` (gedreht), `resolve`, `blockers`.
 - `src/world.js` – Kreuzung der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.

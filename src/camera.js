@@ -33,7 +33,7 @@ export class OrbitCam {
     const f = this.forward();
     let best = null, bestS = Infinity;
     for (const t of targets) {
-      if (t === current) continue;
+      if (t === current || t.dead) continue;
       const dx = t.pos.x - player.pos.x, dz = t.pos.z - player.pos.z, d = Math.hypot(dx, dz);
       if (d > LOCK_RANGE) continue;
       const a = angDiff(Math.atan2(f.x, f.z), Math.atan2(dx, dz)); // + = rechts von der Blickrichtung
@@ -53,7 +53,7 @@ export class OrbitCam {
 
   update(dt, player, cx, cy) {
     // Ziel verloren (zu weit weg)?
-    if (this.lock && this.lock.pos.distanceTo(player.pos) > LOCK_RANGE + 4) this.lock = null;
+    if (this.lock && (this.lock.dead || this.lock.pos.distanceTo(player.pos) > LOCK_RANGE + 4)) this.lock = null;
 
     if (this.lock) {
       // hinter der Figur, Blick aufs Ziel

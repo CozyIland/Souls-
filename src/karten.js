@@ -7,6 +7,7 @@ import { GLOW } from './requisiten.js';
 import { rumble } from './input.js';
 
 const SPEED = 24, LIFE = 0.9, STICK = 2.5;
+const CARD_DMG = 8;
 const flying = [], stuck = [], sparks = [];
 let scene = null, targets = [];
 
@@ -57,10 +58,11 @@ function stick(c, hitNode) {
 }
 
 /** Treffer mit dem Degen: Funken, Puppe wackelt, Controller rüttelt */
-export function hitFx(tg, dir, heavy) {
+export function hitFx(tg, dir, heavy, dmg) {
   const p = tg.pos.clone(); p.addScaledVector(dir, -0.25);
-  burst(p, heavy ? 0xffc860 : 0xe8f0ff, heavy ? 26 : 14);
-  tg.hitT = 0.6; tg.hitDir = dir.clone();
+  burst(p, tg.onHit ? (heavy ? 0xff6040 : 0xff9a70) : (heavy ? 0xffc860 : 0xe8f0ff), heavy ? 26 : 14);
+  if (tg.onHit) tg.onHit(dmg || 10, dir, heavy);
+  else { tg.hitT = 0.6; tg.hitDir = dir.clone(); }
   rumble(heavy ? 0.8 : 0.4, heavy ? 0.6 : 0.5, heavy ? 180 : 100);
 }
 
@@ -80,7 +82,7 @@ export function updateCards(dt) {
       c.m.position.addScaledVector(c.vel, dt / steps);
       const p = c.m.position;
       for (const tg of targets) {
-        if (Math.hypot(p.x - tg.pos.x, p.z - tg.pos.z) < 0.4 && Math.abs(p.y - tg.pos.y) < 0.9) { hit = tg; break; }
+        if (!tg.dead && Math.hypot(p.x - tg.pos.x, p.z - tg.pos.z) < (tg.onHit ? 0.5 : 0.4) && Math.abs(p.y - tg.pos.y) < 0.9) { hit = tg; break; }
       }
       if (!hit && p.y < 2.5) for (const b of colliders) if (p.x > b.x0 && p.x < b.x1 && p.z > b.z0 && p.z < b.z1) { wall = true; break; }
       if (p.y < 0.03) { p.y = 0.03; wall = true; }
@@ -95,7 +97,8 @@ export function updateCards(dt) {
     c.trail.forEach((s, j) => { const h = c.hist[Math.min(c.hist.length - 1, j * 2)]; s.position.copy(h); s.material.opacity = 0.6 * (1 - j / c.trail.length); });
     if (hit) {
       burst(c.m.position, 0xffd27a, 14);
-      hit.hitT = 0.6; hit.hitDir = c.vel.clone().normalize();
+      if (hit.onHit) hit.onHit(CARD_DMG, c.vel.clone().setY(0).normalize(), false);
+      else { hit.hitT = 0.6; hit.hitDir = c.vel.clone().normalize(); }
       rumble(0.2, 0.5, 90);
       flying.splice(i, 1); stick(c, hit.node);
     } else if (wall) {

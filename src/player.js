@@ -91,7 +91,7 @@ export class Player {
     this.st = 100; this.maxSt = 100; this.stDelay = 0; this.exhausted = false;
     this.state = 'idle';              // idle | roll | throw | attack
     this.atk = null;                  // laufender Degen-Angriff {k, a, hit:Set, next}
-    this.drawn = false; this.sheathT = 0; this.hitStop = 0;
+    this.drawn = true; this.hitStop = 0; this.hurtFlash = 0; this.onDamage = null;
     this.targets = []; this.onHit = null; // (Ziel, Richtung, schwer)
     this.onThrow = null;              // (Startpunkt, Richtung) → Karte losschicken
     this.queued = false;
@@ -106,7 +106,24 @@ export class Player {
     ladeModell(new GLTFLoader(), MODEL_URL, (g) => this.onModel(g), (e) => console.warn('Magier-Modell fehlt – Platzhalter bleibt.', e));
   }
 
-  get invulnerable() { return this.state === 'roll' && this.t > 0.05 && this.t < 0.42; }
+  get invulnerable() { return (this.state === 'roll' && this.t > 0.05 && this.t < 0.42) || this.state === 'dead' || this.iframe > 0; }
+
+  /** Schaden nehmen (Biss usw.): wegstoßen, kurz taumeln; bei 0 Leben fallen */
+  damage(n, dir) {
+    if (this.invulnerable) return false;
+    this.hp = Math.max(0, this.hp - n);
+    this.hurtFlash = 1; this.atk = null; this.handCard && (this.handCard.visible = false);
+    this.vel.set(dir.x * 5, dir.z * 5);
+    if (this.hp <= 0) { this.state = 'dead'; this.t = 0; }
+    else { this.state = 'hurt'; this.t = 0; this.iframe = 0.5; }
+    if (this.onDamage) this.onDamage(n, this.hp <= 0);
+    return true;
+  }
+  /** am Rastpunkt wieder aufstehen */
+  revive(x, z, yaw) {
+    this.pos.set(x, 0, z); this.yaw = yaw; this.vel.set(0, 0);
+    this.hp = this.maxHp; this.st = this.maxSt; this.exhausted = false; this.state = 'idle'; this.t = 0; this.atk = null; this.iframe = 1;
+  }
 
   // ---------- Platzhalter (Grundformen) ----------
   build() {
@@ -216,6 +233,7 @@ export class Player {
     else if (this.state !== 'roll') this.st = Math.min(this.maxSt, this.st + 38 * dt);
     if (this.exhausted && this.st > 30) this.exhausted = false;
 
+    if (this.state === 'hurt' || this.state === 'dead') { light = heavy = thr = roll = false; }
     // ---------- Degen-Angriffe ----------
     if (this.state === 'attack') {
       const A = this.atk.a;
@@ -235,7 +253,9 @@ export class Player {
       this.startAttack(k, mv, lockTarget);
       roll = false; thr = false;
     }
-    if (this.state !== 'attack') { this.sheathT -= dt; if (this.sheathT <= 0) this.drawn = false; }
+    this.drawn = this.state !== 'throw'; // Degen ist immer gezogen – nur zum Kartenwurf kurz im Stock
+    this.iframe = Math.max(0, (this.iframe || 0) - dt);
+    this.hurtFlash = Math.max(0, this.hurtFlash - dt * 2.5);
 
     // Wurf: nach dem Loslassen darf man mit einer Rolle abbrechen oder gleich die nächste Karte vormerken
     if (this.state === 'throw') {
@@ -263,7 +283,11 @@ export class Player {
     }
 
     this.locked = !!lockTarget;
-    if (this.state === 'attack') {
+    if (this.state === 'hurt' || this.state === 'dead') {
+      this.vel.multiplyScalar(Math.exp(-7 * dt));
+      if (this.state === 'hurt' && this.t > 0.42) { this.state = 'idle'; this.t = 0; }
+      this.running = false;
+    } else if (this.state === 'attack') {
       const at = this.atk, A = at.a;
       at.t += dt;
       // Ausfallschritt im Schlag, sonst stehen bleiben
@@ -276,13 +300,13 @@ export class Player {
       if (lockTarget && at.t < A.act[0]) at.face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
       // Treffer prüfen
       if (at.t >= A.act[0] && at.t <= A.act[1]) for (const tg of this.targets) {
-        if (at.hit.has(tg)) continue;
+        if (at.hit.has(tg) || tg.dead) continue;
         const dx = tg.pos.x - this.pos.x, dz = tg.pos.z - this.pos.z, d = Math.hypot(dx, dz);
         if (d > A.range + 0.3) continue;
         if (Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) > A.arc && d > 0.6) continue;
         at.hit.add(tg);
         this.hitStop = A.heavy ? 0.12 : 0.06;
-        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy);
+        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy, A.dmg);
       }
       this.running = false;
     } else if (this.state === 'roll') {
@@ -320,9 +344,17 @@ export class Player {
     let face = null;
     if (lockTarget) face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
     else if (Math.hypot(mv.x, mv.z) > 0.3) face = Math.atan2(mv.x, mv.z);
+    else { // ohne Ziel und ohne Stick: zum nächsten Gegner vor dir drehen (Hilfe beim Zielen)
+      let best = 3.5;
+      for (const tg of this.targets) {
+        if (!tg.onHit || tg.dead) continue;
+        const dx = tg.pos.x - this.pos.x, dz = tg.pos.z - this.pos.z, d = Math.hypot(dx, dz);
+        if (d < best && Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) < 1.7) { best = d; face = Math.atan2(dx, dz); }
+      }
+    }
     this.atk = { k, a: A, t: 0, hit: new Set(), queued: null, face };
     this.st -= A.cost; this.stDelay = 0.8; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
-    this.drawn = true; this.sheathT = 3;
+    this.drawn = true;
     this.comboNext = null; this.comboT = 0;
   }
 
@@ -390,6 +422,10 @@ export class Player {
       y = CENTER - Math.sin(clamp(k, 0, 1) * Math.PI) * 0.42;
       tuck = Math.sin(clamp(k / 0.88, 0, 1) * Math.PI);
     }
+    let hurtK = 0;
+    if (this.state === 'hurt') { hurtK = Math.sin(clamp(this.t / 0.42, 0, 1) * Math.PI); rx = -0.18 * hurtK; }
+    if (this.state === 'dead') { const f = smooth(this.t / 0.9); rx = -f * 1.45; y = lerp(CENTER, 0.3, f); hurtK = 1 - f; }
+    if (this.mat && this.mat.emissive) this.mat.emissive.setRGB(this.hurtFlash * 0.7, this.hurtFlash * 0.05, this.hurtFlash * 0.03);
     this.pivot.rotation.x = rx;
     this.pivot.position.y = y;
     this.legs.rotation.y = this.legYaw;
@@ -408,6 +444,7 @@ export class Player {
     bend(R.Spine1, AX, Math.sin(t * 1.8) * 0.02 * still + tuck * 0.45 + lean * 0.3);
     bend(R.Spine2, AX, Math.sin(t * 1.8 + 0.4) * 0.015 * still + tuck * 0.35);
     bend(R.Neck, AX, tuck * 0.4 - lean * 0.3);
+    if (hurtK > 0) { bend(R.Spine1, AX, -0.25 * hurtK); bend(R.Neck, AX, -0.3 * hurtK); }
     // Stehen: Arme aus der A-Haltung locker herunter
     const ak = still * (1 - tuck);
     aim(R.RightArm, R.RightForeArm, bodyDir(-0.28, -1, 0.04, vB), ak);

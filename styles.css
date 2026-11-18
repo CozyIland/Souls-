@@ -77,3 +77,12 @@ body.touch #touchUI { display: block; }
 #tCard { right: calc(128px + env(safe-area-inset-right)); bottom: calc(140px + env(safe-area-inset-bottom)); width: 64px; height: 64px; font-size: 26px; }
 #tPause { right: calc(18px + env(safe-area-inset-right)); top: calc(18px + env(safe-area-inset-top)); width: 48px; height: 48px; font-size: 16px; }
 body.touch #hint { bottom: auto; top: 70px; font-size: 12px; white-space: normal; max-width: 90vw; text-align: center; }
+
+/* ---------- Gegner & Schaden ---------- */
+.ebar { position: absolute; width: 70px; height: 6px; margin: -3px 0 0 -35px; display: none; background: rgba(0, 0, 0, 0.7); border: 1px solid rgba(255, 255, 255, 0.35); }
+.ebar i { display: block; height: 100%; background: linear-gradient(#e24a3a, #8c1a14); }
+#hurtFx { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(120, 0, 0, 0) 45%, rgba(150, 10, 10, 0.75) 100%); }
+#death { position: fixed; inset: 0; display: none; justify-content: center; align-items: center; pointer-events: none;
+  background: linear-gradient(transparent 35%, rgba(0, 0, 0, 0.8) 45%, rgba(0, 0, 0, 0.8) 55%, transparent 65%); }
+#death span { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(40px, 9vw, 92px); letter-spacing: 0.25em; color: #b3161a;
+  text-shadow: 0 0 24px rgba(200, 20, 20, 0.6); }
