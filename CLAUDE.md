@@ -35,9 +35,16 @@
   eine Karte (`handCard`) und schleudert sie nach vorn – Schlüsselhaltungen `THROW_K` (Arm, Unterarm, Schulterdrehung), linke Hand
   zieht den Mantel auf. Ohne Ziel wirft er in Kamerarichtung, mit Ziel aufs Ziel. Nach dem Loslassen: Rolle bricht ab, erneutes
   Drücken wird vorgemerkt. `palmTo` (Hand um die Unterarm-Achse drehen) ist noch da. Ohne Modell: Platzhalter aus Grundformen. Modell schaut bei yaw 0 nach +Z.
+- `src/degen.js` – **Stockdegen**: `buildCane` (Stock = Scheide `sheath` in der linken Hand, Klinge `sword` mit Griff; beide
+  zeigen entlang +Z), Angriffe `ATTACKS` (l1 waagerecht, l2 schräg zurück, l3 Stoß = leichte Kombo; h = schwerer Überkopf-Schlag):
+  je `T`, Trefferfenster `act`, Ausdauer `cost`, Reichweite `range`, Winkel `arc`, Ausfallschritt `lunge`, Schlüsselhaltungen
+  (Oberarm, Unterarm, Klinge, Schulterdrehung, Vorbeugen) über `attackPose`; Schwungspur `Trail`. In `player.js`: Zustand
+  `attack` (`startAttack`, Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
+  nach 3 s Ruhe zurück in den Stock; Kartenwurf steckt sie sofort weg), Treffer über `targets`/`onHit`, `hitStop` (main.js
+  verlangsamt dann kurz). Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
 - `src/karten.js` – fliegende Karten (`throwCard`, `updateCards`): drehen sich flach, Leuchtspur, lenken leicht zum Ziel,
   bleiben in Puppen (wackeln, `hitT`) und Wänden stecken, Funken, Rütteln. Bilder in `src/kartenbild.js`.
-  Eingabe `inp.card`: LB/RB, Linksklick (bei Mauszeiger-Sperre) oder F, Handy-Knopf `#tCard` 🃏.
+  Eingabe `inp.card`: LB oder F, Handy-Knopf `#tCard` 🃏.
 - `src/kollision.js` – `colliders`, `block`, `blockRot` (gedreht), `resolve`, `blockers`.
 - `src/world.js` – Kreuzung der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.

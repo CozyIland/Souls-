@@ -56,6 +56,14 @@ function stick(c, hitNode) {
   stuck.push({ m: c.m, t: 0 });
 }
 
+/** Treffer mit dem Degen: Funken, Puppe wackelt, Controller rüttelt */
+export function hitFx(tg, dir, heavy) {
+  const p = tg.pos.clone(); p.addScaledVector(dir, -0.25);
+  burst(p, heavy ? 0xffc860 : 0xe8f0ff, heavy ? 26 : 14);
+  tg.hitT = 0.6; tg.hitDir = dir.clone();
+  rumble(heavy ? 0.8 : 0.4, heavy ? 0.6 : 0.5, heavy ? 180 : 100);
+}
+
 const tmp = new THREE.Vector3(), want = new THREE.Vector3();
 export function updateCards(dt) {
   for (let i = flying.length - 1; i >= 0; i--) {

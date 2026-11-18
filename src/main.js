@@ -5,7 +5,7 @@ import { buildWorld, updateWorld, targets, blockers } from './world.js';
 import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
 import { makeComposer } from './bildfilter.js';
-import { setupCards, throwCard, updateCards } from './karten.js';
+import { setupCards, throwCard, updateCards, hitFx } from './karten.js';
 
 // ---------- Renderer ----------
 const canvas = document.getElementById('c');
@@ -30,6 +30,8 @@ scene.add(fill);
 cam.blockers = blockers;
 setupCards(scene, targets);
 player.onThrow = (from, dir, suit) => throwCard(from, dir, cam.lock, suit);
+player.targets = targets;
+player.onHit = (tg, dir, heavy) => hitFx(tg, dir, heavy);
 const post = makeComposer(renderer, scene, camera);
 cam.yaw = 0;
 
@@ -77,10 +79,10 @@ function hud(dt) {
   hintT -= dt;
   hint.style.display = hintT > 0 ? 'block' : 'none';
   hint.textContent = inp.touch
-    ? 'Links ziehen: Laufen · Rechts wischen: Kamera · 🃏: Karte werfen · ⟲ tippen: Rolle, halten: Rennen · ◎: Ziel'
+    ? 'Links ziehen: Laufen · Rechts wischen: Kamera · ⚔ tippen: Schlag, halten: schwerer Schlag · 🃏: Karte · ⟲: Rolle/Rennen · ◎: Ziel'
     : inp.pad
-    ? 'LB/RB: Karte werfen · B tippen: Rolle · B halten: Rennen · R3: Ziel · Start: Steuerung'
-    : 'WASD · Maus (ins Bild klicken) · Linksklick/F: Karte · Leertaste: Rolle · Shift: Rennen · Q: Ziel · Esc: Steuerung';
+    ? 'RB: Schlag · RT: schwerer Schlag · LB: Karte · B: Rolle/Rennen · R3: Ziel · Start: Steuerung'
+    : 'WASD · Maus (ins Bild klicken) · Links-/Rechtsklick: Schlag/schwer · F: Karte · Leertaste: Rolle · Shift: Rennen · Q: Ziel · Esc: Steuerung';
   $('ctrlPad').style.display = inp.pad ? 'grid' : 'none';
   $('ctrlTouch').style.display = inp.touch ? 'grid' : 'none';
   $('ctrlKeys').style.display = inp.pad || inp.touch ? 'none' : 'grid';
@@ -100,7 +102,7 @@ function frame(now) {
     // Kamerafahrt um die Kreuzung
     camera.position.set(Math.sin(time * 0.08) * 16, 6 + Math.sin(time * 0.2), Math.cos(time * 0.08) * 16);
     camera.lookAt(0, 2.5, 0);
-    player.update(dt, { x: 0, z: 0 }, false, false, null);
+    player.update(dt, { x: 0, z: 0 }, {}, null);
   } else if (state === 'pause') {
     if (inp.pause || inp.back || inp.confirm) setState('play');
   } else {
@@ -111,7 +113,10 @@ function frame(now) {
     // Stick relativ zur Kamera: oben = vorwärts (von der Kamera weg), rechts = (−f.z, f.x)
     mv.x = f.x * -inp.my - f.z * inp.mx;
     mv.z = f.z * -inp.my + f.x * inp.mx;
-    player.update(dt, mv, inp.run, inp.roll, cam.lock ? cam.lock.pos : null, inp.card, f);
+    // Trefferstopp: bei einem Treffer friert alles kurz ein (fühlt sich wuchtiger an)
+    const pdt = player.hitStop > 0 ? dt * 0.08 : dt;
+    player.hitStop = Math.max(0, player.hitStop - dt);
+    player.update(pdt, mv, inp, cam.lock ? cam.lock.pos : null, f);
     cam.update(dt, player, cam.lock ? 0 : inp.cx, cam.lock ? 0 : inp.cy);
     hud(dt);
   }

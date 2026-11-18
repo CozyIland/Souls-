@@ -72,7 +72,8 @@ body.touch #touchUI { display: block; }
 .tbtn small { font-size: 9px; letter-spacing: 0.04em; color: var(--muted); margin-top: 3px; max-width: 70px; text-align: center; }
 .tbtn.down { background: rgba(227, 180, 90, 0.55); transform: scale(0.94); }
 #tRoll { right: calc(28px + env(safe-area-inset-right)); bottom: calc(34px + env(safe-area-inset-bottom)); width: 96px; height: 96px; font-size: 38px; }
-#tLock { right: calc(40px + env(safe-area-inset-right)); bottom: calc(150px + env(safe-area-inset-bottom)); width: 60px; height: 60px; font-size: 24px; }
-#tCard { right: calc(138px + env(safe-area-inset-right)); bottom: calc(40px + env(safe-area-inset-bottom)); width: 84px; height: 84px; font-size: 34px; }
+#tLock { right: calc(36px + env(safe-area-inset-right)); bottom: calc(146px + env(safe-area-inset-bottom)); width: 60px; height: 60px; font-size: 24px; }
+#tAtk { right: calc(132px + env(safe-area-inset-right)); bottom: calc(36px + env(safe-area-inset-bottom)); width: 88px; height: 88px; font-size: 36px; }
+#tCard { right: calc(128px + env(safe-area-inset-right)); bottom: calc(140px + env(safe-area-inset-bottom)); width: 64px; height: 64px; font-size: 26px; }
 #tPause { right: calc(18px + env(safe-area-inset-right)); top: calc(18px + env(safe-area-inset-top)); width: 48px; height: 48px; font-size: 16px; }
 body.touch #hint { bottom: auto; top: 70px; font-size: 12px; white-space: normal; max-width: 90vw; text-align: center; }

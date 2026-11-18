@@ -9,6 +9,7 @@ import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 import { resolve } from './kollision.js';
 import { ladeModell } from './modelle.js';
 import { cardMesh, nextSuit } from './karten.js';
+import { buildCane, ATTACKS, READY_POSE, attackPose, Trail, BLADE_L } from './degen.js';
 
 const MODEL_URL = 'models/magier.glb';
 const WALK = 3.4, RUN = 5.8;          // m/s (Joggen, Rennen)
@@ -88,7 +89,10 @@ export class Player {
     this.yaw = Math.PI;               // Blickrichtung (Modell schaut nach +Z bei yaw 0)
     this.hp = 100; this.maxHp = 100;
     this.st = 100; this.maxSt = 100; this.stDelay = 0; this.exhausted = false;
-    this.state = 'idle';              // idle | roll | throw
+    this.state = 'idle';              // idle | roll | throw | attack
+    this.atk = null;                  // laufender Degen-Angriff {k, a, hit:Set, next}
+    this.drawn = false; this.sheathT = 0; this.hitStop = 0;
+    this.targets = []; this.onHit = null; // (Ziel, Richtung, schwer)
     this.onThrow = null;              // (Startpunkt, Richtung) → Karte losschicken
     this.queued = false;
     this.t = 0; this.walk = 0; this.moveK = 0; this.time = 0;
@@ -164,6 +168,14 @@ export class Player {
     this.runA = mk(/run/i);
     this.phase = 0; this.walkW = 0; this.revK = 1;
 
+    // Stockdegen: Stock in der linken Hand, Klinge darin (wird beim Angriff gezogen)
+    const cane = buildCane();
+    this.sheath = cane.sheath; this.sword = cane.sword;
+    this.root.parent.add(this.sheath);
+    this.root.parent.add(this.sword);
+    this.pose = { arm: [0, 0, 0], fore: [0, 0, 0], blade: [0, 0, 1], tw: 0, ln: 0, w: 0 };
+    this.bladeD = new THREE.Vector3(0, 0, 1);
+    this.trail = new Trail(this.root.parent);
     // Karte in der rechten Hand (nur während des Wurfs zu sehen)
     this.handCard = cardMesh('♠');
     this.handCard.visible = false;
@@ -190,10 +202,12 @@ export class Player {
   }
 
   /**
-   * dt; mv = Bewegung in Weltrichtung (x, z, Länge 0..1); run/roll aus der Eingabe;
-   * lockTarget = erfasstes Ziel (Vector3) oder null; thr = Karte werfen; aimDir = Kamerarichtung (x, z) ohne Ziel
+   * dt; mv = Bewegung in Weltrichtung (x, z, Länge 0..1);
+   * c = Eingabe {run, roll, card, light, heavy}; lockTarget = erfasstes Ziel (Vector3) oder null;
+   * aimDir = Kamerarichtung (x, z) für Würfe ohne Ziel
    */
-  update(dt, mv, run, roll, lockTarget, thr, aimDir) {
+  update(dt, mv, c, lockTarget, aimDir) {
+    let { run, roll, card: thr, light, heavy } = c || {};
     this.t += dt; this.time += dt;
     const ml = Math.hypot(mv.x, mv.z);
 
@@ -201,6 +215,27 @@ export class Player {
     if (this.stDelay > 0) this.stDelay -= dt;
     else if (this.state !== 'roll') this.st = Math.min(this.maxSt, this.st + 38 * dt);
     if (this.exhausted && this.st > 30) this.exhausted = false;
+
+    // ---------- Degen-Angriffe ----------
+    if (this.state === 'attack') {
+      const A = this.atk.a;
+      if ((light || heavy) && this.atk.t > A.act[0]) this.atk.queued = heavy ? 'h' : (A.next || 'l1');
+      if (roll && this.atk.t > A.act[1] + 0.04) { this.state = 'idle'; this.atk = null; }
+      else if (thr && this.atk.t > A.act[1]) { this.state = 'idle'; this.atk = null; }
+      else if (this.atk.t >= A.T - (this.atk.queued ? 0.1 : 0)) {
+        const q = this.atk.queued; this.state = 'idle'; this.atk = null;
+        // Kombo: vorgemerkter Schlag folgt sofort; sonst kurzes Fenster für den nächsten Kombo-Schlag
+        if (q && this.st > 0 && !this.exhausted) { this.startAttack(q, mv, lockTarget); light = heavy = false; }
+        else { this.comboNext = A.next; this.comboT = 0.35; }
+      }
+    }
+    this.comboT = Math.max(0, (this.comboT || 0) - dt);
+    if (this.state === 'idle' && (light || heavy) && this.st > 0 && !this.exhausted) {
+      const k = heavy ? 'h' : (this.comboNext && this.comboT > 0 ? this.comboNext : 'l1');
+      this.startAttack(k, mv, lockTarget);
+      roll = false; thr = false;
+    }
+    if (this.state !== 'attack') { this.sheathT -= dt; if (this.sheathT <= 0) this.drawn = false; }
 
     // Wurf: nach dem Loslassen darf man mit einer Rolle abbrechen oder gleich die nächste Karte vormerken
     if (this.state === 'throw') {
@@ -214,6 +249,7 @@ export class Player {
     }
     if (this.state === 'idle' && thr && this.st > 0 && !this.exhausted) {
       this.state = 'throw'; this.t = 0; this.released = false; this.queued = false; this.suit = nextSuit();
+      this.drawn = false; // Klinge zurück in den Stock, die rechte Hand braucht er für die Karte
       this.st -= THROW_COST; this.stDelay = 0.7; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
       roll = false;
     }
@@ -227,7 +263,29 @@ export class Player {
     }
 
     this.locked = !!lockTarget;
-    if (this.state === 'roll') {
+    if (this.state === 'attack') {
+      const at = this.atk, A = at.a;
+      at.t += dt;
+      // Ausfallschritt im Schlag, sonst stehen bleiben
+      const lu = at.t > A.act[0] - 0.08 && at.t < A.act[1] ? A.lunge / (A.act[1] - A.act[0] + 0.08) : 0;
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+      this.vel.x = lerp(this.vel.x, fx * lu, damp(lu ? 30 : 14, dt));
+      this.vel.y = lerp(this.vel.y, fz * lu, damp(lu ? 30 : 14, dt));
+      // Ausrichten nur am Anfang (zum Ziel oder in Stick-Richtung)
+      if (at.t < A.act[0] && at.face !== null) this.yaw += angDiff(this.yaw, at.face) * damp(25, dt);
+      if (lockTarget && at.t < A.act[0]) at.face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
+      // Treffer prüfen
+      if (at.t >= A.act[0] && at.t <= A.act[1]) for (const tg of this.targets) {
+        if (at.hit.has(tg)) continue;
+        const dx = tg.pos.x - this.pos.x, dz = tg.pos.z - this.pos.z, d = Math.hypot(dx, dz);
+        if (d > A.range + 0.3) continue;
+        if (Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) > A.arc && d > 0.6) continue;
+        at.hit.add(tg);
+        this.hitStop = A.heavy ? 0.12 : 0.06;
+        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy);
+      }
+      this.running = false;
+    } else if (this.state === 'roll') {
       const k = this.t / ROLL_T;
       const sp = ROLL_V * (k < 0.7 ? 1 - k * 0.5 : 0.65 * (1 - (k - 0.7) / 0.3));
       this.vel.set(this.rollDir.x * sp, this.rollDir.y * sp);
@@ -254,6 +312,18 @@ export class Player {
     this.root.position.copy(this.pos);
     this.root.rotation.y = this.yaw;
     if (this.rig) this.animateRig(dt); else this.animateSimple(dt);
+  }
+
+  startAttack(k, mv, lockTarget) {
+    const A = ATTACKS[k];
+    this.state = 'attack'; this.t = 0;
+    let face = null;
+    if (lockTarget) face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
+    else if (Math.hypot(mv.x, mv.z) > 0.3) face = Math.atan2(mv.x, mv.z);
+    this.atk = { k, a: A, t: 0, hit: new Set(), queued: null, face };
+    this.st -= A.cost; this.stDelay = 0.8; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
+    this.drawn = true; this.sheathT = 3;
+    this.comboNext = null; this.comboT = 0;
   }
 
   /** Startpunkt der Karte: rechte Hand (ohne Skelett: vor der Brust) */
@@ -287,7 +357,7 @@ export class Player {
 
     const sp = Math.hypot(this.vel.x, this.vel.y);
     const rolling = this.state === 'roll';
-    const moving = !rolling && sp > 0.25;
+    const moving = !rolling && this.state !== 'attack' && sp > 0.25;
 
     // Laufrichtung relativ zur Blickrichtung → Unterkörper dreht mit, rückwärts = Animation rückwärts
     let rel = 0, back = false;
@@ -362,6 +432,22 @@ export class Player {
       aim(R.LeftArm, R.LeftForeArm, bodyDir(0.4, -0.7, 0.45, vB), open * 0.8);
       aim(R.LeftForeArm, R.LeftHand, bodyDir(-0.6, 0.1, 0.8, vB), open * 0.8);
     }
+    // Stockdegen: Angriff (Schlüsselhaltungen) oder gezogene Klinge in Bereitschaft
+    let bladeOn = false;
+    if (this.state === 'attack' || (this.drawn && this.state !== 'throw')) {
+      const P = this.pose;
+      let w;
+      if (this.state === 'attack') { attackPose(this.atk.a, this.atk.t, P); w = smooth(this.atk.t / 0.06); }
+      else { P.arm = READY_POSE.arm.slice(); P.fore = READY_POSE.fore.slice(); P.blade = READY_POSE.blade.slice(); P.tw = 0; P.ln = 0; w = (1 - tuck) * (0.6 + 0.4 * still); }
+      bend(R.Spine1, AY, P.tw * 0.5 * w); bend(R.Spine2, AY, P.tw * 0.5 * w);
+      bend(R.Spine1, AX, P.ln * 0.5 * w); bend(R.Spine2, AX, P.ln * 0.4 * w);
+      aim(R.RightArm, R.RightForeArm, bodyDir(P.arm[0], P.arm[1], P.arm[2], vB), w);
+      aim(R.RightForeArm, R.RightHand, bodyDir(P.fore[0], P.fore[1], P.fore[2], vB), w);
+      // linke Hand mit dem leeren Stock etwas nach hinten
+      aim(R.LeftArm, R.LeftForeArm, bodyDir(0.35, -1, -0.15, vB), w * 0.7 * still);
+      bodyDir(P.blade[0], P.blade[1], P.blade[2], this.bladeD);
+      bladeOn = true;
+    }
     // Hüfte und Knie leicht gebeugt beim Stehen (wirkt kampfbereit)
     if (still > 0.01) {
       bend(R.Hips, AX, 0); // Hüfte bleibt
@@ -381,7 +467,30 @@ export class Player {
       aim(R.RightForeArm, R.RightHand, bodyDir(0.4, 0.1, 1, vB), tuck);
     }
 
-    // 4) Karte in der rechten Hand: taucht beim Ziehen aus dem Mantel auf, verschwindet beim Loslassen
+    // 4) Stock in der linken Hand, Klinge in der rechten (oder im Stock)
+    R.LeftForeArm.getWorldPosition(vC); R.LeftHand.getWorldPosition(vB);
+    vA.subVectors(vB, vC).normalize();
+    const sd = vE.copy(this.drawn ? bodyDir(0.25, -0.9, -0.35, vD) : bodyDir(0.1, -0.85, 0.5, vD));
+    if (tuck > 0) sd.lerp(vA, tuck).normalize();
+    this.sheath.position.copy(vB).addScaledVector(vA, 0.06);
+    this.sheath.quaternion.setFromUnitVectors(AZ, sd);
+    if (bladeOn) {
+      R.RightForeArm.getWorldPosition(vC); R.RightHand.getWorldPosition(vB);
+      vA.subVectors(vB, vC).normalize();
+      this.sword.position.copy(vB).addScaledVector(vA, 0.06);
+      this.sword.quaternion.setFromUnitVectors(AZ, this.bladeD);
+    } else {
+      this.sword.position.copy(this.sheath.position).addScaledVector(sd, -0.07);
+      this.sword.quaternion.copy(this.sheath.quaternion);
+    }
+    // Schwungspur
+    const at = this.atk;
+    const trailOn = this.state === 'attack' && at.t > at.a.act[0] - 0.05 && at.t < at.a.act[1] + 0.05;
+    vC.copy(this.sword.position).addScaledVector(this.bladeD, 0.25);
+    vB.copy(this.sword.position).addScaledVector(this.bladeD, BLADE_L + 0.015);
+    this.trail.update(vC, vB, trailOn, at && at.a.heavy);
+
+    // 4b) Karte in der rechten Hand: taucht beim Ziehen aus dem Mantel auf, verschwindet beim Loslassen
     const show = this.state === 'throw' && this.t > 0.2 && !this.released;
     this.handCard.visible = show;
     if (show) {
