@@ -1,4 +1,4 @@
-# Projektplan – Souls-like im Anime-Stil (Arbeitstitel: „Asche & Asse“)
+# Projektplan – Souls-like im Anime-Stil (Arbeitstitel: „Aschenblatt“)
 
 > Das alte Spiel „Der Lernende“ liegt in der Git-Geschichte (Commit `8862355`) und kann jederzeit zurückgeholt werden.
 
@@ -55,7 +55,7 @@ und setze Texte und Sprechblasen per Code darüber (dann kann man Texte jederzei
 ## 4. Roadmap – in dieser Reihenfolge (jeder Schritt endet mit einer spielbaren Datei)
 | # | Meilenstein | Inhalt | Brauche von dir |
 |---|---|---|---|
-| 0 | **Fundament** | Projektgerüst, Toon-Shader, Controller-Steuerung, Kamera mit Zielerfassung, Testgelände, Offline-Datei | Spielname, Name des Helden |
+| 0 ✅ | **Fundament** (erledigt) | Projektgerüst, Toon-Shader, Controller-Steuerung, Kamera mit Zielerfassung, Testgelände, Offline-Datei | Spielname, Name des Helden |
 | 1 | **Held bewegt sich** | Dein Charakter mit Skelett: laufen, rennen, rollen, Ausdauer | Modell mit Skelett (siehe Liste unten) |
 | 2 | **Kampf-Prototyp** | Kartenwurf (3 Arten), Nahkampf-Kombo, Treffer, Heilen; ein Übungsgegner | Entscheidung Nahkampf-Waffe(n) |
 | 3 | **Erste Gegner** | Hunde (Rudel) + Plünderer mit eigener KI, Rastpunkt, Tod & Jetons | Gegner-Modelle (oder ich baue Platzhalter) |
@@ -78,7 +78,7 @@ Danach: weitere Gebiete, mehr Karten-Farben/Joker, Bankhalter, Meister.
 3. Später: **Gegner-Modelle** (Hund – Meshy kann auch Vierbeiner riggen –, Plünderer, Boss) und **Manga-Bilder**.
 
 ## 6. Offene Fragen
-- Name des Spiels und des Helden? (Arbeitstitel „Asche & Asse“)
+- Name des Helden? (Spiel vorerst „Aschenblatt“ – Asche der Stadt + Kartenblatt)
 - Nur **PC mit Controller**, oder soll es auch am **Handy** spielbar bleiben? (Nur PC erlaubt schönere Grafik.)
 - Welche **Nahkampf-Waffe(n)**: Hände, Stockdegen, Kartenklinge, Kriegsfächer – eine oder mehrere zum Wechseln?
 - Welcher **erste Boss**?

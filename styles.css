@@ -1,0 +1,52 @@
+:root { --gold: #e3b45a; --ink: #f2e8d8; --muted: #b8a890; }
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; background: #000; overflow: hidden; color: var(--ink);
+  user-select: none; -webkit-user-select: none; font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+}
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; display: none; }
+#hud.on { display: block; }
+.bars { position: absolute; left: 24px; top: 22px; width: min(340px, 45vw); }
+.bar { height: 12px; margin-bottom: 6px; background: rgba(0, 0, 0, 0.65); border: 1px solid rgba(227, 180, 90, 0.5); transform: skewX(-18deg); }
+.bar.st { width: 85%; height: 8px; }
+.bar i { display: block; height: 100%; width: 100%; transition: width 0.08s linear; }
+.hp i { background: linear-gradient(#e2474a, #8c1a24); }
+.st i { background: linear-gradient(#7ad37a, #2f7a36); }
+.st.empty i { background: linear-gradient(#d9a24a, #7a4a12); }
+#lockMark {
+  position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; display: none;
+  border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 10px #ffcf6a, inset 0 0 6px #ffcf6a;
+}
+#lockMark::after { content: ''; position: absolute; left: 7px; top: 7px; width: 4px; height: 4px; background: #fff; border-radius: 50%; }
+#hint {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 6px 14px;
+  background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 14px; border-radius: 4px; white-space: nowrap;
+}
+
+/* ---------- Menüs ---------- */
+.overlay {
+  position: fixed; inset: 0; display: none; justify-content: center; align-items: center; padding: 24px;
+  background: radial-gradient(ellipse at center, rgba(20, 10, 6, 0.55), rgba(0, 0, 0, 0.92));
+}
+.overlay.show { display: flex; }
+.panel { max-width: 640px; width: 100%; text-align: center; }
+h1 {
+  margin: 0; font-size: clamp(38px, 9vw, 84px); letter-spacing: 0.18em; font-weight: 900; font-style: italic;
+  color: #fff; text-shadow: 3px 3px 0 #8a1f12, 0 0 30px rgba(255, 140, 60, 0.45);
+}
+h2 { margin: 0; letter-spacing: 0.25em; color: var(--gold); }
+.sub { color: var(--muted); font-style: italic; margin: 10px 0; }
+.small { color: var(--muted); font-size: 13px; }
+.rule { height: 2px; margin: 16px auto; width: 70%; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+.press { font-size: 20px; letter-spacing: 0.15em; animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: 0.35; } }
+.controls { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; text-align: left; max-width: 460px; margin: 0 auto; }
+.controls b { color: var(--gold); font-weight: 600; white-space: nowrap; }
+.btn {
+  font: inherit; font-size: 17px; letter-spacing: 0.1em; color: #fff; cursor: pointer; padding: 10px 28px;
+  background: linear-gradient(#3a2418, #1a0e08); border: 1px solid var(--gold); border-radius: 3px;
+}
+.btn.padFocus { outline: 2px solid #fff; outline-offset: 3px; box-shadow: 0 0 18px rgba(227, 180, 90, 0.7); }
