@@ -9,7 +9,7 @@ import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 import { resolve } from './kollision.js';
 import { ladeModell } from './modelle.js';
 import { cardMesh, nextSuit } from './karten.js';
-import { buildCane, ATTACKS, READY_POSE, attackPose, Trail, BLADE_L } from './degen.js';
+import { buildCane, ATTACKS, READY_POSE, attackPose, Trail, BLADE_L, FIST_WRIST } from './degen.js';
 
 const MODEL_URL = 'models/magier.glb';
 const WALK = 3.4, RUN = 5.8;          // m/s (Joggen, Rennen)
@@ -33,7 +33,6 @@ const THROW_K = [
 // Ausfallschritt: s1 = rechter Fuß tritt vor (bis Ende Trefferfenster), s2 = linker Fuß wird nachgezogen.
 // Der rechte Fuß tritt (1 + STEP_X) × lunge vor, der Körper folgt lunge im Schlag und STEP_X × lunge beim Nachziehen.
 const STEP_X = 0.45;
-const PALM_S = 1; // Richtung der Handfläche beim Faustgriff (±1)
 function stepK(A, t) {
   const a0 = A.act[0] - 0.1, a1 = A.act[1], b0 = A.act[1] + 0.04, b1 = A.T - 0.04;
   return { s1: smooth((t - a0) / (a1 - a0)), s2: smooth((t - b0) / (b1 - b0)) };
@@ -63,7 +62,7 @@ function aim(bone, child, dirW, k) {
  * Unterarm und Hand um die Unterarm-Achse drehen, bis die Handfläche (−Z der Hand) nach `wantW` zeigt.
  * 60 % der Drehung übernimmt der Unterarm, den Rest das Handgelenk (sonst verdreht sich die Haut am Gelenk).
  */
-const vD = new THREE.Vector3(), vE = new THREE.Vector3(), qT = new THREE.Quaternion();
+const vD = new THREE.Vector3(), vE = new THREE.Vector3(), qT = new THREE.Quaternion(), mT = new THREE.Matrix4();
 function palmTo(fore, hand, wantW, k) {
   if (k <= 0.001) return;
   for (const [bone, part] of [[fore, 0.6], [hand, 1]]) {
@@ -226,7 +225,7 @@ export class Player {
 
     // Stockdegen: Stock in der linken Hand, Klinge darin (wird beim Angriff gezogen)
     const cane = buildCane();
-    this.sheath = cane.sheath; this.sword = cane.sword;
+    this.sheath = cane.sheath; this.sword = cane.sword; this.fist = cane.fist;
     this.root.parent.add(this.sheath);
     this.root.parent.add(this.sword);
     this.pose = { arm: [0, 0, 0], fore: [0, 0, 0], blade: [0, 0, 1], tw: 0, ln: 0, w: 0 };
@@ -533,8 +532,6 @@ export class Player {
       const fo = bodyDir(P.fore[0], P.fore[1], P.fore[2], vB);
       fo.addScaledVector(this.bladeD, -0.8 * fo.dot(this.bladeD)).normalize();
       aim(R.RightForeArm, R.RightHand, fo, w);
-      // Handfläche zum Griff drehen (Daumen zeigt zur Klinge)
-      palmTo(R.RightForeArm, R.RightHand, vF.crossVectors(this.bladeD, fo).normalize().multiplyScalar(PALM_S), w);
       bladeOn = true;
     }
     // Hüfte und Knie leicht gebeugt beim Stehen (wirkt kampfbereit)
@@ -574,16 +571,18 @@ export class Player {
     this.sheath.position.copy(vB).add(vC);
     const sd = bodyDir(0.14, -0.74, -0.66, vE);                     // schräg nach hinten unten
     this.sheath.quaternion.setFromUnitVectors(AZ, sd);
-    // Faust: ohne Fingerknochen wird die Hand entlang der Finger gestaucht, der Griff sitzt mitten in der Hand
-    if (bladeOn) R.RightHand.scale.set(1.05, 0.58, 1.12); else R.RightHand.scale.set(1, 1, 1);
+    // Faust: die Meshy-Hand (ohne Fingerknochen) wird ausgeblendet, eine eigene Faust umschließt den Griff.
+    // Klingen-Raum: Z = Klinge, X = Richtung Unterarm → Finger; das Handgelenk der Faust sitzt am Hand-Knochen.
+    R.RightHand.scale.setScalar(bladeOn ? 0.02 : 1);
+    this.fist.visible = bladeOn;
     if (bladeOn) {
-      R.RightHand.updateWorldMatrix(true, false);
       R.RightForeArm.getWorldPosition(vC); R.RightHand.getWorldPosition(vB);
-      vA.subVectors(vB, vC).normalize();
-      vD.set(0, 0, -1).applyQuaternion(R.RightHand.getWorldQuaternion(qT));  // Handflächen-Seite
-      // Griffmitte liegt in der Handmitte (Handgriff ist 0,12 lang: Ursprung 0,06 weiter Richtung Klinge)
-      this.sword.position.copy(vB).addScaledVector(vA, 0.06).addScaledVector(vD, 0.025).addScaledVector(this.bladeD, 0.06);
-      this.sword.quaternion.setFromUnitVectors(AZ, this.bladeD);
+      vA.subVectors(vB, vC).normalize();                                     // Unterarm-Richtung
+      const X = vD.copy(vA).addScaledVector(this.bladeD, -vA.dot(this.bladeD)).normalize();
+      const Y = vE.crossVectors(this.bladeD, X);
+      mT.makeBasis(X, Y, this.bladeD);
+      this.sword.quaternion.setFromRotationMatrix(mT);
+      this.sword.position.copy(vB).sub(vF.copy(FIST_WRIST).applyQuaternion(this.sword.quaternion));
     } else {
       this.sword.position.copy(this.sheath.position).addScaledVector(sd, -0.07);
       this.sword.quaternion.copy(this.sheath.quaternion);

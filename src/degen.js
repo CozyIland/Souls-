@@ -28,7 +28,39 @@ export function buildCane() {
   for (let i = 0; i < p.count; i++) if (p.getZ(i) > BLADE_L / 2 - 0.01) p.setX(i, 0);
   bladeGeo.translate(0, 0, BLADE_L / 2 + 0.015);
   const blade = new THREE.Mesh(bladeGeo, steel); blade.castShadow = true; outline(blade, 0.003); sword.add(blade);
-  return { sheath, sword, blade };
+  // Faust um den Griff (das Meshy-Modell hat keine Fingerknochen – solange er den Degen hält, wird seine Hand
+  // ausgeblendet und diese Faust gezeigt). Lage im Klingen-Raum: Griff entlang Z, Handgelenk bei FIST_WRIST (Unterarm = −X).
+  const fist = buildFist(); fist.visible = false; sword.add(fist);
+  return { sheath, sword, blade, fist };
+}
+
+// ---------- Faust ----------
+export const FIST_WRIST = new THREE.Vector3(-0.085, 0.0, -0.068);
+function buildFist() {
+  const skin = toon(0xe9b59a), dark = toon(0xc98f78);
+  const g = new THREE.Group();
+  const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0, line = 0.004) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true;
+    if (line) outline(m, line); g.add(m); return m;
+  };
+  // Handteller und Handrücken: liegt hinter dem Griff (Richtung Handgelenk)
+  const palm = new THREE.SphereGeometry(1, 14, 10); palm.scale(0.034, 0.03, 0.05);
+  add(palm, skin, -0.04, 0.004, -0.064);
+  // Handgelenk-Ansatz (verbindet mit dem Unterarm)
+  const wrist = new THREE.CylinderGeometry(0.024, 0.028, 0.05, 10); wrist.rotateZ(Math.PI / 2);
+  add(wrist, skin, -0.075, 0.0, -0.07);
+  // vier Finger umschließen den Griff (Halbringe um die Griff-Achse), oben Zeigefinger, unten kleiner Finger
+  for (let i = 0; i < 4; i++) {
+    const r = 0.03 - i * 0.0015, t = 0.0115 - i * 0.0008;
+    const f = new THREE.TorusGeometry(r, t, 8, 14, Math.PI * 1.25);
+    add(f, i % 2 ? dark : skin, -0.004, 0, -0.03 - i * 0.022, 0, 0, -Math.PI * 0.62);
+    // Knöchel
+    add(new THREE.SphereGeometry(t * 1.15, 8, 6), skin, -0.02, r * 0.95, -0.03 - i * 0.022, 0, 0, 0, 0);
+  }
+  // Daumen: liegt oben quer über dem Zeigefinger
+  const th = new THREE.CapsuleGeometry(0.011, 0.035, 4, 8); th.rotateZ(Math.PI / 2);
+  add(th, skin, 0.0, 0.03, -0.016, 0, 0.35, 0.25);
+  return g;
 }
 
 // ---------- Angriffe ----------
