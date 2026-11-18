@@ -60,6 +60,29 @@ function aim(bone, child, dirW, k) {
   bone.quaternion.slerp(pq.invert().multiply(target), Math.min(1, k));
 }
 
+/**
+ * Unterarm und Hand um die Unterarm-Achse drehen, bis die Handfläche (−Z der Hand) nach `wantW` zeigt.
+ * 60 % der Drehung übernimmt der Unterarm, den Rest das Handgelenk (sonst verdreht sich die Haut am Gelenk).
+ */
+const vD = new THREE.Vector3(), vE = new THREE.Vector3(), qT = new THREE.Quaternion();
+function palmTo(fore, hand, wantW, k) {
+  if (k <= 0.001) return;
+  for (const [bone, part] of [[fore, 0.6], [hand, 1]]) {
+    fore.updateWorldMatrix(true, false); hand.updateWorldMatrix(false, false);
+    fore.getWorldPosition(vD); hand.getWorldPosition(vE);
+    const axis = vE.sub(vD).normalize();
+    const palm = vD.set(0, 0, -1).applyQuaternion(hand.getWorldQuaternion(qT));
+    const a = palm.addScaledVector(axis, -palm.dot(axis)).normalize();
+    const b = vA.copy(wantW).addScaledVector(axis, -wantW.dot(axis)).normalize();
+    let ang = Math.acos(Math.max(-1, Math.min(1, a.dot(b))));
+    if (vB.crossVectors(a, b).dot(axis) < 0) ang = -ang;
+    const pq = bone.parent.getWorldQuaternion(qA);
+    const wq = qB.copy(pq).multiply(bone.quaternion);
+    qC.setFromAxisAngle(axis, ang * part * k).multiply(wq);
+    bone.quaternion.copy(pq.invert().multiply(qC));
+  }
+}
+
 /** Knochen um eine Achse im Körper drehen */
 function bend(bone, axisBody, ang) {
   if (!bone || Math.abs(ang) < 1e-4) return;
@@ -152,7 +175,7 @@ export class Player {
 
     // Kartenfächer in der linken Hand: Vorderseite hell mit Zeichen, Rückseite dunkelrot mit Goldrand
     this.fan = new THREE.Group();
-    const cw = 0.085, ch = 0.125;
+    const cw = 0.095, ch = 0.14;
     const front = new THREE.PlaneGeometry(cw, ch); front.translate(0, ch * 0.42, 0.0012);
     const back = new THREE.PlaneGeometry(cw, ch); back.rotateY(Math.PI); back.translate(0, ch * 0.42, -0.0012);
     const edge = new THREE.BoxGeometry(cw + 0.006, ch + 0.006, 0.0016); edge.translate(0, ch * 0.42, 0);
@@ -313,8 +336,12 @@ export class Player {
     const ak = still * (1 - tuck);
     aim(R.RightArm, R.RightForeArm, bodyDir(-0.28, -1, 0.04, vB), ak);
     aim(R.RightForeArm, R.RightHand, bodyDir(-0.1, -1, 0.3, vB), ak);
-    aim(R.LeftArm, R.LeftForeArm, bodyDir(0.32, -1, 0.12, vB), ak);
-    aim(R.LeftForeArm, R.LeftHand, bodyDir(-0.15, -0.35, 1, vB), ak);
+    // Linke Hand hält die Karten vor dem Bauch – auch beim Laufen (dann etwas schwächer)
+    const ck = (1 - tuck) * (0.75 + 0.25 * still);
+    aim(R.LeftArm, R.LeftForeArm, bodyDir(0.32, -1, 0.18, vB), ck);
+    aim(R.LeftForeArm, R.LeftHand, bodyDir(-0.55, 0.38, 0.85, vB), ck);
+    // Handfläche zum Körper (wie beim Kartenspielen: Blatt vor der Brust, Handrücken zum Gegner)
+    palmTo(R.LeftForeArm, R.LeftHand, bodyDir(-0.35, 0.1, -1, vC), ck);
     // Hüfte und Knie leicht gebeugt beim Stehen (wirkt kampfbereit)
     if (still > 0.01) {
       bend(R.Hips, AX, 0); // Hüfte bleibt
@@ -339,10 +366,15 @@ export class Player {
     R.LeftForeArm.getWorldPosition(vC);
     R.LeftHand.getWorldPosition(vB);
     vA.subVectors(vB, vC).normalize();         // Unterarm-Richtung
-    this.fan.position.copy(vB).addScaledVector(vA, 0.07);
-    this.fan.position.y += 0.02;
+    // Fächer steht in der Hand nach oben, Bildseite zum Magier (die Kamera hinter ihm sieht die Zeichen),
+    // Rückseite zum Gegner. Ausrichtung am Körper – so wackelt er nicht mit jeder Fingerstellung.
+    const fb = 1 - tuck;
+    this.fan.position.copy(vB).addScaledVector(vA, 0.06 + 0.06 * fb);
+    bodyDir(0, 0, -1, vC); this.fan.position.addScaledVector(vC, 0.035 * fb);
     this.fan.quaternion.copy(qBody);
-    this.fan.rotateX(-0.35 - tuck * 1.2); this.fan.rotateY(-0.5);
+    this.fan.rotateY(Math.PI - 0.25);
+    this.fan.rotateX(0.3 - tuck * 1.2);
+    this.fan.rotateZ(0.15);
     this.fan.visible = true;
   }
 }

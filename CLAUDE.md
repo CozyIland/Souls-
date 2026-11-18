@@ -31,7 +31,7 @@
   setzt der Code passend zum Tempo. Stehen (Arme aus der A-Pose herunter), Rolle (Einrollen + Salto um `pivot`), Seitwärts-/
   Rückwärtsschritte (Unterkörper `legs` dreht in Laufrichtung, Wirbelsäule zurück; rückwärts = Clip rückwärts) per Knochen
   (`aim`/`bend`). Vorher jedes Bild die reine Animationshaltung (`animQ/animP`) zurückschreiben. Kartenfächer `fan` folgt der
-  linken Hand. Ohne Modell: Platzhalter aus Grundformen. Modell schaut bei yaw 0 nach +Z.
+  linken Hand (Blatt vor der Brust, Handfläche zum Körper über `palmTo`, Fächer am Körper ausgerichtet). Ohne Modell: Platzhalter aus Grundformen. Modell schaut bei yaw 0 nach +Z.
 - `src/kollision.js` – `colliders`, `block`, `blockRot` (gedreht), `resolve`, `blockers`.
 - `src/world.js` – Kreuzung der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.
