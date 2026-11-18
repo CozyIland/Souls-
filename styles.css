@@ -4,7 +4,7 @@ html, body {
   margin: 0; height: 100%; background: #000; overflow: hidden; color: var(--ink);
   user-select: none; -webkit-user-select: none; font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
 }
-#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; -webkit-touch-callout: none; }
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; display: none; }
@@ -50,3 +50,28 @@ h2 { margin: 0; letter-spacing: 0.25em; color: var(--gold); }
   background: linear-gradient(#3a2418, #1a0e08); border: 1px solid var(--gold); border-radius: 3px;
 }
 .btn.padFocus { outline: 2px solid #fff; outline-offset: 3px; box-shadow: 0 0 18px rgba(227, 180, 90, 0.7); }
+
+/* ---------- Handy-Steuerung ---------- */
+#touchUI { display: none; }
+body.touch #touchUI { display: block; }
+#joyBase {
+  position: absolute; width: 130px; height: 130px; margin: -65px 0 0 -65px; border-radius: 50%; display: none;
+  border: 2px solid rgba(227, 180, 90, 0.55); background: radial-gradient(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.45));
+}
+#joyBase.on { display: block; }
+#joyKnob {
+  position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; border-radius: 50%; transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 40% 35%, #f6dca0, #b0802e); box-shadow: 0 0 12px rgba(227, 180, 90, 0.6);
+}
+.tbtn {
+  position: absolute; pointer-events: auto; touch-action: none; -webkit-tap-highlight-color: transparent;
+  width: 76px; height: 76px; border-radius: 50%; color: #fff; font-size: 30px; line-height: 1;
+  background: rgba(20, 12, 8, 0.6); border: 2px solid rgba(227, 180, 90, 0.75);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0;
+}
+.tbtn small { font-size: 9px; letter-spacing: 0.04em; color: var(--muted); margin-top: 3px; max-width: 70px; text-align: center; }
+.tbtn.down { background: rgba(227, 180, 90, 0.55); transform: scale(0.94); }
+#tRoll { right: calc(28px + env(safe-area-inset-right)); bottom: calc(34px + env(safe-area-inset-bottom)); width: 96px; height: 96px; font-size: 38px; }
+#tLock { right: calc(138px + env(safe-area-inset-right)); bottom: calc(46px + env(safe-area-inset-bottom)); }
+#tPause { right: calc(18px + env(safe-area-inset-right)); top: calc(18px + env(safe-area-inset-top)); width: 48px; height: 48px; font-size: 16px; }
+body.touch #hint { bottom: auto; top: 70px; font-size: 12px; white-space: normal; max-width: 90vw; text-align: center; }

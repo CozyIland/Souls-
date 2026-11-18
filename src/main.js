@@ -9,7 +9,9 @@ import { makeComposer } from './bildfilter.js';
 // ---------- Renderer ----------
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+// Handy: etwas geringere Auflösung, damit es flüssig bleibt
+const MOBILE = matchMedia('(pointer: coarse)').matches;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MOBILE ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -71,11 +73,14 @@ function hud(dt) {
   // Hinweis unten: passend zum Gerät, verschwindet nach ein paar Sekunden
   hintT -= dt;
   hint.style.display = hintT > 0 ? 'block' : 'none';
-  hint.textContent = inp.pad
+  hint.textContent = inp.touch
+    ? 'Links ziehen: Laufen · Rechts wischen: Kamera · ⟲ tippen: Rolle, halten: Rennen · ◎: Ziel'
+    : inp.pad
     ? 'B tippen: Rolle · B halten: Rennen · R3: Ziel erfassen · Start: Steuerung'
     : 'WASD · Maus (ins Bild klicken) · Leertaste: Rolle · Shift: Rennen · Q: Ziel · Esc: Steuerung';
   $('ctrlPad').style.display = inp.pad ? 'grid' : 'none';
-  $('ctrlKeys').style.display = inp.pad ? 'none' : 'grid';
+  $('ctrlTouch').style.display = inp.touch ? 'grid' : 'none';
+  $('ctrlKeys').style.display = inp.pad || inp.touch ? 'none' : 'grid';
 }
 
 // ---------- Spielschleife ----------

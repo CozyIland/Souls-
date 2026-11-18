@@ -24,13 +24,20 @@
   </div>
   <div id="lockMark"></div>
   <div id="hint"></div>
+  <!-- Handy-Steuerung (nur sichtbar, wenn der Bildschirm berührt wurde) -->
+  <div id="touchUI">
+    <div id="joyBase"><div id="joyKnob"></div></div>
+    <button id="tRoll" class="tbtn big">⟲<small>Rolle · halten: Rennen</small></button>
+    <button id="tLock" class="tbtn">◎<small>Ziel</small></button>
+    <button id="tPause" class="tbtn mini">❚❚</button>
+  </div>
 </div>
 
 <div class="overlay show" id="title"><div class="panel">
   <h1>ASCHENBLATT</h1>
   <p class="sub">Die Stadt ist gefallen. Nur die Karten lügen nicht.</p>
   <div class="rule"></div>
-  <p class="press" id="pressStart">Drücke A oder Enter</p>
+  <p class="press" id="pressStart">Drücke A oder Enter · am Handy: antippen</p>
   <p class="small">Schritt 1: Dein Magier in der toten Stadt – Laufen, Rennen, Rollen, Kamera und Zielerfassung.</p>
 </div></div>
 
@@ -45,6 +52,15 @@
     <b>R3 (rechten Stick drücken)</b><span>Ziel erfassen / lösen</span>
     <b>Rechter Stick (erfasst)</b><span>Ziel wechseln</span>
     <b>Start</b><span>Pause</span>
+  </div>
+  <div class="controls" id="ctrlTouch">
+    <b>Linke Seite</b><span>Daumen auflegen und ziehen: Laufen</span>
+    <b>Rechte Seite wischen</b><span>Kamera drehen</span>
+    <b>⟲ tippen</b><span>Ausweichrolle</span>
+    <b>⟲ halten</b><span>Rennen</span>
+    <b>◎</b><span>Ziel erfassen / lösen</span>
+    <b>Rechts schnell zur Seite wischen</b><span>Ziel wechseln (erfasst)</span>
+    <b>❚❚</b><span>Pause</span>
   </div>
   <div class="controls" id="ctrlKeys">
     <b>WASD</b><span>Laufen</span>
