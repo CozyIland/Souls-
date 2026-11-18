@@ -16,7 +16,7 @@ const T_WIND = 0.38, T_LEAP = 0.34, T_REC = 0.7;
 const BITE = 15;                      // Schaden pro Biss
 const RADIUS = 0.42;
 // Meshy-Hund (models/hund.glb): nur der Clip „dog_walk“ (0,67 s); schaut nach +Z, Füße bei y −0,67, ~1,3 m hoch
-const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.2, DOG_C = 0.42;
+const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.3, DOG_C = 0.42;
 let DOG_GLTF = null;
 
 export const dogs = [];
@@ -245,15 +245,24 @@ class Dog {
       for (const mt of M.mats) mt.emissive.setRGB(f, f * 0.15, f * 0.1);
       M.holder.position.y = DOG_C + (by - 0.56) * 0.9;
       M.holder.rotation.set(pitch + headX * 0.15, 0, roll);
-      let w = clamp(sp / 0.6, 0, 1), tt;
-      if (this.st === 'leap') { w = 1; tt = 0.55; }
-      else if (this.st === 'wind') { w = 0.6; tt = this.gp % 1; }
+      // Gewicht weich nachführen (sonst flackert es zwischen Stehen und Laufen)
+      let wt = clamp((sp - 0.15) / 0.5, 0, 1), tt;
+      if (this.st === 'leap') { wt = 1; tt = 0.55; }
+      else if (this.st === 'wind') { wt = 0.7; tt = this.gp; }
       else {
-        const cyc = DOG_STRIDE * DOG_S * (1 + clamp((sp - 1.5) / 3, 0, 1) * 0.6);
+        // Schrittlänge wächst mit dem Tempo (beim Rennen weitere Sprünge statt Trippeln)
+        const cyc = DOG_STRIDE * DOG_S * (1 + clamp((sp - 1.5) / 2.5, 0, 1) * 0.7);
         this.gp = (this.gp + dt * sp / cyc) % 1; tt = this.gp;
       }
-      if (this.dead) w = 0;
-      if (M.act) { M.act.time = tt * M.dur; M.act.setEffectiveWeight(w); M.mixer.update(0); }
+      if (this.dead) wt = 0;
+      this.aw = lerp(this.aw || 0, wt, damp(this.st === 'leap' ? 20 : 7, dt));
+      // Rennen: Körper wippt im Galopp-Takt (2× pro Schrittfolge) und neigt sich leicht
+      const run = clamp((sp - 2) / 2, 0, 1) * this.aw;
+      if (run > 0) {
+        M.holder.position.y += Math.abs(Math.sin(this.gp * TAU)) * 0.05 * run;
+        M.holder.rotation.x += Math.sin(this.gp * TAU * 2) * 0.05 * run + 0.04 * run;
+      }
+      if (M.act) { M.act.time = tt * M.dur; M.act.setEffectiveWeight(this.aw); M.mixer.update(0); }
     }
     // tot: nach einer Weile ausblenden
     if (this.dead && this.deadT > 3) {

@@ -35,8 +35,9 @@
   eine Karte (`handCard`) und schleudert sie nach vorn – Schlüsselhaltungen `THROW_K` (Arm, Unterarm, Schulterdrehung), linke Hand
   zieht den Mantel auf. Ohne Ziel wirft er in Kamerarichtung, mit Ziel aufs Ziel. Nach dem Loslassen: Rolle bricht ab, erneutes
   Drücken wird vorgemerkt. `palmTo` (Hand um die Unterarm-Achse drehen) ist noch da. Ohne Modell: Platzhalter aus Grundformen. Modell schaut bei yaw 0 nach +Z.
-- `src/degen.js` – **Stockdegen**: `buildCane` (Stock = Scheide `sheath` in der linken Hand, Klinge `sword` mit Griff; beide
-  zeigen entlang +Z), Angriffe `ATTACKS` (l1 waagerecht, l2 schräg zurück, l3 Stoß = leichte Kombo; h = schwerer Überkopf-Schlag):
+- `src/degen.js` – **Stockdegen**: `buildCane` (Stock = Scheide `sheath`, hängt links am Mantel-Gürtel an `Hips`; Klinge `sword`
+  mit Griff; beide zeigen entlang +Z; Faustgriff: Hand-Knochen entlang der Finger gestaucht, Griff quer in der Hand, Unterarm
+  etwa senkrecht zur Klinge, Handfläche per `palmTo`/`PALM_S` zum Griff), Angriffe `ATTACKS` (l1 waagerecht, l2 schräg zurück, l3 Stoß = leichte Kombo; h = schwerer Überkopf-Schlag):
   je `T`, Trefferfenster `act`, Ausdauer `cost`, Reichweite `range`, Winkel `arc`, Ausfallschritt `lunge`, Schlüsselhaltungen
   (Oberarm, Unterarm, Klinge, Schulterdrehung, Vorbeugen) über `attackPose`; Schwungspur `Trail`. In `player.js`: Zustand
   `attack` (`startAttack`, Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
@@ -50,7 +51,7 @@
   Eingabe `inp.card`: LB oder F, Handy-Knopf `#tCard` 🃏.
 - `src/hund.js` – **Streunende Hunde** (`spawnDogs`, `updateDogs`, `resetDogs`, `dogs`): **Meshy-Modell `models/hund.glb`**
   (Pitbull mit Geschirr, nur Clip „dog_walk“; `DOG_S` 0,72, Füße bei y −0,67, schaut nach +Z) – je Hund geklont (`useModel`,
-  eigene Toon-Materialien zum Aufblitzen), Clip-Zeit passend zum Tempo (`DOG_STRIDE`), Haltungen (ducken, Sprung, taumeln,
+  eigene Toon-Materialien zum Aufblitzen), Clip-Zeit passend zum Tempo (`DOG_STRIDE` 1,3, Schritt wächst beim Rennen), Clip-Gewicht `aw` weich nachgeführt, Galopp-Wippen, Haltungen (ducken, Sprung, taumeln,
   umfallen) über den Halter `mm.holder`. Ohne Modell: Grundformen (`buildDog`). Zustände idle (streunen) →
   growl (knurren, ab 13 m) → chase → circle (umkreisen, solange `cool` läuft) → wind (ducken) → leap (Sprung + Biss 15 Schaden,
   `player.damage`) → rec (verwundbar) · hurt (Treffer, schwer = länger) · dead (umfallen, ausblenden, kommt nach 25 s wieder,
