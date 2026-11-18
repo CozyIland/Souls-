@@ -56,7 +56,7 @@ und setze Texte und Sprechblasen per Code darüber (dann kann man Texte jederzei
 | # | Meilenstein | Inhalt | Brauche von dir |
 |---|---|---|---|
 | 0 ✅ | **Fundament** (erledigt) | Projektgerüst, Toon-Shader, Controller-Steuerung, Kamera mit Zielerfassung, Testgelände, Offline-Datei | Spielname, Name des Helden |
-| 1 | **Held bewegt sich** | Dein Charakter mit Skelett: laufen, rennen, rollen, Ausdauer | Modell mit Skelett (siehe Liste unten) |
+| 1 ✅ | **Held bewegt sich** (erledigt) | Dein Magier mit Skelett: laufen, rennen, rollen, seitwärts/rückwärts erfasst, Kartenfächer; Stadt detailreich (Fassaden, Läden, Feuerleitern, Strommasten, Zeltstadt, Unkraut, Skyline, Leuchten) | ✔ Modell bekommen (nur Walk/Run – Rest per Code) |
 | 2 | **Kampf-Prototyp** | Kartenwurf (3 Arten), Nahkampf-Kombo, Treffer, Heilen; ein Übungsgegner | Entscheidung Nahkampf-Waffe(n) |
 | 3 | **Erste Gegner** | Hunde (Rudel) + Plünderer mit eigener KI, Rastpunkt, Tod & Jetons | Gegner-Modelle (oder ich baue Platzhalter) |
 | 4 | **Erstes Gebiet** | Kleine Ruinenstadt (3–4 Straßen, Abkürzung zum Rastpunkt), Gegenstände finden | Stimmungsbilder der Stadt (optional) |

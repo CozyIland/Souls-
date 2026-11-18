@@ -44,3 +44,26 @@ export function part(geo, color, line = 0.02, opts) {
   if (line) outline(m, line);
   return m;
 }
+
+/**
+ * Umriss für Figuren mit Skelett: zweites Mesh mit demselben Skelett, Rückseite,
+ * Ecken im Shader entlang der Normale nach außen geschoben (w in Metern).
+ */
+export function skinOutline(mesh, w = 0.012) {
+  const m = new THREE.MeshBasicMaterial({ color: 0x120a08, side: THREE.BackSide });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uLine = { value: w };
+    sh.vertexShader = 'uniform float uLine;\n' + sh.vertexShader.replace(
+      '#include <skinning_vertex>',
+      '#include <skinning_vertex>\n  transformed += normalize(objectNormal) * uLine / max(length(modelMatrix[0].xyz), 1e-4);',
+    );
+  };
+  const o = new THREE.SkinnedMesh(mesh.geometry, m);
+  o.bind(mesh.skeleton, mesh.bindMatrix);
+  o.bindMode = mesh.bindMode;
+  o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false;
+  o.userData.isOutline = true;
+  mesh.parent.add(o);
+  o.position.copy(mesh.position); o.quaternion.copy(mesh.quaternion); o.scale.copy(mesh.scale);
+  return o;
+}

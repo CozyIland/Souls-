@@ -4,6 +4,7 @@ import { setupInput, poll, inp } from './input.js';
 import { buildWorld, updateWorld, targets, blockers } from './world.js';
 import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
+import { makeComposer } from './bildfilter.js';
 
 // ---------- Renderer ----------
 const canvas = document.getElementById('c');
@@ -15,7 +16,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 160);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 240);
 const world = buildWorld(scene, renderer);
 const player = new Player(scene);
 player.pos.set(0, 0, 6);
@@ -24,10 +25,12 @@ const cam = new OrbitCam(camera);
 const fill = new THREE.PointLight(0xffe2c8, 9, 8, 1.4);
 scene.add(fill);
 cam.blockers = blockers;
+const post = makeComposer(renderer, scene, camera);
 cam.yaw = 0;
 
 function resize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (typeof post !== 'undefined') { post.setPixelRatio(renderer.getPixelRatio()); post.setSize(window.innerWidth, window.innerHeight); }
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
 }
@@ -106,7 +109,7 @@ function frame(now) {
   }
   fill.position.set(player.pos.x + (camera.position.x - player.pos.x) * 0.35, 2.4, player.pos.z + (camera.position.z - player.pos.z) * 0.35);
   updateWorld(dt, time, world, player.pos);
-  renderer.render(scene, camera);
+  post.render(time);
 }
 setState('title');
 requestAnimationFrame(frame);
