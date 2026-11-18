@@ -1,17 +1,23 @@
 // Streunende Hunde: abgemagert, struppig, gelbe Augen. Aus Grundformen gebaut, Bewegung per Code (Trab, Sprung, Sterben).
 // Verhalten: herumstreunen → Magier entdecken (knurren) → hinrennen → umkreisen → ducken und anspringen (Biss) → kurz Pause.
 import * as THREE from 'three';
-import { toon, outline } from './toon.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { toon, outline, GRADIENT, skinOutline } from './toon.js';
+import { ladeModell } from './modelle.js';
 import { resolve } from './kollision.js';
 import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 
 const HP = 60;
 const SEE = 13, LOSE = 22;            // Entdecken / Aufgeben (m)
-const RUN_V = 5.0, WALK_V = 1.2, CIRCLE_V = 2.4;
+const RUN_V = 4.4, WALK_V = 1.2, CIRCLE_V = 2.4;
 const LEAP_RANGE = 2.8, LEAP_V = 9.5;
 const T_WIND = 0.38, T_LEAP = 0.34, T_REC = 0.7;
 const BITE = 15;                      // Schaden pro Biss
-const RADIUS = 0.36;
+const RADIUS = 0.42;
+// Meshy-Hund (models/hund.glb): nur der Clip „dog_walk“ (0,67 s); schaut nach +Z, Füße bei y −0,67, ~1,3 m hoch
+const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.2, DOG_C = 0.42;
+let DOG_GLTF = null;
 
 export const dogs = [];
 
@@ -85,7 +91,34 @@ class Dog {
     this.pos = new THREE.Vector3();      // Ziel-Punkt für Kamera/Karten (Körpermitte)
     this.node = this.m.root;
     this.name = 'Streunender Hund';
+    this.mm = null; this.gp = Math.random();
     this.reset();
+    if (DOG_GLTF) this.useModel();
+  }
+  /** Meshy-Modell statt der Grundformen einsetzen */
+  useModel() {
+    if (this.mm) return;
+    const model = cloneSkinned(DOG_GLTF.scene), mats = [];
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
+      const m = o.material;
+      o.material = new THREE.MeshToonMaterial({ map: m.map, normalMap: m.normalMap, gradientMap: GRADIENT, side: THREE.DoubleSide });
+      if (o.material.normalMap) o.material.normalScale.set(0.7, 0.7);
+      mats.push(o.material);
+    });
+    const sk = []; model.traverse((o) => { if (o.isSkinnedMesh) sk.push(o); });
+    for (const o of sk) skinOutline(o, 0.012);
+    model.scale.setScalar(DOG_S);
+    const holder = new THREE.Group(); holder.add(model);
+    model.position.y = DOG_FOOT * DOG_S - DOG_C;
+    this.m.root.add(holder);
+    this.m.body.visible = false;
+    const mixer = new THREE.AnimationMixer(model);
+    const clip = DOG_GLTF.animations[0];
+    const act = clip ? mixer.clipAction(clip) : null;
+    if (act) { act.play(); act.timeScale = 0; }
+    this.mm = { model, holder, mixer, act, dur: clip ? clip.duration : 1, mats };
   }
   reset() {
     this.p.copy(this.home); this.yaw = this.homeYaw;
@@ -142,7 +175,7 @@ class Dog {
       case 'leap': { // Sprung mit Biss
         spd = LEAP_V * (1 - this.t / T_LEAP * 0.5);
         this.yaw = this.leapA;
-        const hx = this.p.x + Math.sin(this.yaw) * 0.45, hz = this.p.z + Math.cos(this.yaw) * 0.45;
+        const hx = this.p.x + Math.sin(this.yaw) * 0.55, hz = this.p.z + Math.cos(this.yaw) * 0.55;
         if (!this.bit && plOk && Math.hypot(pl.pos.x - hx, pl.pos.z - hz) < 0.75) {
           this.bit = true;
           pl.damage(BITE, new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)));
@@ -206,6 +239,22 @@ class Dog {
     this.flash = Math.max(0, this.flash - dt);
     const f = this.flash > 0 ? 0.9 : 0;
     for (const mt of m.mats) mt.emissive.setRGB(f, f * 0.15, f * 0.1);
+    // Meshy-Modell: gleiche Körperhaltung, Beine aus dem Lauf-Clip (Schritte passend zum Tempo)
+    const M = this.mm;
+    if (M) {
+      for (const mt of M.mats) mt.emissive.setRGB(f, f * 0.15, f * 0.1);
+      M.holder.position.y = DOG_C + (by - 0.56) * 0.9;
+      M.holder.rotation.set(pitch + headX * 0.15, 0, roll);
+      let w = clamp(sp / 0.6, 0, 1), tt;
+      if (this.st === 'leap') { w = 1; tt = 0.55; }
+      else if (this.st === 'wind') { w = 0.6; tt = this.gp % 1; }
+      else {
+        const cyc = DOG_STRIDE * DOG_S * (1 + clamp((sp - 1.5) / 3, 0, 1) * 0.6);
+        this.gp = (this.gp + dt * sp / cyc) % 1; tt = this.gp;
+      }
+      if (this.dead) w = 0;
+      if (M.act) { M.act.time = tt * M.dur; M.act.setEffectiveWeight(w); M.mixer.update(0); }
+    }
     // tot: nach einer Weile ausblenden
     if (this.dead && this.deadT > 3) {
       const a = clamp(1 - (this.deadT - 3) / 1.2, 0, 1);
@@ -217,6 +266,7 @@ class Dog {
 
 /** Hunde aufstellen: ein Rudel im Norden, einer an der Querstraße */
 export function spawnDogs(scene) {
+  ladeModell(new GLTFLoader(), DOG_URL, (g) => { DOG_GLTF = g; for (const d of dogs) d.useModel(); }, (e) => console.warn('Hunde-Modell fehlt – Grundformen bleiben.', e));
   for (const [x, z, y] of [[-2, -30, 0.4], [2.5, -33, -0.6], [-1, -36, 2.8], [24, 2, -1.5]]) dogs.push(new Dog(scene, x, z, y));
   return dogs;
 }
@@ -231,7 +281,7 @@ export function updateDogs(dt, pl) {
     for (const e of dogs) {
       if (e === d || e.dead) continue;
       const ex = e.p.x - d.p.x, ez = e.p.z - d.p.z, el = Math.hypot(ex, ez);
-      if (el < 0.7 && el > 1e-4) { const k = (0.7 - el) / el * 0.5; e.p.x += ex * k; e.p.z += ez * k; }
+      if (el < 0.95 && el > 1e-4) { const k = (0.95 - el) / el * 0.5; e.p.x += ex * k; e.p.z += ez * k; }
     }
   }
 }

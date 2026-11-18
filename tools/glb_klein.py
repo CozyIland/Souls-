@@ -1,5 +1,5 @@
 # Verkleinert eine Meshy-GLB: Texturen als JPEG (Farbe 2048 – sonst wird das Gesicht matschig –, Normal 1024, Rauheit 512), Metall aus.
-# Aufruf: python3 tools/glb_klein.py models/quelle/magier-meshy.glb models/magier.glb Magier   (braucht Pillow)
+# Aufruf: python3 tools/glb_klein.py models/quelle/magier-meshy.glb models/magier.glb Magier [Farbgröße]   (braucht Pillow)
 import json, struct, sys, io
 from PIL import Image
 src, dst = sys.argv[1], sys.argv[2]
@@ -12,7 +12,7 @@ views = [binb[v.get('byteOffset', 0):v.get('byteOffset', 0) + v['byteLength']] f
 mat = j['materials'][0]
 pbr = mat['pbrMetallicRoughness']
 tex_role = {}
-tex_role[j['textures'][pbr['baseColorTexture']['index']]['source']] = ('farbe', 2048, 86)
+tex_role[j['textures'][pbr['baseColorTexture']['index']]['source']] = ('farbe', int(sys.argv[4]) if len(sys.argv) > 4 else 2048, 86)
 tex_role[j['textures'][mat['normalTexture']['index']]['source']] = ('normal', 1024, 92)
 tex_role[j['textures'][pbr['metallicRoughnessTexture']['index']]['source']] = ('rauheit', 512, 85)
 for i, im in enumerate(j['images']):

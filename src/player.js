@@ -30,6 +30,14 @@ const THROW_K = [
   [0.62, [-0.28, -1, 0.04], [-0.1, -1, 0.3], 0],
 ];
 
+// Ausfallschritt: s1 = rechter Fuß tritt vor (bis Ende Trefferfenster), s2 = linker Fuß wird nachgezogen.
+// Der rechte Fuß tritt (1 + STEP_X) × lunge vor, der Körper folgt lunge im Schlag und STEP_X × lunge beim Nachziehen.
+const STEP_X = 0.45;
+function stepK(A, t) {
+  const a0 = A.act[0] - 0.1, a1 = A.act[1], b0 = A.act[1] + 0.04, b1 = A.T - 0.04;
+  return { s1: smooth((t - a0) / (a1 - a0)), s2: smooth((t - b0) / (b1 - b0)) };
+}
+
 const smooth = (t) => { const c = clamp(t, 0, 1); return c * c * (3 - 2 * c); };
 
 // ---------- Knochen-Werkzeuge ----------
@@ -71,6 +79,36 @@ function palmTo(fore, hand, wantW, k) {
     qC.setFromAxisAngle(axis, ang * part * k).multiply(wq);
     bone.quaternion.copy(pq.invert().multiply(qC));
   }
+}
+
+/**
+ * Bein auf einen Fußpunkt (Welt) ausrichten: Zwei-Knochen-Lösung, Knie zeigt nach vorn.
+ * Ist der Punkt zu weit weg, rutscht er waagerecht zur Hüfte (Bein ganz gestreckt).
+ */
+const vH = new THREE.Vector3(), vK = new THREE.Vector3(), vF = new THREE.Vector3(), vT = new THREE.Vector3(), vP = new THREE.Vector3();
+function legIK(up, low, foot, target, w) {
+  if (w <= 0.001) return;
+  up.updateWorldMatrix(true, true);
+  up.getWorldPosition(vH); low.getWorldPosition(vK); foot.getWorldPosition(vF);
+  const a = vH.distanceTo(vK), b = vK.distanceTo(vF);
+  vT.copy(target);
+  if (vT.y < vF.y - 0.05) vT.y = vF.y - 0.05;
+  let d = vT.distanceTo(vH);
+  const max = (a + b) * 0.995;
+  if (d > max) { // waagerecht zur Hüfte ziehen
+    const dy = vT.y - vH.y, hx = vT.x - vH.x, hz = vT.z - vH.z, hl = Math.hypot(hx, hz);
+    const nh = Math.sqrt(Math.max(0, max * max - dy * dy));
+    if (hl > 1e-4) { vT.x = vH.x + hx / hl * nh; vT.z = vH.z + hz / hl * nh; }
+    d = vT.distanceTo(vH);
+  }
+  const u = vP.subVectors(vT, vH).normalize();
+  const cosA = Math.min(1, Math.max(-1, (a * a + d * d - b * b) / (2 * a * d)));
+  const pole = bodyDir(0, 0.15, 1, vA); pole.addScaledVector(u, -pole.dot(u)).normalize();
+  const knee = vK.copy(vH).addScaledVector(u, a * cosA).addScaledVector(pole, a * Math.sqrt(1 - cosA * cosA));
+  aim(up, low, vB.subVectors(knee, vH).normalize(), w);
+  up.updateWorldMatrix(false, true);
+  low.getWorldPosition(vK);
+  aim(low, foot, vB.subVectors(vT, vK).normalize(), w);
 }
 
 /** Knochen um eine Achse im Körper drehen */
@@ -291,10 +329,13 @@ export class Player {
       const at = this.atk, A = at.a;
       at.t += dt;
       // Ausfallschritt im Schlag, sonst stehen bleiben
-      const lu = at.t > A.act[0] - 0.08 && at.t < A.act[1] ? A.lunge / (A.act[1] - A.act[0] + 0.08) : 0;
-      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-      this.vel.x = lerp(this.vel.x, fx * lu, damp(lu ? 30 : 14, dt));
-      this.vel.y = lerp(this.vel.y, fz * lu, damp(lu ? 30 : 14, dt));
+      // genau so weit wie der Fuß vortritt (gleiche Kurve wie in animateRig), sonst rutschen die Füße
+      const k = stepK(A, at.t);
+      if (at.t >= A.act[0] - 0.1 && !at.p0) at.p0 = { x: this.pos.x, z: this.pos.z, fx: Math.sin(this.yaw), fz: Math.cos(this.yaw) };
+      if (at.p0 && dt > 0) {
+        const s = (k.s1 + STEP_X * k.s2) * A.lunge; // Ausfallschritt, beim Nachziehen noch ein Stück
+        this.vel.set((at.p0.x + at.p0.fx * s - this.pos.x) / dt, (at.p0.z + at.p0.fz * s - this.pos.z) / dt);
+      } else this.vel.multiplyScalar(Math.exp(-14 * dt));
       // Ausrichten nur am Anfang (zum Ziel oder in Stick-Richtung)
       if (at.t < A.act[0] && at.face !== null) this.yaw += angDiff(this.yaw, at.face) * damp(25, dt);
       if (lockTarget && at.t < A.act[0]) at.face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
@@ -422,6 +463,13 @@ export class Player {
       y = CENTER - Math.sin(clamp(k, 0, 1) * Math.PI) * 0.42;
       tuck = Math.sin(clamp(k / 0.88, 0, 1) * Math.PI);
     }
+    // Ausfallschritt: Fortschritt Vortreten (s1) und Nachziehen (s2), Hüfte geht dabei runter
+    let s1 = 0, s2 = 0;
+    const at = this.state === 'attack' ? this.atk : null;
+    if (at) {
+      const A = at.a; ({ s1, s2 } = stepK(A, at.t));
+      y -= (A.drop || 0) * Math.sin(Math.min(1, s1) * Math.PI / 2) * (1 - s2);
+    }
     let hurtK = 0;
     if (this.state === 'hurt') { hurtK = Math.sin(clamp(this.t / 0.42, 0, 1) * Math.PI); rx = -0.18 * hurtK; }
     if (this.state === 'dead') { const f = smooth(this.t / 0.9); rx = -f * 1.45; y = lerp(CENTER, 0.3, f); hurtK = 1 - f; }
@@ -476,7 +524,7 @@ export class Player {
       let w;
       if (this.state === 'attack') { attackPose(this.atk.a, this.atk.t, P); w = smooth(this.atk.t / 0.06); }
       else { P.arm = READY_POSE.arm.slice(); P.fore = READY_POSE.fore.slice(); P.blade = READY_POSE.blade.slice(); P.tw = 0; P.ln = 0; w = (1 - tuck) * (0.6 + 0.4 * still); }
-      bend(R.Spine1, AY, P.tw * 0.5 * w); bend(R.Spine2, AY, P.tw * 0.5 * w);
+      bend(R.Spine, AY, P.tw * 0.25 * w); bend(R.Spine1, AY, P.tw * 0.4 * w); bend(R.Spine2, AY, P.tw * 0.4 * w);
       bend(R.Spine1, AX, P.ln * 0.5 * w); bend(R.Spine2, AX, P.ln * 0.4 * w);
       aim(R.RightArm, R.RightForeArm, bodyDir(P.arm[0], P.arm[1], P.arm[2], vB), w);
       aim(R.RightForeArm, R.RightHand, bodyDir(P.fore[0], P.fore[1], P.fore[2], vB), w);
@@ -491,6 +539,18 @@ export class Player {
       bend(R.LeftUpLeg, AX, -0.08 * still); bend(R.RightUpLeg, AX, -0.08 * still);
       bend(R.LeftLeg, AX, 0.14 * still); bend(R.RightLeg, AX, 0.14 * still);
       bend(R.LeftUpLeg, AZ, -0.05 * still); bend(R.RightUpLeg, AZ, 0.05 * still);
+    }
+    // Füße beim Angriff fest auf dem Boden: rechter Fuß tritt vor, linker bleibt stehen und kommt danach nach
+    if (at && at.t >= at.a.act[0] - 0.1) {
+      R.LeftFoot.getWorldPosition(vC); R.RightFoot.getWorldPosition(vD); // natürliche Lage in diesem Bild
+      if (!at.L0) { at.L0 = vC.clone(); at.R0 = vD.clone(); at.fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
+      const A = at.a;
+      const tR = vE.copy(at.R0).addScaledVector(at.fwd, A.lunge * (1 + STEP_X) * s1); tR.y += Math.sin(s1 * Math.PI) * 0.13;
+      tR.lerp(vD, s2);
+      const tL = vC.clone().copy(at.L0).lerp(vC, s2); tL.y += Math.sin(s2 * Math.PI) * 0.1;
+      const w = smooth((at.t - (A.act[0] - 0.1)) / 0.05) * (1 - smooth((at.t - (A.T - 0.05)) / 0.05));
+      legIK(R.RightUpLeg, R.RightLeg, R.RightFoot, tR, w);
+      legIK(R.LeftUpLeg, R.LeftLeg, R.LeftFoot, tL, w);
     }
     // Rolle: Knie zur Brust, Arme an den Körper
     if (tuck > 0.001) {
@@ -521,7 +581,7 @@ export class Player {
       this.sword.quaternion.copy(this.sheath.quaternion);
     }
     // Schwungspur
-    const at = this.atk;
+    // (at = laufender Angriff, oben gesetzt)
     const trailOn = this.state === 'attack' && at.t > at.a.act[0] - 0.05 && at.t < at.a.act[1] + 0.05;
     vC.copy(this.sword.position).addScaledVector(this.bladeD, 0.25);
     vB.copy(this.sword.position).addScaledVector(this.bladeD, BLADE_L + 0.015);
