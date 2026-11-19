@@ -16,7 +16,8 @@
 ## Technik (Stand Schritt 1)
 - Three.js 0.170 per Import-Map vom CDN, Code als ES-Module in `src/`, kein Build-Schritt fürs Spielen.
 - `src/main.js` – Renderer, Zustände (title/play/pause), HUD, Begleitlicht `fill` (Kameraseite), Spielschleife; gezeichnet wird über `bildfilter.js`.
-- `src/bildfilter.js` – `makeComposer`: Bloom (Feuer, Glut), Farbstimmung, Vignette, Filmkorn (HalfFloat + 4× MSAA).
+- `src/bildfilter.js` – `makeComposer(…, {ao})`: Umgebungsverdeckung GTAO (nur PC; Sprites, Durchsichtiges und Umrisse werden dafür
+  ausgeblendet), Bloom (Feuer, Glut), Farbstimmung (Schatten kühl, Licht warm), Vignette, Filmkorn (HalfFloat + 4× MSAA).
 - `src/input.js` – `poll(dt)` jedes Bild → `inp` (Bewegung, Kamera, Ereignisse). Controller: B tippen = Rolle,
   B halten (> 0,28 s) = Rennen, R3 Ziel, rechten Stick schnippen = Ziel wechseln, Start Pause. Tastatur/Maus als Ersatz.
   Achtung bei Tasten-Flanken: alten Stand merken, bevor `prev` überschrieben wird.
@@ -63,13 +64,18 @@
 - `src/world.js` – Kreuzung der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.
   **Alle festen Teile werden am Ende nach Material zusammengefasst** (`mergeStatic`, behält Vertex-Farben; `userData.noMerge` = auslassen).
-- `src/gebaeude.js` – `building(scene, x, z, w, d, Stockwerke, Straßenseite)`: Fassaden aus Fensterfeldern eines Atlas (4×4,
-  Reihe 3 = Erdgeschoss), Helligkeit per Vertex-Farbe, Gesimse, Fensterbänke, Ladenschilder, Markisen, Balkone, Feuerleitern,
+- `src/gebaeude.js` – `building(scene, x, z, w, d, Stockwerke, Straßenseite)` (Stufe 2): Stile `STYLES` (Ziegel, Klinker, Putz, Gelb,
+  Beton, Grün; reihum gemischt), Mauern mit Relief (`wallMaterialTex`: Farbe + Normal-Map, 1 Kachel = 2 m), **Fenster als echte
+  Nischen** (`Face.hole`: Laibung 0,22 m, innen dunkler, dahinter Bild aus `windowAtlasTex`), Rahmen + Sprossen, Fensterbank,
+  Sturz oder Putzfaschen mit Schlussstein, Ladenfronten (Nischen mit `shopAtlasTex`, Pfeiler, Schildband), Sockel, Gesimse,
+  Ecksteine. Geometrie wird je Material in `Acc` gesammelt (wenige Meshes). Dazu Schilder, Markisen, Balkone, Feuerleitern,
   Efeu, Kabel, Dachaufbauten oder abgebrochene Kante; Umriss als Kasten, Kollision + Kamera-Blocker.
 - `src/requisiten.js` – Autos (Profil ausgestanzt), Bus, Laternen, Strommasten + `wire`, Ampeln, Schilder, Container, Fässer,
   Reifen, Kisten, Sandsäcke, Zäune, Zelte, Einkaufswagen, Haltestelle, Pfützen (spiegeln den Himmel), Papier, Schutt, Platten,
   Feuertonnen (`fires`), Spieltisch (Rastpunkt), Übungspuppen (`targets`).
-- `src/texturen.js` – alle Canvas-Texturen (Asphalt, Gehweg, Fassaden-Atlas `FACADES`, Rost, Holz, Unkraut, Efeu, Schilder, Himmel, Skyline).
+- `src/kleinkram.js` – Schutthaufen `rubbleHeap` (Kieshügel, kantige Brocken `rockGeo`, Betonstücke, Ziegel, Eisen), verstreute
+  Steinchen `scatter` (InstancedMesh), Müllsäcke, kahle Bäume in Baumscheiben `deadTree`, Gestrüpp `bush`.
+- `src/texturen.js` – alle Canvas-Texturen (dazu `fbm`-Rauschen, `normalTex` Höhe→Relief, Asphalt-/Gehweg-Relief) (Asphalt, Gehweg, Fassaden-Atlas `FACADES`, Rost, Holz, Unkraut, Efeu, Schilder, Himmel, Skyline).
 - `src/toon.js` – Anime-Look: `toon(farbe)` (3 harte Lichtstufen), `outline(mesh)` (Umriss als vergrößerte Rückseite),
   `part(geo, farbe, linie)`, `skinOutline(skinnedMesh)` (Umriss für Figuren mit Skelett). Geometrien zentriert lassen.
 - `src/modelle.js` – `ladeModell(loader, url, …)`: in der Offline-Datei kommen alle `models/*.glb` eingebettet (Base64).

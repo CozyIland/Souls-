@@ -1,10 +1,11 @@
-// Häuser der toten Stadt: Fassaden aus Fensterfeldern (Atlas), Gesimse, Fensterbänke, Ladenschilder, Markisen,
-// Feuerleitern, Balkone, Efeu, Dachaufbauten und eingestürzte Kanten. Alles wird später nach Material zusammengefasst.
+// Häuser der toten Stadt (Stufe 2): Mauern mit Relief (Ziegel, Putz, Beton), Fenster als echte Nischen mit Laibung,
+// Rahmen, Sprossen, Fensterbank und Sturz; Ladenfronten mit Pfeilern und Schildband; Sockel, Gesimse, Ecklisenen,
+// Dachaufbauten oder abgebrochene Kanten, Feuerleitern, Balkone, Efeu, Kabel. Alles wird später nach Material zusammengefasst.
 import * as THREE from 'three';
 import { toon, outline } from './toon.js';
 import { seeded, TAU } from './util.js';
 import { block, blockers } from './kollision.js';
-import { FACADES, facadeAtlas, LIT_CELL, roofTex, signTex, ivyTex, rustTex } from './texturen.js';
+import { roofTex, signTex, ivyTex, rustTex, wallMaterialTex, windowAtlasTex, shopAtlasTex, WIN_KINDS, SHOP_KINDS } from './texturen.js';
 
 const R = seeded(77);
 const rr = (a, b) => a + R() * (b - a);
@@ -12,12 +13,26 @@ const ri = (a, b) => Math.floor(rr(a, b + 1));
 const pick = (a) => a[Math.floor(R() * a.length)];
 
 export const FLOOR = 3.3;
+let bIdx = 0;
+// Hausstile: Mauer, Zierteile (Gesimse, Fensterbänke), Fensterrahmen; surround = Putzfaschen um die Fenster
+const STYLES = [
+  { wall: 'ziegel', trim: 0xb8a68a, frame: 0x2a2420, surround: false, quoin: false },
+  { wall: 'klinker', trim: 0x9a9284, frame: 0x1e2226, surround: false, quoin: true },
+  { wall: 'putz', trim: 0xd8cbb4, frame: 0x3a2e26, surround: true, quoin: true },
+  { wall: 'gelb', trim: 0xe2d4ac, frame: 0x3c2a1c, surround: true, quoin: true },
+  { wall: 'beton', trim: 0x8a8880, frame: 0x26282a, surround: false, quoin: false },
+  { wall: 'gruen', trim: 0xd0d0c0, frame: 0x2a2a24, surround: true, quoin: false },
+];
 let M = null; // Materialien (beim ersten Haus erzeugt)
 function mats() {
   if (M) return M;
   M = {
-    fac: FACADES.map((f) => toon(0xffffff, { map: facadeAtlas(f), vertexColors: true })),
-    trim: FACADES.map((f) => toon(new THREE.Color(f.trim).multiplyScalar(0.85))),
+    wall: STYLES.map((st, i) => { const t = wallMaterialTex(st.wall, 3 + i * 17); const m = toon(0xffffff, { map: t.map, normalMap: t.normalMap, vertexColors: true }); m.normalScale.set(0.9, 0.9); return m; }),
+    trim: STYLES.map((st) => toon(st.trim, { vertexColors: true })),
+    frame: STYLES.map((st) => toon(st.frame, { vertexColors: true })),
+    win: toon(0xffffff, { map: windowAtlasTex(), vertexColors: true }),
+    shop: toon(0xffffff, { map: shopAtlasTex(), vertexColors: true }),
+    band: toon(0x2c2622, { vertexColors: true }),
     roof: toon(0xffffff, { map: roofTex() }),
     iron: toon(0x2a2624),
     rust: toon(0xffffff, { map: rustTex('#4a4440') }),
@@ -29,7 +44,6 @@ function mats() {
     line: new THREE.MeshBasicMaterial({ color: 0x120a08, side: THREE.BackSide }),
     awn: [0x6a2a24, 0x2a4a3a, 0x5a4a2a, 0x2a3450].map((c) => toon(0xffffff, { map: rustTex('#' + new THREE.Color(c).getHexString()), side: THREE.DoubleSide })),
     sign: [],
-    glow: new THREE.MeshBasicMaterial({ color: 0xffb060 }),
   };
   const SHOPS = [['APOTHEKE', '#2a5a3a', '#e8e0c8'], ['KIOSK', '#7a2a20', '#f0d890'], ['BÄCKEREI', '#5a3a20', '#f0e0c0'], ['PFANDHAUS', '#1e2a3a', '#d8b04a'],
     ['HOTEL ASTORIA', '#3a1a28', '#e6c070'], ['FRISEUR', '#2a3a4a', '#e8e8e0'], ['SPIELHALLE', '#4a1a3a', '#f0c040'], ['WÄSCHEREI', '#2a4a4a', '#f0f0e0'],
@@ -52,38 +66,158 @@ function cyl(parent, mat, r, h, x, y, z, seg = 8, rx = 0, rz = 0) {
   parent.add(m); return m;
 }
 
-/**
- * Eine Fassade als Gitter aus Fensterfeldern.
- * Ecken: (x0,z0) → (x1,z1) entlang der Wand, Normale zeigt nach außen; Höhe = floors × FLOOR.
- */
-function wallGeo(x0, z0, x1, z1, floors, shopRow) {
-  const len = Math.hypot(x1 - x0, z1 - z0), bays = Math.max(1, Math.round(len / 3));
-  const pos = [], uv = [], col = [], nor = [];
-  const nx = (z1 - z0) / len, nz = -(x1 - x0) / len;
-  const e = 0.003;
-  for (let f = 0; f < floors; f++) for (let b = 0; b < bays; b++) {
-    const ax = x0 + (x1 - x0) * (b / bays), az = z0 + (z1 - z0) * (b / bays);
-    const bx = x0 + (x1 - x0) * ((b + 1) / bays), bz = z0 + (z1 - z0) * ((b + 1) / bays);
-    const y0 = f * FLOOR, y1 = y0 + FLOOR;
-    let cell;
-    if (f === 0) cell = shopRow ? 12 + ri(0, 3) : (R() < 0.5 ? 12 + ri(0, 3) : ri(0, 11));
-    else { cell = ri(0, 11); if (cell === LIT_CELL && R() < 0.7) cell = 0; }
-    const c = cell % 4, r = Math.floor(cell / 4);
-    const u0 = c / 4 + e, u1 = (c + 1) / 4 - e, v1 = 1 - r / 4 - e, v0 = 1 - (r + 1) / 4 + e;
-    // Helligkeit: unten Ruß, oben Regenschlieren, jedes Feld etwas anders
-    const k = rr(0.82, 1.05), kb = k * (f === 0 ? 0.8 : 0.9 + Math.min(1, f / 3) * 0.1), kt = k * (f === floors - 1 ? 0.82 : 1);
-    const quad = [[ax, y0, az, u0, v0, kb], [bx, y0, bz, u1, v0, kb], [bx, y1, bz, u1, v1, kt], [ax, y1, az, u0, v1, kt]];
+// ---------- Geometrie-Sammler (eine Geometrie pro Material und Haus) ----------
+const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tN = new THREE.Vector3();
+class Acc {
+  constructor() { this.p = []; this.n = []; this.u = []; this.c = []; }
+  /** Viereck a-b-c-d (Arrays [x,y,z]), Normale nrm (wird automatisch richtig herum gelegt), uv [[u,v]×4], Helligkeit k */
+  quad(a, b, c, d, nrm, uv, k) {
+    tA.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]); tB.set(c[0] - a[0], c[1] - a[1], c[2] - a[2]); tN.crossVectors(tA, tB);
+    let P = [a, b, c, d], U = uv;
+    if (tN.dot(nrm) < 0) { P = [a, d, c, b]; U = [uv[0], uv[3], uv[2], uv[1]]; }
+    const kk = Array.isArray(k) ? k : [k, k, k, k];
     for (const i of [0, 1, 2, 0, 2, 3]) {
-      const q = quad[i];
-      pos.push(q[0], q[1], q[2]); uv.push(q[3], q[4]); col.push(q[5], q[5] * 0.97, q[5] * 0.94); nor.push(nx, 0, nz);
+      this.p.push(P[i][0], P[i][1], P[i][2]); this.n.push(nrm.x, nrm.y, nrm.z); this.u.push(U[i][0], U[i][1]);
+      const q = kk[i]; this.c.push(q, q * 0.97, q * 0.94);
     }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  return { g, bays };
+  geo() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.u, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    return g;
+  }
+}
+
+/** Ein Wandabschnitt im Wand-Raum: Punkt(s, y, tiefe) = O + U·s + Y·y + N·tiefe */
+class Face {
+  constructor(O, U, N, L, acc) { this.O = O; this.U = U; this.N = N; this.L = L; this.A = acc; this.uo = rr(0, 2); }
+  P(s, y, dz) { return [this.O.x + this.U.x * s + this.N.x * dz, y, this.O.z + this.U.z * s + this.N.z * dz]; }
+  /** Mauerstück an der Oberfläche */
+  wall(s0, s1, y0, y1, kf) {
+    if (s1 - s0 < 1e-3 || y1 - y0 < 1e-3) return;
+    const u0 = (s0 + this.uo) / 2, u1 = (s1 + this.uo) / 2, v0 = y0 / 2, v1 = y1 / 2;
+    this.A.wall.quad(this.P(s0, y0, 0), this.P(s1, y0, 0), this.P(s1, y1, 0), this.P(s0, y1, 0), this.N, [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], [kf(y0), kf(y0), kf(y1), kf(y1)]);
+  }
+  /** Nische (Laibung) mit Tiefe D, innen dunkler; dahinter das Bild aus dem Atlas */
+  hole(s0, s1, y0, y1, D, paneAcc, cell, k) {
+    const a = this.A.wall, U = this.U, N = this.N, ny = new THREE.Vector3(0, 1, 0);
+    const kd = k * 0.45; // tief in der Nische dunkel (Umgebungsverdeckung)
+    const uv = (p, q) => [[p, 0], [p + D / 2, 0], [p + D / 2, q], [p, q]];
+    a.quad(this.P(s0, y0, 0), this.P(s0, y0, -D), this.P(s0, y1, -D), this.P(s0, y1, 0), U, [[0, y0 / 2], [D / 2, y0 / 2], [D / 2, y1 / 2], [0, y1 / 2]], [k * 0.8, kd, kd, k * 0.8]);
+    a.quad(this.P(s1, y0, 0), this.P(s1, y0, -D), this.P(s1, y1, -D), this.P(s1, y1, 0), U.clone().negate(), [[0, y0 / 2], [D / 2, y0 / 2], [D / 2, y1 / 2], [0, y1 / 2]], [k * 0.8, kd, kd, k * 0.8]);
+    a.quad(this.P(s0, y1, 0), this.P(s1, y1, 0), this.P(s1, y1, -D), this.P(s0, y1, -D), ny.clone().negate(), [[s0 / 2, 0], [s1 / 2, 0], [s1 / 2, D / 2], [s0 / 2, D / 2]], [k * 0.6, k * 0.6, kd * 0.8, kd * 0.8]);
+    a.quad(this.P(s0, y0, 0), this.P(s1, y0, 0), this.P(s1, y0, -D), this.P(s0, y0, -D), ny, [[s0 / 2, 0], [s1 / 2, 0], [s1 / 2, D / 2], [s0 / 2, D / 2]], [k, k, kd, kd]);
+    if (paneAcc) paneAcc.quad(this.P(s0, y0, -D), this.P(s1, y0, -D), this.P(s1, y1, -D), this.P(s0, y1, -D), N, cell, [0.9, 0.9, 1, 1]);
+    void uv;
+  }
+  /** Kasten an der Wand: Mitte (s, y), Breite w, Höhe h, steht t vor (dz von 0 bis t), Helligkeit k */
+  box(acc, s, y, w, h, t, k, dz0 = 0) {
+    const U = this.U, N = this.N, Y = new THREE.Vector3(0, 1, 0);
+    const s0 = s - w / 2, s1 = s + w / 2, y0 = y - h / 2, y1 = y + h / 2, z0 = dz0, z1 = dz0 + t;
+    const uv = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    acc.quad(this.P(s0, y0, z1), this.P(s1, y0, z1), this.P(s1, y1, z1), this.P(s0, y1, z1), N, uv, k);
+    acc.quad(this.P(s0, y1, z0), this.P(s1, y1, z0), this.P(s1, y1, z1), this.P(s0, y1, z1), Y, uv, k * 1.05);
+    acc.quad(this.P(s0, y0, z0), this.P(s1, y0, z0), this.P(s1, y0, z1), this.P(s0, y0, z1), Y.clone().negate(), uv, k * 0.6);
+    acc.quad(this.P(s0, y0, z0), this.P(s0, y1, z0), this.P(s0, y1, z1), this.P(s0, y0, z1), U.clone().negate(), uv, k * 0.8);
+    acc.quad(this.P(s1, y0, z0), this.P(s1, y1, z0), this.P(s1, y1, z1), this.P(s1, y0, z1), U, uv, k * 0.8);
+  }
+}
+
+const WIN_W = [0.22, 0.2, 0.15, 0.12, 0.05, 0.13, 0.05, 0.08]; // Häufigkeit der Fensterarten (WIN_KINDS)
+function winCell() {
+  let x = R(), i = 0; while (i < WIN_W.length - 1 && x > WIN_W[i]) { x -= WIN_W[i]; i++; }
+  const c = i % 4, r = Math.floor(i / 4), e = 0.004;
+  const u0 = c / 4 + e, u1 = (c + 1) / 4 - e, v1 = 1 - r / 2 - e, v0 = 1 - (r + 1) / 2 + e;
+  return { kind: WIN_KINDS[i], uv: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]] };
+}
+function shopCell(kind) {
+  const i = kind != null ? kind : ri(0, 3), e = 0.004, u0 = i / 4 + e, u1 = (i + 1) / 4 - e;
+  return { kind: SHOP_KINDS[i], uv: [[u0, e], [u1, e], [u1, 1 - e], [u0, 1 - e]] };
+}
+
+/**
+ * Eine Hausseite mit allen Fenstern, Ladenfront, Gesimsen. shop = Erdgeschoss mit Ladenfront (Straßenseite).
+ * Gibt Lage der Fensterbänke zurück (für Feuerleitern/Balkone nicht nötig, aber praktisch).
+ */
+function facade(F, floors, st, shop) {
+  const A = F.A, L = F.L, h = floors * FLOOR;
+  const bays = Math.max(1, Math.round(L / 3)), bw = L / bays;
+  // Helligkeit nach Höhe: unten Ruß, oben Regenschlieren; je Seite leicht anders
+  const kb = rr(0.85, 1.02);
+  const kf = (y) => kb * (0.72 + 0.28 * Math.min(1, y / 4)) * (y > h - 1 ? 0.9 : 1);
+  for (let f = 0; f < floors; f++) {
+    const fy0 = f * FLOOR, fy1 = fy0 + FLOOR;
+    const holes = [];
+    for (let b = 0; b < bays; b++) {
+      const c = (b + 0.5) * bw;
+      if (f === 0 && shop) {
+        const s0 = b * bw + 0.32, s1 = (b + 1) * bw - 0.32;
+        holes.push({ s0, s1, y0: 0.32, y1: 2.6, D: 0.32, shop: true });
+      } else if (f === 0) {
+        if (R() < 0.35) continue; // geschlossene Wand
+        const ww = Math.min(1.1, bw * 0.4);
+        holes.push({ s0: c - ww / 2, s1: c + ww / 2, y0: 1.15, y1: 2.55, D: 0.22 });
+      } else {
+        if (!shop && R() < 0.08) continue; // zugemauert
+        const ww = Math.min(1.25, bw * 0.44), wh = 1.6;
+        holes.push({ s0: c - ww / 2, s1: c + ww / 2, y0: fy0 + 0.85, y1: fy0 + 0.85 + wh, D: 0.22 });
+      }
+    }
+    // Mauer um die Öffnungen
+    let s = 0;
+    for (const o of holes) {
+      F.wall(s, o.s0, fy0, fy1, kf);
+      F.wall(o.s0, o.s1, fy0, o.y0, kf);
+      F.wall(o.s0, o.s1, o.y1, fy1, kf);
+      s = o.s1;
+    }
+    F.wall(s, L, fy0, fy1, kf);
+    // Öffnungen
+    for (const o of holes) {
+      const k = kf((o.y0 + o.y1) / 2);
+      if (o.shop) {
+        const cell = shopCell();
+        F.hole(o.s0, o.s1, o.y0, o.y1, o.D, A.shop, cell.uv, k);
+        if (cell.kind === 'schaufenster') { // Schaufensterrahmen
+          F.box(A.frame, (o.s0 + o.s1) / 2, o.y1 - 0.05, o.s1 - o.s0, 0.1, 0.06, 0.8, -o.D + 0.02);
+          F.box(A.frame, (o.s0 + o.s1) / 2, (o.y0 + o.y1) / 2, 0.08, o.y1 - o.y0, 0.06, 0.8, -o.D + 0.02);
+        }
+      } else {
+        const cell = winCell();
+        F.hole(o.s0, o.s1, o.y0, o.y1, o.D, A.win, cell.uv, k);
+        const ww = o.s1 - o.s0, wh = o.y1 - o.y0, cx = (o.s0 + o.s1) / 2, cy = (o.y0 + o.y1) / 2, dz = -o.D + 0.02;
+        // Fensterrahmen in der Nische (bei kaputten/leeren Fenstern nur teilweise)
+        if (cell.kind !== 'leer') {
+          const fr = 0.06;
+          F.box(A.frame, cx, o.y1 - fr / 2, ww, fr, 0.05, 0.9, dz); F.box(A.frame, cx, o.y0 + fr / 2, ww, fr, 0.05, 0.9, dz);
+          F.box(A.frame, o.s0 + fr / 2, cy, fr, wh, 0.05, 0.9, dz); F.box(A.frame, o.s1 - fr / 2, cy, fr, wh, 0.05, 0.9, dz);
+          if (cell.kind !== 'kaputt' || R() < 0.5) F.box(A.frame, cx, cy, 0.045, wh, 0.04, 0.9, dz);
+          F.box(A.frame, cx, o.y0 + wh * 0.66, ww, 0.045, 0.04, 0.9, dz);
+        }
+        // Fensterbank und Sturz bzw. Putzfaschen
+        F.box(A.trim, cx, o.y0 - 0.04, ww + 0.22, 0.09, 0.14, 0.95);
+        if (st.surround) {
+          F.box(A.trim, cx, o.y1 + 0.08, ww + 0.28, 0.16, 0.05, 1);
+          F.box(A.trim, o.s0 - 0.07, cy, 0.12, wh, 0.04, 0.95); F.box(A.trim, o.s1 + 0.07, cy, 0.12, wh, 0.04, 0.95);
+          F.box(A.trim, cx, o.y1 + 0.22, 0.16, 0.14, 0.07, 1); // Schlussstein
+        } else F.box(A.trim, cx, o.y1 + 0.09, ww + 0.16, 0.18, 0.04, 0.9);
+      }
+    }
+    // Ladenpfeiler und Schildband
+    if (f === 0 && shop) {
+      for (let b = 0; b <= bays; b++) F.box(A.trim, b * bw, 1.4, 0.4, 2.8, 0.1, 0.8);
+      F.box(A.band, L / 2, 2.98, L + 0.1, 0.56, 0.16, 1);
+    }
+    // Gesims zwischen den Stockwerken
+    if (f > 0 && (st.surround || f === 1)) F.box(A.trim, L / 2, fy0 + 0.02, L + 0.06, 0.2, 0.12, 0.9);
+  }
+  // Sockel und Ecklisenen
+  F.box(A.trim, L / 2, 0.17, L + 0.06, 0.34, 0.05, 0.65);
+  if (st.quoin) for (const s of [0.18, L - 0.18]) for (let y = 0.6; y < h - 0.4; y += 0.6) F.box(A.trim, s, y, y / 0.6 % 2 < 1 ? 0.36 : 0.26, 0.26, 0.04, 0.85);
+  return { bays, bw };
 }
 
 /** Feuerleiter an einer Wand (lokal: Wand liegt bei z=0, außen = +z) */
@@ -157,36 +291,37 @@ function brokenTop(g, w, d, h, m, f) {
  */
 export function building(scene, x, z, w, d, floors, front) {
   const m = mats();
-  const fi = ri(0, FACADES.length - 1), f = FACADES[fi], fac = m.fac[fi], trim = m.trim[fi];
+  const si = (bIdx++ * 5 + (R() < 0.3 ? 1 : 0)) % STYLES.length, st = STYLES[si]; // Stile reihum gemischt, damit nicht alles gleich aussieht
   const h = floors * FLOOR;
   const g = new THREE.Group(); g.position.set(x, 0, z); scene.add(g);
   const hw = w / 2, hd = d / 2;
-  // Wände: (Ecke a → Ecke b, gegen den Uhrzeigersinn von oben gesehen → Normale außen)
-  const walls = {
-    'z+': [-hw, hd, hw, hd], 'x+': [hw, hd, hw, -hd], 'z-': [hw, -hd, -hw, -hd], 'x-': [-hw, -hd, -hw, hd],
+  const A = { wall: new Acc(), win: new Acc(), shop: new Acc(), trim: new Acc(), frame: new Acc(), band: new Acc() };
+  // Seiten: Ecke O, Richtung U entlang der Wand, Normale N nach außen
+  const sides = {
+    'z+': [new THREE.Vector3(-hw, 0, hd), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), w],
+    'x+': [new THREE.Vector3(hw, 0, hd), new THREE.Vector3(0, 0, -1), new THREE.Vector3(1, 0, 0), d],
+    'z-': [new THREE.Vector3(hw, 0, -hd), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, -1), w],
+    'x-': [new THREE.Vector3(-hw, 0, -hd), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0), d],
   };
-  for (const k in walls) {
-    const [a, b, c, e] = walls[k];
-    const { g: geo } = wallGeo(a, b, c, e, floors, k === front);
-    const mesh = new THREE.Mesh(geo, fac); mesh.castShadow = true; mesh.receiveShadow = true; g.add(mesh);
+  let frontInfo = null;
+  for (const k in sides) {
+    const [O, U, N, L] = sides[k];
+    const info = facade(new Face(O, U, N, L, A), floors, st, k === front);
+    if (k === front) frontInfo = info;
   }
+  const add = (acc, mat) => { if (!acc.p.length) return; const me = new THREE.Mesh(acc.geo(), mat); me.castShadow = true; me.receiveShadow = true; g.add(me); };
+  add(A.wall, m.wall[si]); add(A.win, m.win); add(A.shop, m.shop); add(A.trim, m.trim[si]); add(A.frame, m.frame[si]); add(A.band, m.band);
   // Umriss als Kasten (Anime-Linie)
   const ol = new THREE.Mesh(BOX, m.line); ol.scale.set(w + 0.1, h + 0.05, d + 0.1); ol.position.y = h / 2; g.add(ol);
   // Dach
-  const roof = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m.roof); roof.rotation.x = -Math.PI / 2; roof.position.y = h - 0.02; roof.receiveShadow = true;
-  roof.material.map.repeat.set(1, 1); g.add(roof);
-  // Gesimse
-  const every = f.name === 'putz' || f.name === 'gelb';
-  for (let i = 1; i < floors; i++) {
-    if (!every && i !== 1) continue;
-    const y = i * FLOOR;
-    box(g, trim, w + 0.24, 0.2, d + 0.24, 0, y, 0);
-  }
+  const roof = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m.roof); roof.rotation.x = -Math.PI / 2; roof.position.y = h - 0.02; roof.receiveShadow = true; g.add(roof);
+  const trimM = toon(st.trim);
   const ruined = R() < 0.3;
-  if (ruined) brokenTop(g, w, d, h, m, f);
+  if (ruined) brokenTop(g, w, d, h, m, st);
   else {
-    box(g, trim, w + 0.4, 0.32, d + 0.4, 0, h + 0.75, 0); // Abschlussgesims
-    for (const [bx, bz, bw, bd] of [[0, hd - 0.15, w, 0.3], [0, -hd + 0.15, w, 0.3], [hw - 0.15, 0, 0.3, d], [-hw + 0.15, 0, 0.3, d]]) box(g, trim, bw, 0.75, bd, bx, h + 0.37, bz);
+    box(g, trimM, w + 0.4, 0.32, d + 0.4, 0, h + 0.75, 0); // Abschlussgesims
+    box(g, trimM, w + 0.26, 0.14, d + 0.26, 0, h + 0.55, 0);
+    for (const [bx, bz, bw2, bd] of [[0, hd - 0.15, w, 0.3], [0, -hd + 0.15, w, 0.3], [hw - 0.15, 0, 0.3, d], [-hw + 0.15, 0, 0.3, d]]) box(g, m.concrete, bw2, 0.75, bd, bx, h + 0.37, bz);
     roofStuff(g, w, d, h, m);
   }
 
@@ -198,51 +333,45 @@ export function building(scene, x, z, w, d, floors, front) {
   else if (front === 'x+') { fr.position.set(hw, 0, 0); fr.rotation.y = Math.PI / 2; }
   else { fr.position.set(-hw, 0, 0); fr.rotation.y = -Math.PI / 2; }
   g.add(fr);
-  const bays = Math.max(1, Math.round(fw / 3)), bw = fw / bays;
-  // Fensterbänke (Stockwerke 1+)
-  for (let fl = 1; fl < floors; fl++) for (let b = 0; b < bays; b++) {
-    const bx = -fw / 2 + (b + 0.5) * bw;
-    box(fr, trim, bw * 0.55, 0.1, 0.16, bx, fl * FLOOR + FLOOR * 0.22, 0.08);
-  }
-  // Ladenschild + Markise
-  if (R() < 0.8) {
+  const { bays, bw } = frontInfo;
+  // Ladenschild auf dem Schildband
+  if (R() < 0.85) {
     const sw = Math.min(fw * 0.7, rr(4, 7.5));
-    const s = box(fr, m.sign[ri(0, m.sign.length - 1)], sw, 0.9, 0.12, rr(-fw / 2 + sw / 2 + 0.3, fw / 2 - sw / 2 - 0.3), FLOOR - 0.15, 0.1, 0, 0, rr(-0.04, 0.04));
-    s.material = s.material; outline(s, 0.02);
-    if (R() < 0.35) s.rotation.z = rr(-0.25, 0.25); // hängt schief
+    const s = box(fr, m.sign[ri(0, m.sign.length - 1)], sw, 0.5, 0.08, rr(-fw / 2 + sw / 2 + 0.3, fw / 2 - sw / 2 - 0.3), 2.98, 0.2, 0, 0, rr(-0.03, 0.03));
+    outline(s, 0.015);
+    if (R() < 0.3) s.rotation.z = rr(-0.22, 0.22); // hängt schief
   }
+  // Markise (zerrissen)
   if (R() < 0.5) {
     const aw = Math.min(fw * 0.6, rr(3, 6)), ax = rr(-fw / 2 + aw / 2, fw / 2 - aw / 2);
-    const aMat = pick(m.awn);
-    const a = new THREE.Mesh(new THREE.PlaneGeometry(aw, 1.4, 6, 2), aMat);
+    const a = new THREE.Mesh(new THREE.PlaneGeometry(aw, 1.4, 6, 2), pick(m.awn));
     const p = a.geometry.attributes.position;
-    for (let i = 0; i < p.count; i++) if (p.getY(i) < -0.2 && R() < 0.5) p.setY(i, p.getY(i) + rr(0, 0.4)); // zerrissen
-    a.position.set(ax, FLOOR * 0.8, 0.6); a.rotation.x = -1.0; a.castShadow = true; fr.add(a);
-    for (const s of [-1, 1]) box(fr, m.iron, 0.03, 0.03, 1.2, ax + s * aw / 2, FLOOR * 0.62, 0.6, -0.55);
+    for (let i = 0; i < p.count; i++) if (p.getY(i) < -0.2 && R() < 0.5) p.setY(i, p.getY(i) + rr(0, 0.4));
+    a.position.set(ax, 2.55, 0.75); a.rotation.x = -1.0; a.castShadow = true; fr.add(a);
+    for (const sd of [-1, 1]) box(fr, m.iron, 0.03, 0.03, 1.2, ax + sd * aw / 2, 2.35, 0.65, -0.55);
   }
-  // Balkone
+  // Balkone (vor einzelnen Fenstern)
   if (floors > 2 && R() < 0.4) for (let fl = 2; fl < floors; fl++) for (let b = 0; b < bays; b++) {
     if (R() < 0.55) continue;
-    const bg = new THREE.Group(); bg.position.set(-fw / 2 + (b + 0.5) * bw, fl * FLOOR, 0); fr.add(bg);
-    balcony(bg, m.iron, trim, bw * 0.8);
+    const bg = new THREE.Group(); bg.position.set(-fw / 2 + (b + 0.5) * bw, fl * FLOOR + 0.05, 0); fr.add(bg);
+    balcony(bg, m.iron, trimM, bw * 0.75);
   }
-  // Feuerleiter an der Seitenwand oder Front
+  // Feuerleiter
   if (floors > 2 && R() < 0.45) {
-    const fe = new THREE.Group(); fe.position.set(rr(-fw / 4, fw / 4), 0, 0); fr.add(fe);
+    const fe = new THREE.Group(); fe.position.set(rr(-fw / 4, fw / 4), 0, 0.02); fr.add(fe);
     fireEscape(fe, m.rust, Math.min(4, fw * 0.4), floors);
   }
   // Efeu von oben
   for (let i = 0; i < ri(0, 3); i++) {
     const ih = rr(4, Math.min(h, 12)), iw = rr(1.5, 3.5);
     const iv = new THREE.Mesh(new THREE.PlaneGeometry(iw, ih), m.ivy);
-    iv.position.set(rr(-fw / 2 + iw / 2, fw / 2 - iw / 2), h - ih / 2 + 0.3, 0.06); fr.add(iv);
+    iv.position.set(rr(-fw / 2 + iw / 2, fw / 2 - iw / 2), h - ih / 2 + 0.3, 0.16); fr.add(iv);
   }
   // Kabel quer über die Fassade
   if (R() < 0.6) {
-    const y = rr(FLOOR * 1.2, h - 1);
-    const pts = [];
-    for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push(new THREE.Vector3(-fw / 2 + t * fw, y - Math.sin(t * Math.PI) * rr(0.2, 0.6), 0.08)); }
-    const c = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.015, 4), m.iron); fr.add(c);
+    const y = rr(FLOOR * 1.2, h - 1), pts = [];
+    for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push(new THREE.Vector3(-fw / 2 + t * fw, y - Math.sin(t * Math.PI) * rr(0.2, 0.6), 0.18)); }
+    fr.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.015, 4), m.iron));
   }
 
   // Kollision und Kamera-Blocker

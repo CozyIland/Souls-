@@ -423,3 +423,223 @@ export function tarpTex(col) {
     g.fillStyle = 'rgba(0,0,0,0.15)'; for (let y = 0; y < h; y += 16) g.fillRect(0, y, w, 2);
   });
 }
+
+// =====================================================================================
+// Stufe 2: Texturen mit Relief (Normal-Maps) für Mauern, Fenster und Boden
+// =====================================================================================
+
+/** Wertrauschen (kachelbar), Größe n×n, Zellen c, mehrere Oktaven → Float32Array 0..1 */
+export function fbm(n, cells, oct = 4, seed = 1) {
+  const r = seeded(seed), out = new Float32Array(n * n);
+  let amp = 1, tot = 0;
+  for (let o = 0; o < oct; o++) {
+    const c = cells << o, g = new Float32Array(c * c);
+    for (let i = 0; i < g.length; i++) g[i] = r();
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const fx = (x / n) * c, fy = (y / n) * c, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const a = g[(y0 % c) * c + (x0 % c)], b = g[(y0 % c) * c + ((x0 + 1) % c)], d = g[((y0 + 1) % c) * c + (x0 % c)], e = g[((y0 + 1) % c) * c + ((x0 + 1) % c)];
+      out[y * n + x] += amp * (a + (b - a) * sx + (d - a) * sy + (a - b - d + e) * sx * sy);
+    }
+    tot += amp; amp *= 0.5;
+  }
+  for (let i = 0; i < out.length; i++) out[i] /= tot;
+  return out;
+}
+
+/** Höhenfeld (Float32, w×h, kachelbar) → Normal-Map-Textur */
+export function normalTex(hf, w, h, strength = 2, rep) {
+  return canvasTex(w, h, (g) => {
+    const img = g.createImageData(w, h), d = img.data;
+    const H = (x, y) => hf[((y + h) % h) * w + ((x + w) % w)];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const dx = (H(x + 1, y) - H(x - 1, y)) * strength, dy = (H(x, y + 1) - H(x, y - 1)) * strength;
+      const l = Math.hypot(dx, dy, 1), i = (y * w + x) * 4;
+      d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }, { linear: true, rep });
+}
+
+/** Höhenfeld aus einer Canvas-Zeichnung (Graustufen) holen */
+function heightOf(w, h, draw) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d'); draw(g, w, h);
+  const d = g.getImageData(0, 0, w, h).data, out = new Float32Array(w * h);
+  for (let i = 0; i < out.length; i++) out[i] = d[i * 4] / 255;
+  return out;
+}
+
+/**
+ * Mauer-Material je Stil (kachelbar, 1 Kachel = 2 × 2 m): Farbe + Relief.
+ * Stile: 'ziegel' (Ziegel mit Fugen), 'putz' (Putz mit Abplatzern), 'beton' (Platten), 'gelb' (Putz gelb), 'klinker' (dunkle Ziegel)
+ */
+export const WALLS = {
+  ziegel: { base: [128, 62, 46], brick: true },
+  klinker: { base: [92, 52, 44], brick: true },
+  putz: { base: [170, 152, 130], brick: false },
+  gelb: { base: [178, 146, 92], brick: false },
+  beton: { base: [128, 126, 120], panel: true },
+  gruen: { base: [112, 128, 112], brick: false },
+};
+export function wallMaterialTex(kind, seed = 3) {
+  const S = 512, st = WALLS[kind], r = seeded(seed);
+  const noise = fbm(S, 4, 5, seed), fine = fbm(S, 32, 3, seed + 7);
+  // Ziegelraster: 0,25 m × 0,0833 m → 64 × 21,3 px; wir nehmen 64 × 21 und 24 Reihen (= 504 px) + Rest Fuge
+  const BW = 64, BH = 512 / 24;
+  const hf = heightOf(S, S, (g) => {
+    g.fillStyle = '#808080'; g.fillRect(0, 0, S, S);
+    if (st.brick) {
+      g.fillStyle = '#303030'; g.fillRect(0, 0, S, S);
+      for (let row = 0; row < 24; row++) for (let c = -1; c < S / BW + 1; c++) {
+        const off = row % 2 ? BW / 2 : 0, v = 150 + Math.floor(r() * 70);
+        g.fillStyle = `rgb(${v},${v},${v})`;
+        g.fillRect(c * BW + off + 2, row * BH + 2, BW - 4, BH - 3);
+        if (r() < 0.15) { g.fillStyle = '#505050'; g.fillRect(c * BW + off + 2 + r() * 40, row * BH + 2, 10 + r() * 14, BH - 3); } // abgeplatzt
+      }
+    } else if (st.panel) {
+      for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) { g.fillStyle = '#909090'; g.fillRect(x * 256 + 3, y * 256 + 3, 250, 250); }
+      g.fillStyle = '#404040'; for (let i = 0; i < 2; i++) { g.fillRect(i * 256, 0, 4, S); g.fillRect(0, i * 256, S, 4); }
+      for (let i = 0; i < 300; i++) { g.fillStyle = '#505050'; g.beginPath(); g.arc(r() * S, r() * S, 1 + r() * 2.5, 0, TAU); g.fill(); } // Lunker
+    } else {
+      // Putz: Kellenschläge, Risse, Abplatzer
+      for (let i = 0; i < 9; i++) {
+        if (r() > 0.6) continue;
+        const x = r() * S, y = r() * S, rw = 30 + r() * 70, rh = 20 + r() * 50;
+        g.fillStyle = '#4a4a4a'; g.beginPath(); g.ellipse(x, y, rw, rh, r() * 3, 0, TAU); g.fill();
+        g.save(); g.beginPath(); g.ellipse(x, y, rw - 4, rh - 4, 0, 0, TAU); g.clip();
+        for (let row = 0; row < 40; row++) for (let c = 0; c < 10; c++) { const v = 90 + r() * 40; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(c * BW + (row % 2) * 32 - 64 + x % 64, row * BH + 2, BW - 4, BH - 3); }
+        g.restore();
+      }
+    }
+    // Risse
+    g.strokeStyle = '#202020'; g.lineCap = 'round';
+    for (let i = 0; i < 6; i++) { let x = r() * S, y = r() * S, a = r() * TAU; g.lineWidth = 1 + r() * 2; g.beginPath(); g.moveTo(x, y); for (let j = 0; j < 12; j++) { a += (r() - 0.5) * 1.2; x += Math.cos(a) * 9; y += Math.sin(a) * 9; g.lineTo(x, y); } g.stroke(); }
+  });
+  for (let i = 0; i < hf.length; i++) hf[i] = hf[i] * 0.85 + noise[i] * 0.08 + fine[i] * 0.07;
+  const map = canvasTex(S, S, (g) => {
+    const img = g.createImageData(S, S), d = img.data, [br, bg, bb] = st.base;
+    for (let i = 0; i < hf.length; i++) {
+      const h = hf[i], n = noise[i], f = fine[i];
+      let k = 0.72 + n * 0.45 + (f - 0.5) * 0.18;
+      let R = br * k, G = bg * k, B = bb * k;
+      if (st.brick && h < 0.33) { R = G = B = 150 * k; } // helle Fugen
+      if (!st.brick && !st.panel && h < 0.55 && h > 0.25) { R = 120 * k; G = 64 * k; B = 50 * k; } // Ziegel unter dem Putz
+      if (h < 0.2) { R *= 0.5; G *= 0.5; B *= 0.5; }
+      const dirt = Math.max(0, n - 0.55) * 1.2; // Flecken
+      R *= 1 - dirt * 0.5; G *= 1 - dirt * 0.45; B *= 1 - dirt * 0.4;
+      const j = i * 4; d[j] = R; d[j + 1] = G; d[j + 2] = B; d[j + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    // Schlieren (nach unten laufender Dreck)
+    for (let i = 0; i < 14; i++) {
+      const x = r() * S, gr = g.createLinearGradient(0, 0, 0, S);
+      gr.addColorStop(0, 'rgba(30,20,14,0.0)'); gr.addColorStop(0.3 + r() * 0.4, 'rgba(30,20,14,0.22)'); gr.addColorStop(1, 'rgba(30,20,14,0)');
+      g.fillStyle = gr; g.fillRect(x, 0, 4 + r() * 14, S);
+    }
+  });
+  return { map, normalMap: normalTex(hf, S, S, st.brick ? 6 : 3.5) };
+}
+
+/** Fenster-Atlas (was man in der Fensternische sieht): 4 × 2 Felder à 128 × 192 */
+export const WIN_KINDS = ['glas', 'kaputt', 'bretter', 'vorhang', 'licht', 'leer', 'blech', 'glas2'];
+export function windowAtlasTex() {
+  const CW = 128, CH = 192;
+  return canvasTex(CW * 4, CH * 2, (g) => {
+    WIN_KINDS.forEach((k, i) => {
+      const x = (i % 4) * CW, y = Math.floor(i / 4) * CH;
+      g.save(); g.beginPath(); g.rect(x, y, CW, CH); g.clip();
+      // Innenraum dunkel mit Andeutung von Raum
+      const gr = g.createLinearGradient(0, y, 0, y + CH);
+      if (k === 'licht') { gr.addColorStop(0, '#ffd88a'); gr.addColorStop(1, '#c0602a'); }
+      else { gr.addColorStop(0, '#20232a'); gr.addColorStop(0.6, '#121318'); gr.addColorStop(1, '#0a0909'); }
+      g.fillStyle = gr; g.fillRect(x, y, CW, CH);
+      if (k === 'leer' || k === 'kaputt') { g.fillStyle = 'rgba(60,50,44,0.6)'; g.fillRect(x + 10, y + CH * 0.62, CW * 0.5, CH * 0.38); g.fillRect(x + CW * 0.65, y + CH * 0.3, 18, CH * 0.7); } // Möbelreste
+      if (k === 'glas' || k === 'glas2' || k === 'vorhang') { // Spiegelung
+        g.fillStyle = 'rgba(220,160,120,0.20)'; g.beginPath(); g.moveTo(x, y + CH * 0.65); g.lineTo(x + CW * 0.75, y); g.lineTo(x + CW, y); g.lineTo(x + CW, y + CH * 0.08); g.lineTo(x, y + CH * 0.95); g.fill();
+        if (k === 'glas2') { g.fillStyle = 'rgba(200,180,160,0.25)'; g.fillRect(x, y, CW, CH); }
+      }
+      if (k === 'vorhang' || k === 'licht') { // zerrissene Vorhänge
+        g.fillStyle = k === 'licht' ? 'rgba(130,40,24,0.75)' : '#4a3a44';
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + CW * 0.4, y); g.lineTo(x + CW * 0.28, y + CH * 0.55); g.lineTo(x + CW * 0.1, y + CH * 0.85); g.lineTo(x, y + CH); g.fill();
+        g.beginPath(); g.moveTo(x + CW, y); g.lineTo(x + CW * 0.72, y); g.lineTo(x + CW * 0.85, y + CH * 0.4); g.lineTo(x + CW, y + CH * 0.5); g.fill();
+      }
+      if (k === 'kaputt') { // Scherben am Rand
+        g.fillStyle = 'rgba(190,170,160,0.6)';
+        for (let s = 0; s < 7; s++) { const ex = x + (R() < 0.5 ? 0 : CW), ey = y + rr(0, CH); g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex + (ex === x ? 1 : -1) * rr(10, 36), ey + rr(-14, 14)); g.lineTo(ex, ey + rr(10, 30)); g.fill(); }
+      }
+      if (k === 'bretter') {
+        for (let b = 0; b < 5; b++) {
+          g.save(); g.translate(x + CW / 2, y + CH * (0.12 + b * 0.19)); g.rotate(rr(-0.2, 0.2));
+          const v = ri(88, 128); g.fillStyle = `rgb(${v},${v * 0.7 | 0},${v * 0.46 | 0})`; g.fillRect(-CW * 0.7, -12, CW * 1.4, 24);
+          g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-CW * 0.7, 9, CW * 1.4, 3); g.fillStyle = 'rgba(255,230,190,0.15)'; g.fillRect(-CW * 0.7, -12, CW * 1.4, 3);
+          g.fillStyle = '#1a1a1a'; g.fillRect(-CW * 0.6, -2, 4, 4); g.fillRect(CW * 0.55, -2, 4, 4);
+          g.restore();
+        }
+      }
+      if (k === 'blech') { // Wellblech, rostig
+        for (let s = 0; s < CW; s += 8) { const v = 110 + (s % 16 ? 20 : 0); g.fillStyle = `rgb(${v},${v - 8},${v - 18})`; g.fillRect(x + s, y, 8, CH); }
+        for (let s = 0; s < 8; s++) blot(g, x + rr(0, CW), y + rr(0, CH), rr(10, 30), '120,54,20', 0.6);
+      }
+      g.restore();
+    });
+  }, { clamp: true });
+}
+
+/** Ladenfront-Atlas: 4 Felder à 256 × 256 (Rollladen mit Graffiti, kaputtes Schaufenster, Tür mit Brettern, dunkle Öffnung) */
+export const SHOP_KINDS = ['rollo', 'schaufenster', 'tuer', 'offen'];
+export function shopAtlasTex() {
+  const C = 256;
+  return canvasTex(C * 4, C, (g) => {
+    SHOP_KINDS.forEach((k, i) => {
+      const x = i * C;
+      g.save(); g.beginPath(); g.rect(x, 0, C, C); g.clip();
+      g.fillStyle = '#0b0a0a'; g.fillRect(x, 0, C, C);
+      if (k === 'rollo') {
+        for (let s = 0; s < C; s += 9) { const v = ri(88, 118); g.fillStyle = `rgb(${v},${v - 6},${v - 12})`; g.fillRect(x, s, C, 8); g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x, s + 7, C, 2); }
+        for (let s = 0; s < 12; s++) blot(g, x + R() * C, R() * C, rr(10, 34), '120,54,20', 0.5);
+        graffiti(g, x + rr(10, 40), C * rr(0.4, 0.75), true);
+      } else if (k === 'schaufenster') {
+        const gr = g.createLinearGradient(0, 0, 0, C); gr.addColorStop(0, '#1f2328'); gr.addColorStop(1, '#060505'); g.fillStyle = gr; g.fillRect(x, 0, C, C);
+        g.fillStyle = '#2e2824'; for (let s = 0; s < 3; s++) g.fillRect(x + 14 + s * 80, C * 0.62, 56, C * 0.38);
+        g.fillStyle = 'rgba(200,180,170,0.5)';
+        for (let s = 0; s < 10; s++) { const ex = x + rr(0, C), ey = R() < 0.5 ? 0 : C; g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex + rr(-16, 16), ey + (ey ? -1 : 1) * rr(20, 80)); g.lineTo(ex + rr(8, 28), ey); g.fill(); }
+        g.fillStyle = 'rgba(220,160,120,0.15)'; g.beginPath(); g.moveTo(x, C * 0.7); g.lineTo(x + C * 0.6, 0); g.lineTo(x + C * 0.8, 0); g.lineTo(x, C); g.fill();
+      } else if (k === 'tuer') {
+        g.fillStyle = '#2a1a10'; g.fillRect(x, 0, C, C);
+        g.fillStyle = '#3c2616'; g.fillRect(x + C * 0.3, C * 0.05, C * 0.4, C * 0.95);
+        g.fillStyle = '#26170d'; g.fillRect(x + C * 0.34, C * 0.12, C * 0.32, C * 0.3); g.fillRect(x + C * 0.34, C * 0.5, C * 0.32, C * 0.42);
+        g.fillStyle = '#b08a40'; g.fillRect(x + C * 0.62, C * 0.56, 6, 6);
+        for (let b = 0; b < 2; b++) { g.save(); g.translate(x + C / 2, C * (0.35 + b * 0.3)); g.rotate(b ? 0.5 : -0.5); const v = ri(90, 120); g.fillStyle = `rgb(${v},${v * 0.7 | 0},${v * 0.45 | 0})`; g.fillRect(-C * 0.32, -10, C * 0.64, 20); g.restore(); }
+        if (R() < 0.7) graffiti(g, x + 10, C * 0.88, false);
+      } else {
+        const gr = g.createRadialGradient(x + C / 2, C * 0.6, 10, x + C / 2, C * 0.6, C * 0.7); gr.addColorStop(0, '#1a1614'); gr.addColorStop(1, '#030303');
+        g.fillStyle = gr; g.fillRect(x, 0, C, C);
+        g.fillStyle = 'rgba(70,60,50,0.7)'; g.fillRect(x + 20, C * 0.8, C * 0.6, C * 0.2);
+      }
+      g.restore();
+    });
+  }, { clamp: true });
+}
+
+/** Relief für Asphalt und Gehweg (passend zu den Farb-Texturen nur ungefähr – Körnung, Risse, Fugen) */
+export function asphaltNormal() {
+  const S = 512, n = fbm(S, 64, 3, 11), c = fbm(S, 8, 3, 12);
+  const hf = heightOf(S, S, (g) => {
+    g.fillStyle = '#909090'; g.fillRect(0, 0, S, S);
+    g.strokeStyle = '#202020'; g.lineCap = 'round';
+    for (let i = 0; i < 26; i++) { let x = R() * S, y = R() * S, a = R() * TAU; g.lineWidth = 1 + R() * 3; g.beginPath(); g.moveTo(x, y); for (let j = 0; j < 14; j++) { a += (R() - 0.5) * 1.1; x += Math.cos(a) * 8; y += Math.sin(a) * 8; g.lineTo(x, y); } g.stroke(); }
+  });
+  for (let i = 0; i < hf.length; i++) hf[i] = hf[i] * 0.6 + n[i] * 0.3 + c[i] * 0.1;
+  return normalTex(hf, S, S, 4);
+}
+export function sidewalkNormal() {
+  const S = 512, n = fbm(S, 32, 3, 21);
+  const hf = heightOf(S, S, (g) => {
+    g.fillStyle = '#a0a0a0'; g.fillRect(0, 0, S, S);
+    g.fillStyle = '#303030'; for (let i = 0; i <= 4; i++) { g.fillRect(i * 128 - 2, 0, 5, S); g.fillRect(0, i * 128 - 2, S, 5); }
+    for (let i = 0; i < 6; i++) { const x = Math.floor(R() * 4) * 128, y = Math.floor(R() * 4) * 128; g.fillStyle = `rgb(${R() < 0.5 ? 130 : 170},0,0)`; g.fillRect(x + 3, y + 3, 122, 122); } // gekippte Platten
+  });
+  for (let i = 0; i < hf.length; i++) hf[i] = hf[i] * 0.8 + n[i] * 0.2;
+  return normalTex(hf, S, S, 4);
+}

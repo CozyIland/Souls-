@@ -6,9 +6,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { toon } from './toon.js';
 import { seeded, TAU } from './util.js';
 import { block, colliders, blockers, resolve } from './kollision.js';
-import { asphaltTex, sidewalkTex, concreteTex, skyTex, skylineTex, weedTex, smokeTex } from './texturen.js';
+import { asphaltTex, sidewalkTex, concreteTex, skyTex, skylineTex, weedTex, smokeTex, asphaltNormal, sidewalkNormal } from './texturen.js';
 import { building, FLOOR } from './gebaeude.js';
 import * as P from './requisiten.js';
+import * as K from './kleinkram.js';
 
 export { colliders, blockers, resolve };
 export const targets = P.targets;
@@ -19,11 +20,12 @@ const ri = (a, b) => Math.floor(rr(a, b + 1));
 
 // ---------- Boden ----------
 function ground(scene) {
-  const g = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), toon(0xffffff, { map: asphaltTex() }));
-  g.material.map.repeat.set(24, 24);
+  const an = asphaltNormal(); an.repeat.set(48, 48);
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), toon(0xffffff, { map: asphaltTex(), normalMap: an }));
+  g.material.map.repeat.set(24, 24); g.material.normalScale.set(0.4, 0.4);
   g.rotation.x = -Math.PI / 2; g.receiveShadow = true; g.userData.noMerge = true; scene.add(g);
 
-  const walk = toon(0xffffff, { map: sidewalkTex() });
+  const walk = toon(0xffffff, { map: sidewalkTex(), normalMap: sidewalkNormal() });
   const curb = toon(0xffffff, { map: concreteTex() });
   const slabStrip = (x, z, w, d) => {
     const geo = new THREE.BoxGeometry(w, 0.08, d);
@@ -87,7 +89,7 @@ function rows(scene) {
   make('z', -1, -58, -40);
   // Ruinenfeld x −24…−10, z −40…−10
   P.slab(scene, -15, -22, 6, 3.5, 0.4, 0.5); P.slab(scene, -19, -30, 5, 4, -0.2, -0.35); P.slab(scene, -13.5, -35, 4, 3, 1.2, 0.25);
-  for (const [x, z, s] of [[-12, -15, 1.6], [-17, -26, 2.0], [-21, -18, 1.8], [-12.5, -28, 1.4], [-20, -36, 1.8]]) P.rubble(scene, x, z, s, true);
+  for (const [x, z, s] of [[-12, -15, 1.6], [-17, -26, 2.0], [-21, -18, 1.8], [-12.5, -28, 1.4], [-20, -36, 1.8]]) K.rubbleHeap(scene, x, z, s, true);
   // Rest der Fassade (eine stehende Wandscheibe)
   building(scene, -23, -25, 3, 16, 4, 'x+');
   for (const s of [-1, 1]) make('x', s, -48, -24);
@@ -187,11 +189,12 @@ export function buildWorld(scene, renderer) {
   scene.background = sky;
   const pm = new THREE.PMREMGenerator(renderer);
   const env = pm.fromEquirectangular(sky).texture; pm.dispose();
-  scene.fog = new THREE.Fog(0x744434, 22, 92);
+  scene.fog = new THREE.Fog(0x6e4640, 24, 95);
 
-  scene.add(new THREE.HemisphereLight(0xb08aa0, 0x4a3426, 2.0));
-  scene.add(new THREE.AmbientLight(0x6a4a3a, 0.5));
-  const sun = new THREE.DirectionalLight(0xffb27a, 2.6);
+  // Anime-Abendlicht: warme Sonne, kühles lila Himmelslicht in den Schatten (mehr Farbkontrast)
+  scene.add(new THREE.HemisphereLight(0x9c92cc, 0x4a3426, 1.9));
+  scene.add(new THREE.AmbientLight(0x5a4a64, 0.45));
+  const sun = new THREE.DirectionalLight(0xffa86a, 3.1);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 100 });
@@ -205,8 +208,8 @@ export function buildWorld(scene, renderer) {
   P.bus(scene, -1, -57, Math.PI / 2 + 0.15); P.sandbags(scene, 4.5, -54.5, 4, 0.1); P.sandbags(scene, -5.5, -54, 3, -0.2);
   for (const [x, z, r] of [[0, 57, -0.2], [-47, 0, 1.4], [47, 0, 1.7]]) {
     P.car(scene, x, z, r + Math.PI / 2, true);
-    P.rubble(scene, x + (Math.abs(x) > 1 ? 0 : 3.5), z + (Math.abs(x) > 1 ? 3.5 : 1), 2.2, true);
-    P.rubble(scene, x - (Math.abs(x) > 1 ? 0 : 3.5), z - (Math.abs(x) > 1 ? 3.5 : 1), 2.2, true);
+    K.rubbleHeap(scene, x + (Math.abs(x) > 1 ? 0 : 3.5), z + (Math.abs(x) > 1 ? 3.5 : 1), 2.2, true);
+    K.rubbleHeap(scene, x - (Math.abs(x) > 1 ? 0 : 3.5), z - (Math.abs(x) > 1 ? 3.5 : 1), 2.2, true);
   }
   block(0, -59.5, 26, 2); block(0, 59, 26, 2); block(-49, 0, 2, 26); block(49, 0, 2, 26);
   P.fence(scene, -4, 59.5, 8, 0, true); P.fence(scene, 4, 59.5, 6, 0, true);
@@ -253,13 +256,32 @@ export function buildWorld(scene, renderer) {
   P.cardTable(scene, -8.2, 7.8);
 
   // Schutt, Pfützen, Papier, Gullydeckel
-  for (let i = 0; i < 14; i++) P.rubble(scene, rr(-6, 6), rr(-50, 50), rr(0.35, 0.8), false);
-  for (let i = 0; i < 8; i++) P.rubble(scene, rr(-40, 40), rr(-6, 6), rr(0.35, 0.8), false);
+  for (let i = 0; i < 14; i++) K.rubbleHeap(scene, rr(-6, 6), rr(-50, 50), rr(0.35, 0.8), false);
+  for (let i = 0; i < 8; i++) K.rubbleHeap(scene, rr(-40, 40), rr(-6, 6), rr(0.35, 0.8), false);
   for (let i = 0; i < 16; i++) P.puddle(scene, rr(-6, 6) * (i < 10 ? 1 : 6), i < 10 ? rr(-52, 52) : rr(-6, 6), rr(0.5, 1.4));
   P.papers(scene, -9, 9, -55, 55, 70); P.papers(scene, -45, 45, -9, 9, 40);
   for (const [x, z] of [[2, -26], [-2, 15], [20, -1.5], [-30, 2], [1.5, 46]]) P.manhole(scene, x, z);
 
   P.dummy(scene, 2.5, -14); P.dummy(scene, -3.5, -16); P.dummy(scene, 12, -2.5); P.dummy(scene, 0.5, 12);
+
+  // Stufe 2: Kleinkram – Müllsäcke, kahle Bäume, Gestrüpp, verstreute Steinchen
+  for (const [x, z] of [[9.2, -12.5], [-9.3, 13], [9.4, 25.5], [-9.4, -45], [9.3, 46], [-14, 9.3], [21, -9.2], [-38, 9.3], [36, 9.3], [-9.3, 38], [9.2, -38]]) K.trashBags(scene, x, z, ri(3, 7));
+  for (const [x, z] of [[8.4, -42], [-8.4, -30], [8.4, 15.5], [-8.4, 27], [8.4, 36], [-8.4, 47], [-16, 8.4], [17, -8.4], [-34, -8.4], [32, 8.4]]) K.deadTree(scene, x, z);
+  for (let i = 0; i < 46; i++) {
+    const t = R();
+    if (t < 0.35) K.bush(scene, rr(-24, -11), rr(-40, -11), rr(0.8, 1.5));            // Ruinenfeld
+    else if (t < 0.7) K.bush(scene, (R() < 0.5 ? -1 : 1) * rr(9.4, 9.8), rr(-56, 56), rr(0.6, 1.1)); // an den Häusern
+    else K.bush(scene, rr(-46, 46), (R() < 0.5 ? -1 : 1) * rr(9.4, 9.8), rr(0.6, 1.1));
+  }
+  const spots = [];
+  for (let i = 0; i < 1400; i++) {
+    const t = R();
+    if (t < 0.4) spots.push([(R() < 0.5 ? -1 : 1) * rr(8.9, 9.9), rr(-58, 58), 1]);           // an den Hauswänden
+    else if (t < 0.6) spots.push([rr(-46, 46), (R() < 0.5 ? -1 : 1) * rr(8.9, 9.9), 1]);
+    else if (t < 0.8) spots.push([rr(-24, -10), rr(-40, -10), 1.6]);                           // Ruinenfeld
+    else spots.push([rr(-7, 7), rr(-56, 56), 0.8]);                                            // auf der Straße
+  }
+  K.scatter(scene, spots);
 
   mergeStatic(scene);
   // Pfützen spiegeln den Himmel (nur sie bekommen die Umgebungskarte)

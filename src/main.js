@@ -43,7 +43,7 @@ player.onDamage = (n, dead) => {
   rumble(dead ? 1 : 0.7, 0.8, dead ? 600 : 220);
   if (dead) { deathT = 0; cam.lock = null; }
 };
-const post = makeComposer(renderer, scene, camera);
+const post = makeComposer(renderer, scene, camera, { ao: !MOBILE });
 cam.yaw = 0;
 
 function resize() {
