@@ -25,6 +25,7 @@ const RADIUS = 0.42;
 const DOWN_T = 1.5; // so lange liegt ein umgeworfener Hund
 const smooth01 = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 // Meshy-Hund (models/hund.glb): nur der Clip „dog_walk“ (0,67 s); schaut nach +Z, Füße bei y −0,67, ~1,3 m hoch
+const GALLOP_LEN = 1.9; // Meter pro Galoppsprung
 const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.3, DOG_C = 0.42;
 let DOG_GLTF = null;
 
@@ -137,7 +138,8 @@ class Dog {
     const act = clip ? mixer.clipAction(clip) : null;
     if (act) { act.play(); act.timeScale = 0; }
     const B = {}; model.traverse((o) => { if (o.isBone) B[o.name] = o; });
-    const ctl = ['head', 'neck1', 'frontUprR', 'frontLwrR', 'frontUprL', 'frontLwrL'].map((n) => B[n]).filter(Boolean);
+    const ctl = ['head', 'neck1', 'frontUprR', 'frontLwrR', 'frontUprL', 'frontLwrL', 'rearLegR_01', 'rearLegL_01', 'rearLwrR', 'rearLwrL',
+      'rearHorselinkR', 'rearHorselinkL', 'frontHorselinkR', 'frontHorselinkL', 'spine1', 'spine2', 'chest', 'hips', 'tail2', 'tail3', 'tail4'].map((n) => B[n]).filter(Boolean);
     for (const b of ctl) b.userData.base = b.quaternion.clone();
     this.mm = { model, holder, mixer, act, dur: clip ? clip.duration : 1, mats, B, ctl };
   }
@@ -187,6 +189,36 @@ class Dog {
     this.lk = (this.lk || 0) + ((clamp(this.lookYaw || 0, -1.1, 1.1) * look) - (this.lk || 0)) * damp(8, dt);
     if (B.neck1) rotW(B.neck1, ax(0, 1, 0), this.lk * 0.45);
     if (B.head) rotW(B.head, ax(0, 1, 0), this.lk * 0.4);
+    const X = () => ax(1, 0, 0), Y = () => ax(0, 1, 0);
+    const swing = (b, ang) => { if (b) rotW(b, X(), -ang); };   // + = Bein nach vorn
+    // Galopp (Rotationsgalopp): Hinterbeine fast zusammen, Vorderbeine eine halbe Phase später; Rücken beugt und streckt sich
+    const g = this.gw || 0;
+    if (g > 0.01) {
+      const a = (this.gph || 0) * TAU;
+      const leg = (up, lo, hl, off, amp, fold) => {
+        const ph = a + off * TAU, sn = Math.sin(ph), cs = Math.cos(ph);
+        swing(up, amp * sn * g);
+        swing(lo, fold * Math.max(0, cs) * g);                              // beim Vorschwingen anwinkeln
+        if (hl) swing(hl, -fold * 0.6 * Math.max(0, cs) * g);
+      };
+      leg(B.rearLegL_01, B.rearLwrL, B.rearHorselinkL, 0, 0.75, -0.9);
+      leg(B.rearLegR_01, B.rearLwrR, B.rearHorselinkR, 0.09, 0.75, -0.9);
+      leg(B.frontUprL, B.frontLwrL, B.frontHorselinkL, 0.48, 0.8, 1.1);
+      leg(B.frontUprR, B.frontLwrR, B.frontHorselinkR, 0.57, 0.8, 1.1);
+      const flex = Math.sin(a + 1.6) * 0.16 * g;                          // Rücken rund ↔ gestreckt
+      if (B.spine1) rotW(B.spine1, X(), flex); if (B.chest) rotW(B.chest, X(), flex * 0.8);
+      if (B.neck1) rotW(B.neck1, X(), -Math.sin(a + 0.4) * 0.14 * g);       // Kopf hält dagegen
+      if (B.tail2) rotW(B.tail2, X(), (0.35 + Math.sin(a) * 0.25) * g);   // Schwanz weht nach hinten
+    }
+    // Schwanz: wedelt in Ruhe, steif beim Lauern, pendelt beim Gehen
+    const wag = this.st === 'idle' ? Math.sin(this.t * 7) * 0.35 : this.aggro ? Math.sin(this.t * 2) * 0.06 : Math.sin(this.gp * TAU) * 0.2;
+    if (B.tail3) rotW(B.tail3, Y(), wag * (1 - g)); if (B.tail4) rotW(B.tail4, Y(), wag * 0.8 * (1 - g));
+    // Ruhe: schnüffeln (Kopf senkt sich immer mal zum Boden); beim Lauern schwer atmen
+    if (this.st === 'idle' && Math.hypot(this.v.x, this.v.y) < 0.3) {
+      const sn = smooth01(Math.sin(this.t * 0.7 + this.home.x) * 2 - 0.6);
+      if (B.neck1) rotW(B.neck1, X(), 0.55 * sn); if (B.head) rotW(B.head, X(), 0.25 * sn + Math.sin(this.t * 14) * 0.03 * sn);
+    }
+    if ((this.st === 'circle' || this.st === 'after' || this.st === 'back') && B.chest) rotW(B.chest, X(), Math.sin(this.t * 6.5) * 0.04);
     // Tatzenschlag (rechte Vorderpfote): hoch und nach außen, dann quer nach innen-unten
     if (this.st === 'swipe' && B.frontUprR) {
       const a = smooth01(this.t / 0.28), b = smooth01((this.t - 0.32) / 0.13), c = smooth01((this.t - 0.5) / 0.3);
@@ -426,15 +458,21 @@ class Dog {
       }
       if (this.dead) wt = 0;
       this.aw = lerp(this.aw || 0, wt, damp(this.st === 'leap' ? 20 : 7, dt));
-      // Rennen: Körper wippt im Galopp-Takt (2× pro Schrittfolge) und neigt sich leicht
-      const run = clamp((sp - 2) / 2, 0, 1) * this.aw;
-      if (run > 0) {
-        M.holder.position.y += Math.abs(Math.sin(this.gp * TAU)) * 0.05 * run;
-        M.holder.rotation.x += Math.sin(this.gp * TAU * 2) * 0.05 * run + 0.04 * run;
+      // Galopp: ab ~2,6 m/s übernimmt eine Galopp-Bewegung per Code (der Lauf-Clip ist nur ein Gehen)
+      const gal = !this.dead && this.st !== 'leap' && this.st !== 'down' ? smooth01((sp - 2.4) / 1.4) : 0;
+      this.gw = lerp(this.gw || 0, gal, damp(6, dt));
+      if (this.gw > 0.01) {
+        this.gph = ((this.gph || 0) + dt * sp / GALLOP_LEN) % 1;
+        const a = this.gph * TAU;
+        M.holder.position.y += (Math.sin(a + 0.6) * 0.035) * this.gw;            // Schwebephase
+        M.holder.rotation.x += (Math.sin(a + 1.4) * 0.09 + 0.05) * this.gw;     // Schaukeln vor/zurück
       }
+      // Gehen: Kopf nickt mit den Schritten, Körper wiegt leicht
+      const walkK = this.aw * (1 - this.gw) * clamp(sp / 1.2, 0, 1);
+      M.holder.rotation.z += Math.sin(this.gp * TAU) * 0.035 * walkK;
       // Knochen, die der Code zusätzlich bewegt, vor dem Mixer zurücksetzen (er schreibt nur bei Änderungen)
       for (const b of M.ctl) b.quaternion.copy(b.userData.base);
-      if (M.act) { M.act.time = tt * M.dur; M.act.setEffectiveWeight(this.aw); M.mixer.update(0); }
+      if (M.act) { M.act.time = tt * M.dur; M.act.setEffectiveWeight(this.aw * (1 - (this.gw || 0))); M.mixer.update(0); }
       for (const b of M.ctl) b.userData.base.copy(b.quaternion);
       this.bones(dt);
     }

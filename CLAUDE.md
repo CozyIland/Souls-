@@ -54,7 +54,10 @@
   Übergänge. Kein Aufleuchten bei Schaden (nur dezenter roter Bildrand).
   **Rolle** (`ROLL_T` 0,66): abtauchen (Hände voraus) → über die Schulter rollen (Rollachse geneigt, `pivot.rotation.order` 'ZXY',
   `rollSide`) → aus der Hocke aufstehen (`rec`), Staub `onDust` beim Abrollen und Aufkommen. Kurvenlage `bank` aus `yawRate`,
-  Gewicht vor/zurück beim Anlaufen/Bremsen `accLean`. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
+  Gewicht vor/zurück beim Anlaufen/Bremsen `accLean`.
+  **Degen in Bewegung**: Bereitschaftshaltung mischt Stehen (atmet mit), Gehen (Klinge schräg nach vorn unten, schwingt im Schritt)
+  und Rennen (`runPose`: Klinge tief nach hinten). **Ruhe**: Gewicht verlagern, tiefer atmen, ab und zu umschauen (`lookA`),
+  Kunststück `flourish` (Klinge wirbelt einmal um die Hand, `FLOURISH_T`). Scheide pendelt beim Gehen. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
 - `src/karten.js` – fliegende Karten (`throwCard`, `updateCards`): drehen sich flach, Leuchtspur, lenken leicht zum Ziel,
   bleiben in Puppen (wackeln, `hitT`) und Wänden stecken, Funken, Rütteln. Bilder in `src/kartenbild.js`.
   Eingabe `inp.card`: LB oder F, Handy-Knopf `#tCard` 🃏.
@@ -69,7 +72,10 @@
   zurück), Sprintbiss aus 4–7 m (`charge`, `CHARGE` 26, beißt im Vorbeirennen). Danach `after`: Blick auf dich, dann sofort
   nachsetzen, 1–2 Schritte rückwärts (`back`, Clip läuft rückwärts) oder lauern. Höchstens zwei greifen gleichzeitig an (`attackers`).
   Knochen per Code (`bones`, `rotW`, Rücksetzen über `userData.base` – Mixer schreibt nur Änderungen): Kopf/Hals schauen zu dir,
-  Tatze; Kurvenlage aus `yawRate`.
+  Tatze; Kurvenlage aus `yawRate`. **Galopp** ab ~2,6 m/s per Code (`gw`, `gph`, `GALLOP_LEN`): Lauf-Clip wird ausgeblendet,
+  Beine schwingen als Rotationsgalopp (Hinterbeine fast zusammen, Vorderbeine halbe Phase später, beim Vorschwingen angewinkelt),
+  Rücken beugt/streckt sich, Kopf hält dagegen, Schwanz weht; Schweben/Schaukeln am Halter. Ruhe: schnüffeln, Schwanz wedeln;
+  Lauern: schweres Atmen. Alle per Code bewegten Knochen stehen in `ctl` (werden vor dem Mixer zurückgesetzt).
   **Haltung** (unsichtbare Leiste `poise`, `POISE_MAX` 40, erholt sich nach `POISE_WAIT`): nur wenn sie voll ist → hurt/down,
   sonst kurzes Zucken `flinch` und der Angriff läuft weiter; Haltungsschaden je Angriff `ATTACKS[k].poise`, Karte 5.
   Körperhaltung wird weich nachgeführt (`sm`) · hurt (zuckt weg von der Trefferrichtung `hx`/`hz`, Kopf reißt zurück) · down (schwerer

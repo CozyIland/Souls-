@@ -33,6 +33,7 @@ const THROW_K = [
 // Ausfallschritt: s1 = rechter Fuß tritt vor (bis Ende Trefferfenster), s2 = linker Fuß wird nachgezogen.
 // Der rechte Fuß tritt (1 + STEP_X) × lunge vor, der Körper folgt lunge im Schlag und STEP_X × lunge beim Nachziehen.
 const STEP_X = 0.45;
+const FLOURISH_T = 0.9; // Dauer des Degen-Kunststücks im Stehen
 function stepK(A, t) {
   const a0 = A.act[0] - 0.1, a1 = A.act[1], b0 = A.act[1] + 0.04, b1 = A.T - 0.04;
   return { s1: smooth((t - a0) / (a1 - a0)), s2: smooth((t - b0) / (b1 - b0)) };
@@ -510,6 +511,18 @@ export class Player {
     bend(R.Spine1, AX, Math.sin(t * 1.8) * 0.02 * still + tuck * 0.45 + lean * 0.3);
     bend(R.Spine2, AX, Math.sin(t * 1.8 + 0.4) * 0.015 * still + tuck * 0.35);
     bend(R.Neck, AX, tuck * 0.4 - lean * 0.3);
+    // Ruhe: tiefer atmen, Gewicht langsam verlagern, ab und zu umschauen und den Degen wirbeln
+    const idle = still > 0.9 && this.state === 'idle' && !this.locked;
+    this.idleT = idle ? (this.idleT || 0) + dt : 0;
+    if (idle && this.idleT > (this.lookNext || 3)) { this.lookNext = this.idleT + 2.5 + Math.random() * 3; this.lookTo = Math.random() < 0.3 ? 0 : (Math.random() - 0.5) * 1.3; }
+    if (!idle) this.lookTo = 0;
+    this.lookA = lerp(this.lookA || 0, this.lookTo || 0, damp(2.5, dt));
+    bend(R.Neck, AY, this.lookA * 0.6); bend(R.Head, AY, this.lookA * 0.4);
+    if (idle && this.idleT > (this.flourishNext || 7) && !(this.flourish > 0)) { this.flourish = FLOURISH_T; this.flourishNext = this.idleT + 7 + Math.random() * 6; }
+    this.flourish = Math.max(0, (this.flourish || 0) - dt);
+    if (this.state !== 'idle') this.flourish = 0;
+    bend(R.Spine, AZ, Math.sin(t * 0.55) * 0.035 * still); bend(R.Spine2, AZ, -Math.sin(t * 0.55) * 0.025 * still);
+    bend(R.Spine2, AX, Math.sin(t * 1.8 + 0.4) * 0.02 * still);
     // Gewicht nach vorn beim Anlaufen, nach hinten beim Bremsen
     bend(R.Spine, AX, this.accLean * 0.5); bend(R.Spine1, AX, this.accLean * 0.5);
     // Rolle: abtauchen (Kopf runter) und aus der Hocke aufrichten (Oberkörper vor)
@@ -546,7 +559,20 @@ export class Player {
       const P = this.pose;
       let w;
       if (this.state === 'attack') { attackPose(this.atk.a, this.atk.t, P); w = smooth(this.atk.t / 0.06); }
-      else { P.arm = READY_POSE.arm.slice(); P.fore = READY_POSE.fore.slice(); P.blade = READY_POSE.blade.slice(); P.tw = 0; P.ln = 0; w = (1 - tuck) * (0.6 + 0.4 * still); }
+      else {
+        // Degen beim Stehen, Gehen und Rennen: schwingt im Schritt mit, beim Rennen tief nach hinten
+        const sw = Math.sin(this.phase * TAU), mw = this.walkW;
+        this.runPose = lerp(this.runPose || 0, this.running ? 1 : 0, damp(6, dt));
+        const rk = this.runPose * mw, wk = mw * (1 - this.runPose), ik = 1 - mw, br = Math.sin(t * 1.8) * 0.03;
+        const mix = (i, wv, rv) => i * ik + wv * wk + rv * rk;
+        const I = READY_POSE;
+        P.arm = [mix(I.arm[0], -0.32, -0.22), mix(I.arm[1], -0.95, -0.9), mix(I.arm[2], 0.08 + 0.3 * sw, -0.35 + 0.4 * sw)];
+        P.fore = [mix(I.fore[0], -0.15, -0.05), mix(I.fore[1], -0.4, -0.75), mix(I.fore[2], 1, -0.3 + 0.4 * sw)];
+        P.blade = [mix(I.blade[0], 0.12, -0.05), mix(I.blade[1] + br, -0.42 + 0.12 * sw, -0.55), mix(I.blade[2], 1, -0.85)];
+        // Kunststück im Stehen: Klinge einmal um die Hand wirbeln
+        if (this.flourish > 0) P.arm[1] += 0.3 * Math.sin(Math.PI * (1 - this.flourish / FLOURISH_T));
+        P.tw = 0; P.ln = 0; w = 1 - tuck;
+      }
       bend(R.Spine, AY, P.tw * 0.25 * w); bend(R.Spine1, AY, P.tw * 0.4 * w); bend(R.Spine2, AY, P.tw * 0.4 * w);
       bend(R.Spine1, AX, P.ln * 0.5 * w); bend(R.Spine2, AX, P.ln * 0.4 * w);
       aim(R.RightArm, R.RightForeArm, bodyDir(P.arm[0], P.arm[1], P.arm[2], vB), w);
@@ -555,6 +581,10 @@ export class Player {
       const fo = bodyDir(P.fore[0], P.fore[1], P.fore[2], vB);
       fo.addScaledVector(this.bladeD, -0.8 * fo.dot(this.bladeD)).normalize();
       aim(R.RightForeArm, R.RightHand, fo, w);
+      if (this.flourish > 0 && this.state !== 'attack') {
+        const u = 1 - this.flourish / FLOURISH_T, e = u * u * (3 - 2 * u);
+        this.bladeD.applyAxisAngle(fo, -TAU * e);
+      }
       if (this.state === 'attack') {
         // linker Arm hält das Gleichgewicht (schwingt gegen die Klinge), Kopf bleibt beim Gegner
         aim(R.LeftArm, R.LeftForeArm, bodyDir(P.la[0], P.la[1], P.la[2], vB), w);
@@ -619,7 +649,8 @@ export class Player {
     R.Hips.getWorldPosition(vB);
     vC.set(0.19, 0.1, 0.1).applyQuaternion(qBody);                  // linke Hüfte, vorn am Gürtel
     this.sheath.position.copy(vB).add(vC);
-    const sd = bodyDir(0.14, -0.74, -0.66, vE);                     // schräg nach hinten unten
+    const ssw = Math.sin(this.phase * TAU) * this.walkW;               // pendelt beim Gehen
+    const sd = bodyDir(0.14 + 0.07 * ssw, -0.74, -0.66 + 0.12 * ssw, vE); // schräg nach hinten unten
     this.sheath.quaternion.setFromUnitVectors(AZ, sd);
     // Faust: die Meshy-Hand (ohne Fingerknochen) wird ausgeblendet, eine eigene Faust umschließt den Griff.
     // Klingen-Raum: Z = Klinge, X = Richtung Unterarm → Finger; das Handgelenk der Faust sitzt am Hand-Knochen.
