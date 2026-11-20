@@ -19,6 +19,7 @@ export const GATE = { x0: -3, x1: 4, z: -60.5, h: 5.6 };        // Nebeltor zwis
 export const ARENA = { x0: -19.2, x1: 19.2, z0: -100.2, z1: -63.6 }; // freie Kampffläche des Bosses
 export const REST = { x: 5.6, z: 48.2, yaw: Math.PI };          // Spieltisch: Start und Wiederaufstehen
 export const STONE = { x: -2.6, z: 44.2 };                       // Seelenstein: aufsteigen und rasten
+export const TRUHE = { x: 33.4, z: 0.8, yaw: -Math.PI / 2 };     // Truhe am Ende der Kartenstraße (Schloss zeigt nach Westen)
 
 const R = seeded(7);
 const rr = (a, b) => a + R() * (b - a);
@@ -208,14 +209,19 @@ function soulStone(scene, x, z) {
 
 // ---------- Schlauch: Seitenstraßen und Ruinenfeld dicht ----------
 function barricades(scene) {
-  // Querstraße an der Kreuzung (beide Seiten): Zaun, Autowracks, Schutt, Sandsäcke – man sieht noch dahinter
-  for (const s of [-1, 1]) {
-    P.fence(scene, s * 12.2, 0, 20, Math.PI / 2, true);
-    P.car(scene, s * 11, -4.2, s * 0.12, true); P.car(scene, s * 11.3, 3.4, Math.PI - s * 0.2, s > 0);
-    K.rubbleHeap(scene, s * 11, -8.3, 1.3, true); K.rubbleHeap(scene, s * 11.2, 7.9, 1.2, true); K.rubbleHeap(scene, s * 10.8, -0.4, 0.9, true);
-    P.sandbags(scene, s * 10.3, 0.8, 2.6, Math.PI / 2 + s * 0.1);
-    block(s * 11.6, 0, 1.6, 20.5);
+  // Querstraße West an der Kreuzung: Zaun, Autowracks, Schutt, Sandsäcke – man sieht noch dahinter.
+  // Ost (Kartenstraße) ist eine Sackgasse: dieselbe Sperre steht erst bei x ≈ 36, davor die Truhe mit drei Hunden.
+  for (const [s, x0] of [[-1, 0], [1, 24.2]]) {
+    const X = (d) => s * d + x0;
+    P.fence(scene, X(12.2), 0, 20, Math.PI / 2, true);
+    P.car(scene, X(11), -4.2, s * 0.12, true); P.car(scene, X(11.3), 4.6, Math.PI - s * 0.2, s > 0);
+    K.rubbleHeap(scene, X(11), -8.3, 1.3, true); K.rubbleHeap(scene, X(11.2), 7.9, 1.2, true);
+    if (s < 0) { K.rubbleHeap(scene, X(10.8), -0.4, 0.9, true); P.sandbags(scene, X(10.3), 0.8, 2.6, Math.PI / 2 + s * 0.1); }
+    block(X(11.6), 0, 1.6, 20.5);
   }
+  // hinter der Truhe: Sandsäcke und Kisten, eine Feuertonne – jemand hat hier etwas versteckt
+  P.sandbags(scene, 34.9, -2.4, 2.2, Math.PI / 2 + 0.15); P.crate(scene, 34.5, 2.2, 0.9);
+  P.fireBarrel(scene, 33.6, -3.6);
   // Ruinenfeld im Westen: Bauzaun mit Schutt davor
   P.fence(scene, -10.7, -25, 30, Math.PI / 2, true);
   for (const [z, sz] of [[-13, 1.1], [-21, 0.9], [-29, 1.3], [-37, 1]]) K.rubbleHeap(scene, -10.2, z, sz, true);

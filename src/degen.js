@@ -18,20 +18,20 @@ export function buildCane() {
   sheath.add(cyl(0.02, 0.02, 0.045, gold, 0.0, 0.004));      // Zwinge oben
   sheath.add(cyl(0.016, 0.013, 0.05, gold, 0.85, 0.004));    // Spitze unten
   for (const z of [0.25, 0.55]) sheath.add(cyl(0.0175, 0.0175, 0.012, gold, z, 0));
-  // Klinge mit Griff
-  const sword = new THREE.Group();
-  sword.add(cyl(0.019, 0.017, 0.22, dark, -0.11));           // Griff (lang genug für zwei Hände)
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), gold); knob.position.z = -0.235; knob.castShadow = true; outline(knob, 0.004); sword.add(knob);
-  sword.add(cyl(0.02, 0.02, 0.02, gold, 0.005, 0.003));      // Ring statt Parierstange (versteckte Klinge)
+  // Klinge mit Griff (sword = Halter in der Hand; parts = Teile des Degens – bei einer anderen Waffe ausgeblendet)
+  const sword = new THREE.Group(), parts = new THREE.Group(); sword.add(parts);
+  parts.add(cyl(0.019, 0.017, 0.22, dark, -0.11));           // Griff (lang genug für zwei Hände)
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), gold); knob.position.z = -0.235; knob.castShadow = true; outline(knob, 0.004); parts.add(knob);
+  parts.add(cyl(0.02, 0.02, 0.02, gold, 0.005, 0.003));      // Ring statt Parierstange (versteckte Klinge)
   const bladeGeo = new THREE.BoxGeometry(0.022, 0.006, BLADE_L);
   const p = bladeGeo.attributes.position; // Spitze zulaufen lassen
   for (let i = 0; i < p.count; i++) if (p.getZ(i) > BLADE_L / 2 - 0.01) p.setX(i, 0);
   bladeGeo.translate(0, 0, BLADE_L / 2 + 0.015);
-  const blade = new THREE.Mesh(bladeGeo, steel); blade.castShadow = true; outline(blade, 0.003); sword.add(blade);
+  const blade = new THREE.Mesh(bladeGeo, steel); blade.castShadow = true; outline(blade, 0.003); parts.add(blade);
   // Faust um den Griff (das Meshy-Modell hat keine Fingerknochen – solange er den Degen hält, wird seine Hand
   // ausgeblendet und diese Faust gezeigt). Lage im Klingen-Raum: Griff entlang Z, Handgelenk bei FIST_WRIST (Unterarm = −X).
   const fist = buildFist(); fist.visible = false; sword.add(fist);
-  return { sheath, sword, blade, fist };
+  return { sheath, sword, blade, fist, parts };
 }
 
 // ---------- Faust ----------

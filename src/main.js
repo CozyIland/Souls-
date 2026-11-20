@@ -1,7 +1,9 @@
 // Aschenblatt – Einstieg: Welt, Figur, Kamera, Menüs und Spielschleife.
 import * as THREE from 'three';
 import { setupInput, poll, inp } from './input.js';
-import { buildWorld, updateWorld, targets, blockers, REST, GATE, ARENA, STONE } from './world.js';
+import { buildWorld, updateWorld, targets, blockers, REST, GATE, ARENA, STONE, TRUHE } from './world.js';
+import { Truhe } from './truhe.js';
+import { WAFFEN } from './waffen.js';
 import { Werte, SOULS } from './stufe.js';
 import { Menue } from './menue.js';
 import { karteLaden } from './inventar.js';
@@ -54,12 +56,14 @@ targets.push(...dogs);
 const fog = new FogGate(scene, GATE);
 const boss = new Boss(scene, { x: 0, z: -89, yaw: 0 }, ARENA);
 targets.push(boss);
-let passT = -1, victoryT = -1;
+const truhe = new Truhe(scene, TRUHE);
+let passT = -1, victoryT = -1, chestT = -1, foundT = -1;
 // ---------- Stufen-System: Seelen sammeln, am Seelenstein aufsteigen ----------
 const werte = new Werte();
 const $ = (id) => document.getElementById(id);
-function applyStats() { const m = werte.mods(); player.applyStats(m); cardMods.dmg = m.card; wurf.karte = werte.karte; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
+function applyStats() { const m = werte.mods(); player.applyStats(m); player.setWeapon(werte.waffe); cardMods.dmg = m.card; wurf.karte = werte.karte; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
 applyStats(); player.hp = player.maxHp; player.st = player.maxSt;
+if (werte.truhe) truhe.setOpen();
 let soulShow = werte.souls;
 function gainSouls(n) {
   werte.addSouls(n);
@@ -67,10 +71,15 @@ function gainSouls(n) {
 }
 for (const d of dogs) d.onDeath = () => gainSouls(SOULS.hund);
 boss.onDeath = () => gainSouls(SOULS.boss);
-const menue = new Menue({ werte, player, apply: applyStats, onLevel: () => sfx.heal(), reset: () => {}, jump: (w) => {
-  const at = w === 'stone' ? [STONE.x + 0.4, STONE.z - 2.2] : w === 'gate' ? [(GATE.x0 + GATE.x1) / 2, GATE.z + 5] : [(GATE.x0 + GATE.x1) / 2, GATE.z - 4];
-  player.pos.set(at[0], 0, at[1]); player.yaw = Math.PI; player.vel.set(0, 0); cam.yaw = 0; cam.lock = null; passT = -1; setState('play');
-} });
+const menue = new Menue({ werte, player, apply: applyStats, onLevel: () => sfx.heal(),
+  reset: () => { truhe.close(); },
+  closeChest: () => { werte.truhe = false; werte.waffen = ['degen']; werte.waffe = 'degen'; werte.save(); truhe.close(); applyStats(); },
+  jump: (w) => {
+    const at = w === 'stone' ? [STONE.x + 0.4, STONE.z - 2.2] : w === 'gate' ? [(GATE.x0 + GATE.x1) / 2, GATE.z + 5]
+      : w === 'truhe' ? [TRUHE.x - 7, TRUHE.z] : [(GATE.x0 + GATE.x1) / 2, GATE.z - 4];
+    const yaw = w === 'truhe' ? Math.PI / 2 : Math.PI;
+    player.pos.set(at[0], 0, at[1]); player.yaw = yaw; player.vel.set(0, 0); cam.yaw = yaw + Math.PI; cam.lock = null; passT = -1; setState('play');
+  } });
 setTimeout(() => karteLaden(werte.karte).catch(() => {}), 1500); // Kartenmodell fürs Inventar im Hintergrund vorbereiten
 function openMenu(tab, atStone) { setState('pause'); menue.open(tab, atStone); }
 /** am Seelenstein rasten: Leben, Ausdauer und Tränke voll, Hunde kommen zurück – dann aufsteigen */
@@ -154,6 +163,10 @@ function hud(dt) {
   else { bb.classList.remove('on'); bb.style.opacity = 0; }
   const vt = victoryT < 0 ? 0 : Math.min(1, victoryT / 0.8) * Math.max(0, Math.min(1, (5.5 - victoryT) / 1.0));
   $('victory').style.opacity = vt; $('victory').style.display = vt > 0 ? 'flex' : 'none';
+  // Waffe gefunden (Truhe)
+  const ft = foundT < 0 ? 0 : Math.min(1, foundT / 0.6) * Math.max(0, Math.min(1, (5.0 - foundT) / 0.9));
+  $('found').style.opacity = ft; $('found').style.display = ft > 0 ? 'flex' : 'none';
+  if (foundT > 6) foundT = -1;
   if (cam.lock) {
     pv.copy(cam.lock.pos).project(camera);
     lockMark.style.display = pv.z < 1 ? 'block' : 'none';
@@ -209,12 +222,21 @@ function frame(now) {
     else menue.frame(dt, inp);
   } else {
     if (inp.pause) { openMenu('char', false); }
-    // Seelenstein: in der Nähe Hinweis zeigen, A / Enter / Knopf benutzt ihn
+    // Seelenstein / Truhe: in der Nähe Hinweis zeigen, A / Enter / Knopf benutzt sie
     const nearStone = deathT < 0 && passT < 0 && Math.hypot(player.pos.x - STONE.x, player.pos.z - STONE.z) < 2.4 && (player.state === 'idle');
-    $('prompt').style.display = nearStone ? 'block' : 'none';
-    if (nearStone) $('prompt').innerHTML = `<b>${inp.touch ? '🪨' : inp.pad ? 'A' : 'Enter'}</b>Seelenstein · rasten und aufsteigen`;
-    $('tUse').classList.toggle('on', nearStone);
+    const nearChest = deathT < 0 && chestT < 0 && player.state === 'idle' && truhe.canOpen(player.pos);
+    const key = inp.touch ? (nearChest ? '✋' : '🪨') : inp.pad ? 'A' : 'Enter';
+    $('prompt').style.display = nearStone || nearChest ? 'block' : 'none';
+    if (nearStone) $('prompt').innerHTML = `<b>${key}</b>Seelenstein · rasten und aufsteigen`;
+    else if (nearChest) $('prompt').innerHTML = `<b>${key}</b>Truhe öffnen`;
+    $('tUse').classList.toggle('on', nearStone || nearChest);
+    const useLbl = nearChest ? '✋<small>Öffnen</small>' : '🪨<small>Seelenstein</small>';
+    if ($('tUse').dataset.l !== useLbl) { $('tUse').innerHTML = useLbl; $('tUse').dataset.l = useLbl; } // nur bei Wechsel neu schreiben
     if (nearStone && inp.use) useStone();
+    else if (nearChest && inp.use) { // Truhe öffnen: kurz stehen bleiben und hineinschauen, dann steigt die Klinge heraus
+      chestT = 0; cam.lock = null;
+      truhe.open(player, () => { werte.findWeapon('schwert'); foundT = 0; sfx.heal(); });
+    }
     if (inp.lock && passT < 0) cam.toggleLock(player, targets);
     if (inp.flick) cam.switchTarget(player, targets, inp.flick);
     const f = cam.forward();
@@ -223,6 +245,12 @@ function frame(now) {
     mv.z = f.z * -inp.my + f.x * inp.mx;
     // Nebeltor: wer hineinläuft, geht langsam hindurch (Steuerung ruht) – dahinter beginnt der Bosskampf
     let ctrl = inp;
+    if (chestT >= 0) { // beim Öffnen der Truhe ruht die Steuerung kurz, der Magier schaut zur Truhe
+      chestT += dt; ctrl = {}; mv.x = mv.z = 0;
+      player.yaw += Math.atan2(Math.sin(TRUHE.yaw + Math.PI - player.yaw), Math.cos(TRUHE.yaw + Math.PI - player.yaw)) * Math.min(1, dt * 8);
+      if (chestT > 1.3) chestT = -1;
+    }
+    if (foundT >= 0) foundT += dt;
     if (passT < 0 && !boss.dead && player.state !== 'dead' && fog.touches(player.pos)) { passT = 0; fog.rip = 1; cam.lock = null; sfx.card(); }
     if (passT < 0 && !boss.active && !boss.dead && player.pos.z < GATE.z - 0.3) { fog.seal(); boss.start(); } // z. B. hindurchgerollt
     if (passT >= 0) {
@@ -249,6 +277,7 @@ function frame(now) {
   updateWorld(dt, time, world, player.pos);
   if (state !== 'pause') { updateCards(dt); updateBlood(dt); updateHealFx(dt); }
   fog.update(dt);
+  truhe.update(dt);
   post.render(time);
 }
 setState('title');

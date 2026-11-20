@@ -1,13 +1,16 @@
 // 3D-Inventar (Reiter „Inventar“ im Menü): ein Sechseck aus rostigem Metall mit schillerndem Kristall (Bild bilder/inventar.jpg).
 // In der Mitte schwebt die ausgerüstete Karte in 3D (models/herzass.glb), in drei der sechs äußeren Fassungen liegen
-// Stockdegen, Heiltrank und Seelen. Mitte antippen / A → Kartenwahl; eine Karte wählen → sie versinkt im Kristall und steigt
-// wirbelnd wieder auf (Lichtwelle, Funken, Klang). Ruhe: die Karte schwebt, wiegt sich, glimmt und dreht sich ab und zu
-// einmal ganz herum. Ziehen (Maus/Finger) oder rechter Stick drehen sie von Hand.
+// die Waffe in der Hand, Heiltrank und Seelen. Mitte antippen / A → Kartenwahl, obere Fassung → Waffenwahl (Stockdegen,
+// Kristallklinge – beide in 3D in der Mitte). Wählen → alt versinkt im Kristall, neu steigt wirbelnd auf (Lichtwelle, Funken,
+// Klang). Ruhe: schwebt, wiegt sich, glimmt und dreht sich ab und zu einmal ganz herum. Ziehen (Maus/Finger) oder rechter Stick
+// drehen von Hand.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ladeModell, bildUrl } from './modelle.js';
 import { sfx } from './ton.js';
+import { WAFFEN, WAFFEN_IDS, schwertLaden, buildSchwert } from './waffen.js';
+import { buildCane } from './degen.js';
 
 export const KARTEN = [
   { id: 'herzass', n: 'Herz-Ass', glb: 'models/herzass.glb', mini: ['A', '♥'],
@@ -20,7 +23,8 @@ const SOCK = [
   { x: 512, y: 515, a: 88 }, { x: 512, y: 212, a: 68 }, { x: 756, y: 364, a: 68 }, { x: 760, y: 660, a: 68 },
   { x: 512, y: 805, a: 68 }, { x: 262, y: 660, a: 68 }, { x: 265, y: 364, a: 68 },
 ];
-const SLOT_ITEM = { 1: 'degen', 3: 'trank', 5: 'seelen' }; // Dreieck: Degen oben, Trank rechts unten, Seelen links unten
+const SLOT_ITEM = { 1: 'waffe', 3: 'trank', 5: 'seelen' }; // Dreieck: Waffe oben, Trank rechts unten, Seelen links unten
+const W_LEN = 1.0, W_TILT = 0.35;  // Waffen in der Mitte: so lang (Welt) und so schräg gestellt
 const CARD_H = 0.62, CARD_W = CARD_H * 1.33 / 1.9, CARD_Z = 0.42; // Größe der Karte (Welt), Abstand vor dem Kristall
 const wx = (s) => (s.x / 1024 - 0.5) * 2, wy = (s) => (0.5 - s.y / 1024) * 2;
 
@@ -134,6 +138,19 @@ function iconTex(kind) {
     g.fillStyle = '#4a2c18'; g.fillRect(-10, 34, 20, 58);
     g.fillStyle = au; for (const y of [44, 62, 80]) g.fillRect(-11, y, 22, 5);
     g.beginPath(); g.arc(0, 102, 13, 0, 7); g.fill();
+  } else if (kind === 'schwert') {
+    glow('rgba(170,150,255,0.4)', 120);
+    g.translate(c, c); g.rotate(-Math.PI / 4);
+    const bl = g.createLinearGradient(-12, 0, 12, 0); bl.addColorStop(0, '#7f8fd8'); bl.addColorStop(0.5, '#eef4ff'); bl.addColorStop(1, '#9a7fe0');
+    g.shadowColor = 'rgba(170,200,255,0.9)'; g.shadowBlur = 14;
+    g.fillStyle = bl; g.beginPath(); g.moveTo(0, -118); g.lineTo(14, -96); g.lineTo(13, 6); g.lineTo(18, 14); g.lineTo(-18, 14); g.lineTo(-13, 6); g.lineTo(-14, -96); g.closePath(); g.fill();
+    g.shadowBlur = 0;
+    g.strokeStyle = 'rgba(120,230,220,0.7)'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -100); g.lineTo(0, 4); g.stroke();
+    const au = g.createLinearGradient(-36, 0, 36, 0); au.addColorStop(0, '#8a5a1c'); au.addColorStop(0.5, '#ffe08a'); au.addColorStop(1, '#8a5a1c');
+    g.fillStyle = au; g.beginPath(); g.moveTo(-38, 10); g.lineTo(38, 10); g.lineTo(30, 26); g.lineTo(-30, 26); g.closePath(); g.fill();
+    g.fillStyle = '#b05cff'; g.beginPath(); g.arc(0, 18, 6, 0, 7); g.fill();
+    g.fillStyle = '#2a2230'; g.fillRect(-9, 26, 18, 56);
+    g.fillStyle = au; g.beginPath(); g.arc(0, 90, 11, 0, 7); g.fill();
   } else if (kind === 'trank') {
     glow('rgba(255,120,40,0.42)', 120);
     g.save(); g.beginPath(); g.arc(c, 150, 60, 0, 7); g.clip();
@@ -289,8 +306,10 @@ export class Inventar {
 
     // Gegenstände in den Fassungen
     this.icons = {};
+    this.wIcon = { degen: iconTex('degen'), schwert: iconTex('schwert') };
     for (const [i, kind] of Object.entries(SLOT_ITEM)) {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.27, 0.27), new THREE.MeshBasicMaterial({ map: iconTex(kind), transparent: true, depthWrite: false, toneMapped: false }));
+      const map = kind === 'waffe' ? this.wIcon[this.o.werte.waffe] || this.wIcon.degen : iconTex(kind);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.27, 0.27), new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, toneMapped: false }));
       m.position.set(wx(SOCK[i]), wy(SOCK[i]), 0.04); m.renderOrder = 2; this.hex.add(m); this.icons[i] = m;
     }
     // Karte: root (Lage vor dem Kristall) → anim (Aufsteigen/Versinken/Umdrehen) → spin (Schweben, Drehen)
@@ -304,7 +323,7 @@ export class Inventar {
 
     // Eingaben: Fassungen antippen, Maus neigt das Sechseck, Ziehen dreht die Karte
     this.socks.forEach((b, i) => {
-      b.onclick = () => { if (this.dragged) return; if (i === 0) this.openChoice(); else this.poke(i); };
+      b.onclick = () => { if (this.dragged) return; if (i === 0) this.openChoice('karte'); else if (i === 1) this.openChoice('waffe'); else this.poke(i); };
       b.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') this.o.focusEl(b); });
     });
     this.view.addEventListener('pointermove', (e) => {
@@ -325,8 +344,9 @@ export class Inventar {
     this.loadCard(this.o.werte.karte);
   }
 
-  // ---------- Karten laden und bauen ----------
+  // ---------- Karten und Waffen laden und bauen ----------
   loadCard(id) {
+    if (id && id.startsWith('w:')) { this.loadWeapon(id); return; }
     if (!KARTEN.some((c) => c.id === id) || this.models[id] || this.loading[id]) return;
     this.loading[id] = true;
     karteLaden(id).then((sc) => { this.models[id] = this.prepCard(sc); }, (e) => console.warn('Karte nicht geladen:', id, e));
@@ -344,6 +364,35 @@ export class Inventar {
     g.add(this.halo(0xff8a3a, haloTex(255, 120)));
     return g;
   }
+  /** Waffe für die Mitte: senkrecht, leicht schräg, etwa W_LEN lang */
+  loadWeapon(id) {
+    if (this.models[id] || this.loading[id]) return;
+    const k = id.slice(2);
+    if (k === 'degen') { this.models[id] = this.prepWeapon(this.caneShow(), 0xffb060); return; }
+    this.loading[id] = true;
+    schwertLaden().then((s) => { this.models[id] = this.prepWeapon(buildSchwert(s, false), 0x9fb4ff); }, (e) => console.warn('Waffe nicht geladen:', id, e));
+  }
+  caneShow() { // nur die gezogene Klinge mit Griff (Stock und Klinge zusammen wären zu lang und dünn)
+    const c = buildCane(), g = new THREE.Group();
+    c.fist.visible = false; g.add(c.sword);
+    return g;
+  }
+  /** Waffen-Raum (Griff entlang +Z) → Klinge nach oben, mittig, auf W_LEN skaliert, schräg; dahinter ein weicher Schein */
+  prepWeapon(w, glowCol) {
+    const box = new THREE.Box3().setFromObject(w), len = box.max.z - box.min.z, mid = (box.max.z + box.min.z) / 2;
+    const inner = new THREE.Group(); inner.add(w); w.position.z -= mid;
+    inner.rotation.x = -Math.PI / 2; inner.scale.setScalar(W_LEN / len);
+    w.traverse((m) => { if (m.isMesh && m.material && 'envMapIntensity' in m.material) m.material.envMapIntensity = 1.1; });
+    const g = new THREE.Group(), tilt = new THREE.Group(); tilt.rotation.z = W_TILT; tilt.add(inner); g.add(tilt);
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256;
+    const x = cv.getContext('2d'), gr = x.createRadialGradient(32, 128, 0, 32, 128, 128);
+    gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, 64, 256);
+    const h = new THREE.Mesh(new THREE.PlaneGeometry(0.42, W_LEN * 1.25), new THREE.MeshBasicMaterial({ map: tex(cv), color: glowCol, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
+    h.position.z = -0.08; h.renderOrder = 3; h.userData.halo = true; tilt.add(h);
+    g.userData.weapon = true;
+    return g;
+  }
   lockedCard(back) {
     const g = new THREE.Group(), mat = (t) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.7, metalness: 0.1, alphaTest: 0.5 });
     const f = new THREE.Mesh(new THREE.PlaneGeometry(CARD_W, CARD_H), mat(back ? this.backT : backTex(true))); f.position.z = 0.004; g.add(f);
@@ -359,7 +408,7 @@ export class Inventar {
   setObj(id) {
     if (this.obj) this.spin.remove(this.obj);
     this.obj = this.models[id] || null; this.shown = this.obj ? id : null;
-    if (this.obj) { this.spin.add(this.obj); this.haloM = this.obj.children.find((m) => m.userData.halo); }
+    if (this.obj) { this.spin.add(this.obj); this.haloM = null; this.obj.traverse((m) => { if (m.userData.halo && !this.haloM) this.haloM = m; }); }
   }
 
   // ---------- Abläufe ----------
@@ -377,18 +426,29 @@ export class Inventar {
     if (!this.models[id]) this.loadCard(id);
     if (this.obj) this.an = { k: 'sink', t: 0, T: 0.42, then: rise }; else rise();
   }
-  openChoice() {
+  /** Auswahl öffnen: kind 'karte' (Mitte) oder 'waffe' (obere Fassung) – die Vorschau dreht sich in der Mitte mit */
+  openChoice(kind = 'karte') {
     if (this.choosing) return;
-    this.choosing = true; this.kFocus = this.o.werte.karte;
+    const w = this.o.werte;
+    this.choosing = true; this.kind = kind;
     for (const b of this.socks) b.disabled = true;
-    const ks = [...KARTEN.map((k) => k.id), ...Array.from({ length: UNBEKANNT }, (_, i) => '?' + i)];
-    const own = this.o.werte.karten || ['herzass'];
-    this.info.innerHTML = `<div class="nm">Karte wählen</div>
-      <div class="kwahl">${ks.map((id) => {
+    let btns;
+    if (kind === 'waffe') {
+      this.kFocus = 'w:' + w.waffe;
+      btns = [...WAFFEN_IDS.map((id) => w.waffen.includes(id)
+        ? `<button class="sbtn kmini waffe${id === w.waffe ? ' on' : ''}" data-k="w:${id}" style="background-image:url(${this.wIcon[id].image.toDataURL()})"></button>`
+        : `<button class="sbtn kmini zu" data-k="?w${id}"><b>?</b></button>`), '<button class="sbtn kmini zu" data-k="?w"><b>?</b></button>'];
+    } else {
+      this.kFocus = w.karte;
+      const ks = [...KARTEN.map((k) => k.id), ...Array.from({ length: UNBEKANNT }, (_, i) => '?' + i)], own = w.karten || ['herzass'];
+      btns = ks.map((id) => {
         const k = KARTEN.find((c) => c.id === id), has = k && own.includes(id);
-        return has ? `<button class="sbtn kmini ${id}${id === this.o.werte.karte ? ' on' : ''}" data-k="${id}"><b>${k.mini[0]}</b><i>${k.mini[1]}</i></button>`
+        return has ? `<button class="sbtn kmini ${id}${id === w.karte ? ' on' : ''}" data-k="${id}"><b>${k.mini[0]}</b><i>${k.mini[1]}</i></button>`
           : `<button class="sbtn kmini zu" data-k="${id.startsWith('?') ? id : '?x'}"><b>?</b></button>`;
-      }).join('')}</div>
+      });
+    }
+    this.info.innerHTML = `<div class="nm">${kind === 'waffe' ? 'Waffe wählen' : 'Karte wählen'}</div>
+      <div class="kwahl">${btns.join('')}</div>
       <div class="kinfo"></div>
       <button class="sbtn" data-zu="1">Zurück</button>`;
     for (const b of this.info.querySelectorAll('[data-k]')) {
@@ -397,22 +457,32 @@ export class Inventar {
     }
     this.info.querySelector('[data-zu]').onclick = () => this.closeChoice();
     sfx.ui(1);
+    if (kind === 'waffe') this.want = this.kFocus; // die Karte macht der Waffe Platz
     this.o.focusEl(this.info.querySelector(`[data-k="${this.kFocus}"]`) || this.info.querySelector('[data-k]'));
   }
   closeChoice(quiet) {
     if (!this.choosing) return;
-    this.choosing = false; this.want = this.o.werte.karte;
+    const was = this.kind;
+    this.choosing = false; this.kind = null; this.want = this.o.werte.karte;
     for (const b of this.socks) b.disabled = false;
-    this.focusI = 0; this.renderInfo();
-    if (!quiet) this.o.focusEl(this.socks[0]);
+    this.focusI = was === 'waffe' ? 1 : 0; this.renderInfo();
+    if (!quiet) this.o.focusEl(this.socks[this.focusI]);
   }
   choose(id) {
     if (id.startsWith('?')) {
       sfx.nein(); this.an = this.an || { k: 'shake', t: 0, T: 0.4 };
-      const ki = this.info.querySelector('.kinfo'); if (ki) ki.innerHTML = '<p class="ds warn">Diese Karte hast du noch nicht gefunden.</p>';
+      const ki = this.info.querySelector('.kinfo');
+      if (ki) ki.innerHTML = `<p class="ds warn">${this.kind === 'waffe' ? 'Diese Waffe hast du noch nicht gefunden.' : 'Diese Karte hast du noch nicht gefunden.'}</p>`;
       return;
     }
-    const w = this.o.werte; w.karte = id; w.save(); if (this.o.onEquip) this.o.onEquip();
+    const w = this.o.werte;
+    if (id.startsWith('w:')) { // Waffe: kurz in der Mitte zeigen, dann kehrt die Karte zurück
+      w.waffe = id.slice(2); w.save(); if (this.o.onEquip) this.o.onEquip();
+      this.icons[1].material.map = this.wIcon[w.waffe]; this.icons[1].material.needsUpdate = true;
+      this.closeChoice(); this.equipAnim(id); this.holdT = 2.4;
+      return;
+    }
+    w.karte = id; w.save(); if (this.o.onEquip) this.o.onEquip();
     this.closeChoice(); this.equipAnim(id);
   }
   /** Gegenstand antippen: hüpft kurz und dreht sich */
@@ -425,14 +495,14 @@ export class Inventar {
     if (b.dataset.s !== undefined) { const i = +b.dataset.s; ch = i !== this.focusI; this.focusI = i; this.renderInfo(); }
     else if (b.dataset.k !== undefined) {
       ch = b.dataset.k !== this.kFocus; this.kFocus = b.dataset.k;
-      this.want = b.dataset.k.startsWith('?') ? '?' : b.dataset.k; this.renderKinfo();
+      this.want = b.dataset.k.startsWith('?') ? '?' : b.dataset.k; this.holdT = 0; this.renderKinfo();
     } else if (!this.choosing) { ch = this.focusI !== -1; this.focusI = -1; }
     if (ch) { this.focPop = 1; sfx.ui(); }
   }
   hintA() { const p = this.inp || {}; return p.pad ? 'A' : p.touch || document.body.classList.contains('touch') ? 'Antippen' : 'Enter / Klick'; }
   itemData(kind) {
     const w = this.o.werte, m = w.mods(), p = this.o.player, f0 = Math.round;
-    if (kind === 'degen') return { n: 'Stockdegen', tag: 'WAFFE', d: `Verborgene Klinge im Spazierstock. Schaden leicht ${f0(12 * m.light)}, schwer ${f0(32 * m.heavy)}.` };
+    if (kind === 'waffe') { const W = WAFFEN[w.waffe] || WAFFEN.degen; return { n: W.n, tag: 'WAFFE · AUSGERÜSTET', d: `${W.d} Schaden leicht ${f0(12 * m.light)}, schwer ${f0(32 * m.heavy)}.`, hint: true }; }
     if (kind === 'trank') return { n: 'Heiltrank', q: `${p.potions} / ${p.maxPotions}`, d: 'Glut-Essenz im Fläschchen. Heilt 45 Leben. Am Seelenstein und nach dem Tod wieder voll.' };
     return { n: 'Seelen', q: w.souls, d: 'Von besiegten Gegnern (Hund 10, Boss 1500). Am Seelenstein gegen Stufen tauschen.' };
   }
@@ -441,13 +511,25 @@ export class Inventar {
     const i = this.focusI, k = KARTEN.find((c) => c.id === this.o.werte.karte);
     let h;
     if (i === 0 && k) h = `<div class="nm">${k.n}</div><div class="tag">AUSGERÜSTETE KARTE</div><p class="ds">${k.d}</p><p class="hn">${this.hintA()}: Karte wählen</p>`;
-    else if (SLOT_ITEM[i]) { const d = this.itemData(SLOT_ITEM[i]); h = `<div class="nm">${d.n}${d.q !== undefined ? ` <span class="qt">${d.q}</span>` : ''}</div>${d.tag ? `<div class="tag">${d.tag}</div>` : ''}<p class="ds">${d.d}</p>`; }
+    else if (SLOT_ITEM[i]) {
+      const d = this.itemData(SLOT_ITEM[i]), more = d.hint && this.o.werte.waffen.length > 1;
+      h = `<div class="nm">${d.n}${d.q !== undefined ? ` <span class="qt">${d.q}</span>` : ''}</div>${d.tag ? `<div class="tag">${d.tag}</div>` : ''}<p class="ds">${d.d}</p>`
+        + (d.hint ? `<p class="hn">${this.hintA()}: ${more ? 'Waffe wechseln' : 'Waffen ansehen'}</p>` : '');
+    }
     else if (i > 0) h = '<div class="nm dim">Leere Fassung</div><p class="ds">Hier ist noch Platz für Fundstücke.</p>';
     else h = `<div class="nm">${k ? k.n : 'Inventar'}</div><p class="ds">Wähle eine Fassung im Sechseck.</p>`;
     this.info.innerHTML = h;
   }
   renderKinfo() {
     const ki = this.info.querySelector('.kinfo'); if (!ki) return;
+    if (this.kind === 'waffe') {
+      const id = this.kFocus.startsWith('w:') ? this.kFocus.slice(2) : null, W = id && WAFFEN[id], cur = WAFFEN[this.o.werte.waffe] || WAFFEN.degen;
+      const m = this.o.werte.mods(), f0 = Math.round;
+      ki.innerHTML = W ? `<div class="nm sm">${W.n}${id === this.o.werte.waffe ? ' <span class="tag">AUSGERÜSTET</span>' : ''}</div><p class="ds">${W.d}</p>`
+        + `<p class="ds">Schaden leicht ${f0(12 * m.light / cur.light * W.light)} · schwer ${f0(32 * m.heavy / cur.heavy * W.heavy)}</p>`
+        : '<div class="nm sm dim">Unbekannte Waffe</div><p class="ds">Noch nicht gefunden. Vielleicht liegt sie irgendwo in der Stadt …</p>';
+      return;
+    }
     const k = KARTEN.find((c) => c.id === this.kFocus);
     ki.innerHTML = k ? `<div class="nm sm">${k.n}${k.id === this.o.werte.karte ? ' <span class="tag">AUSGERÜSTET</span>' : ''}</div><p class="ds">${k.d}</p>`
       : '<div class="nm sm dim">Unbekannte Karte</div><p class="ds">Noch nicht gefunden. Vielleicht trägt ein Feind sie bei sich …</p>';
@@ -458,6 +540,7 @@ export class Inventar {
     this.el.querySelector('#invSouls').textContent = 'Seelen ' + w.souls;
     this.socks[3].querySelector('.sq').textContent = `${p.potions}/${p.maxPotions}`;
     this.socks[5].querySelector('.sq').textContent = fmt(w.souls);
+    this.icons[1].material.map = this.wIcon[w.waffe] || this.wIcon.degen; this.icons[1].material.needsUpdate = true;
     if (this.choosing) this.closeChoice(true);
     this.ready = 0; this.renderInfo(); this.enter();
   }
@@ -492,7 +575,8 @@ export class Inventar {
     this.root.scale.setScalar(1 + 0.12 * this.chooseK);
 
     // Vorschau beim Blättern: Karte dreht sich auf die Kante, wird getauscht, dreht zurück
-    if (!this.an && this.want && this.want !== this.shown && this.models[this.want]) this.an = { k: 'flip', t: 0, T: 0.36, to: this.want };
+    this.holdT = Math.max(0, (this.holdT || 0) - dt); // nach dem Ausrüsten einer Waffe bleibt sie kurz stehen
+    if (!this.an && !this.holdT && this.want && this.want !== this.shown && this.models[this.want]) this.an = { k: 'flip', t: 0, T: 0.36, to: this.want };
     if (this.want && this.want !== '?' && !this.models[this.want]) this.loadCard(this.want);
 
     this.runAnim(dt);
@@ -583,11 +667,12 @@ export class Inventar {
       while (this.emitAcc > 1) {
         this.emitAcc--;
         const e = (Math.random() * 4) | 0, q = Math.random() * 2 - 1, hw = CARD_W / 2, hh = CARD_H / 2;
-        V.set(e < 2 ? q * hw : e === 2 ? hw : -hw, e < 2 ? (e ? hh : -hh) : q * hh, 0);
+        if (this.obj.userData.weapon) V.set(-Math.sin(W_TILT) * q * W_LEN * 0.45, Math.cos(W_TILT) * q * W_LEN * 0.45, 0); // entlang der Waffe
+        else V.set(e < 2 ? q * hw : e === 2 ? hw : -hw, e < 2 ? (e ? hh : -hh) : q * hh, 0);
         this.spin.localToWorld(V); this.hex.worldToLocal(V);
         this.fx.add({ p: [V.x, V.y, V.z], v: [(Math.random() - 0.5) * 0.08, 0.05 + Math.random() * 0.12, (Math.random() - 0.3) * 0.08],
           life: 0.9 + Math.random() * 1.6, s: 0.014 + Math.random() * 0.02, drag: 0.8, up: 0.16, wob: 0.05, ph: Math.random() * 6,
-          c0: [1.5, 0.95, 0.4], c1: [0.9, 0.18, 0.04] });
+          ...(this.shown === 'w:schwert' ? { c0: [0.75, 0.9, 1.6], c1: [0.55, 0.3, 1.2] } : { c0: [1.5, 0.95, 0.4], c1: [0.9, 0.18, 0.04] }) });
       }
     }
     // feiner Kristallstaub

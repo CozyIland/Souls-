@@ -1,7 +1,9 @@
 // Stufen-System wie in Souls-Spielen: Gegner geben Seelen, am Seelenstein steigt man mit Seelen eine Stufe auf und
 // erhöht dabei einen Wert um 1. Stufe 1 … 20. Kosten: 50 → 100 → 200, danach je +50 % (gerundet auf 10).
 // Werte: Ausdauer (Leben + Ausdauer), Stärke (Degen, vor allem schwer), Trickreich (leichte Schläge, Rolle), Magie (Karten).
-// Dazu: ausgerüstete Karte (karte) und gefundene Karten (karten). Der Stand wird im Browser gespeichert (falls erlaubt).
+// Dazu: ausgerüstete Karte (karte) und gefundene Karten (karten), Waffe in der Hand (waffe) und gefundene Waffen (waffen),
+// Truhe in der Kartenstraße schon geöffnet (truhe). Der Stand wird im Browser gespeichert (falls erlaubt).
+import { WAFFEN } from './waffen.js';
 
 export const MAX_LV = 20;
 export const BASE = 10;                       // Startwert jedes Werts
@@ -25,7 +27,7 @@ export function cost(lv) {
 const KEY = 'aschenblatt-stufe';
 export class Werte {
   constructor() { this.reset(); this.load(); }
-  reset() { this.souls = 0; this.s = { aus: BASE, str: BASE, tri: BASE, mag: BASE }; this.god = false; this.karte = 'herzass'; this.karten = ['herzass']; }
+  reset() { this.souls = 0; this.s = { aus: BASE, str: BASE, tri: BASE, mag: BASE }; this.god = false; this.karte = 'herzass'; this.karten = ['herzass']; this.waffe = 'degen'; this.waffen = ['degen']; this.truhe = false; }
   /** Stufe = 1 + alle verteilten Punkte */
   get lv() { return 1 + STATS.reduce((n, x) => n + this.s[x.k] - BASE, 0); }
   get next() { return cost(this.lv + 1); }
@@ -49,23 +51,28 @@ export class Werte {
     if (v < BASE || (d > 0 && this.lv >= MAX_LV)) return false;
     this.s[k] = v; this.save(); return true;
   }
-  /** abgeleitete Werte für Spieler, Degen und Karten */
+  /** Truhe geöffnet: Waffe gefunden */
+  findWeapon(id) { if (!this.waffen.includes(id)) this.waffen.push(id); this.truhe = true; this.save(); }
+  /** abgeleitete Werte für Spieler, Waffe und Karten (die Waffe in der Hand wirkt mit) */
   mods() {
-    const a = this.s.aus - BASE, st = this.s.str - BASE, t = this.s.tri - BASE, m = this.s.mag - BASE;
+    const a = this.s.aus - BASE, st = this.s.str - BASE, t = this.s.tri - BASE, m = this.s.mag - BASE, W = WAFFEN[this.waffe] || WAFFEN.degen;
     return {
       maxHp: 100 + 6 * a, maxSt: 100 + 5 * a,
-      light: 1 + 0.035 * st + 0.05 * t, heavy: 1 + 0.07 * st + 0.02 * t, poise: 1 + 0.04 * st,
-      roll: Math.max(0.6, 1 - 0.02 * t), atkCost: Math.max(0.7, 1 - 0.015 * t),
+      light: (1 + 0.035 * st + 0.05 * t) * W.light, heavy: (1 + 0.07 * st + 0.02 * t) * W.heavy, poise: (1 + 0.04 * st) * W.poise,
+      roll: Math.max(0.6, 1 - 0.02 * t), atkCost: Math.max(0.7, 1 - 0.015 * t) * W.cost, range: W.range,
       card: 1 + 0.08 * m, cardCost: Math.max(0.55, 1 - 0.025 * m),
     };
   }
-  save() { try { localStorage.setItem(KEY, JSON.stringify({ souls: this.souls, s: this.s, god: this.god, karte: this.karte, karten: this.karten })); } catch (e) { /* kein Speicher – egal */ } }
+  save() { try { localStorage.setItem(KEY, JSON.stringify({ souls: this.souls, s: this.s, god: this.god, karte: this.karte, karten: this.karten, waffe: this.waffe, waffen: this.waffen, truhe: this.truhe })); } catch (e) { /* kein Speicher – egal */ } }
   load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (d && d.s) { this.souls = d.souls | 0; for (const x of STATS) this.s[x.k] = Math.max(BASE, d.s[x.k] | 0); this.god = !!d.god; }
       if (d && Array.isArray(d.karten)) this.karten = [...new Set(['herzass', ...d.karten.filter((k) => typeof k === 'string')])];
       if (d && typeof d.karte === 'string' && this.karten.includes(d.karte)) this.karte = d.karte;
+      if (d && Array.isArray(d.waffen)) this.waffen = [...new Set(['degen', ...d.waffen.filter((k) => k in WAFFEN)])];
+      if (d && typeof d.waffe === 'string' && this.waffen.includes(d.waffe)) this.waffe = d.waffe;
+      if (d) this.truhe = !!d.truhe;
     } catch (e) { /* kaputter oder fehlender Speicher – neu anfangen */ }
   }
 }

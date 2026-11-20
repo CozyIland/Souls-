@@ -2,6 +2,7 @@
 // Ganz mit dem Controller bedienbar: LB/RB Seite, Steuerkreuz/Stick auswählen, A bestätigen, B zurück. Maus/Touch: antippen.
 import { STATS, MAX_LV, BASE, cost } from './stufe.js';
 import { Inventar } from './inventar.js';
+import { WAFFEN } from './waffen.js';
 
 const TABS = ['char', 'inv', 'ctrl', 'test'];
 const $ = (id) => document.getElementById(id);
@@ -61,7 +62,7 @@ export class Menue {
           <span class="ds">${s.d}</span></div>`).join('')}
       <div class="derived">
         <span>Leben</span><span>${m.maxHp}</span><span>Ausdauer</span><span>${m.maxSt}</span>
-        <span>Degen leicht / schwer</span><span>${f0(12 * m.light)} / ${f0(32 * m.heavy)}</span>
+        <span>${(WAFFEN[w.waffe] || WAFFEN.degen).n} leicht / schwer</span><span>${f0(12 * m.light)} / ${f0(32 * m.heavy)}</span>
         <span>Karte (Schaden · Ausdauer)</span><span>${f0(8 * m.card)} · ${f0(12 * m.cardCost)}</span>
         <span>Rolle kostet Ausdauer</span><span>${f0(22 * m.roll)}</span>
       </div>`;
@@ -100,7 +101,8 @@ export class Menue {
       ${STATS.map((s) => `<div class="trow"><span class="tl">${s.icon} ${s.n}</span><button class="sbtn" data-b="${s.k}" data-d="-1">−</button><span class="tv">${w.s[s.k]}</span><button class="sbtn" data-b="${s.k}" data-d="1">+</button></div>`).join('')}
       <div class="trow"><span class="tl">Unverwundbar</span><button class="sbtn" data-god="1">${w.god ? 'AN – ausschalten' : 'AUS – einschalten'}</button></div>
       <div class="trow"><span class="tl">Seelen</span><button class="sbtn" data-s="100">+100</button><button class="sbtn" data-s="1000">+1000</button><button class="sbtn" data-s="0">auf 0</button></div>
-      <div class="trow"><span class="tl">Springen</span><button class="sbtn" data-j="stone">Zum Seelenstein</button><button class="sbtn" data-j="gate">Vor das Nebeltor</button><button class="sbtn" data-j="arena">In die Arena</button></div>
+      <div class="trow"><span class="tl">Springen</span><button class="sbtn" data-j="stone">Zum Seelenstein</button><button class="sbtn" data-j="truhe">Zur Truhe</button><button class="sbtn" data-j="gate">Vor das Nebeltor</button><button class="sbtn" data-j="arena">In die Arena</button></div>
+      <div class="trow"><span class="tl">Truhe</span><button class="sbtn" data-chest="1">${w.truhe ? 'Wieder schließen (Schwert zurück)' : 'Noch zu'}</button></div>
       <div class="trow"><span class="tl">Neu</span><button class="sbtn" data-r="1">Alles zurücksetzen</button></div>
       <p class="mnote">Kosten: ${Array.from({ length: MAX_LV - 1 }, (_, i) => `${i + 2}: ${cost(i + 2)}`).join(' · ')}</p>`;
     const re = () => { this.o.apply(); this.renderTest(); this.markFocus(); };
@@ -109,6 +111,7 @@ export class Menue {
     for (const b of el.querySelectorAll('[data-s]')) b.onclick = () => { const n = Number(b.dataset.s); if (n) w.addSouls(n); else { w.souls = 0; w.save(); } re(); };
     for (const b of el.querySelectorAll('[data-j]')) b.onclick = () => { this.o.jump(b.dataset.j); };
     for (const b of el.querySelectorAll('[data-god]')) b.onclick = () => { w.god = !w.god; w.save(); re(); };
+    for (const b of el.querySelectorAll('[data-chest]')) b.onclick = () => { if (w.truhe && this.o.closeChest) this.o.closeChest(); re(); };
     for (const b of el.querySelectorAll('[data-r]')) b.onclick = () => { w.reset(); w.save(); if (this.o.reset) this.o.reset(); re(); };
   }
 }

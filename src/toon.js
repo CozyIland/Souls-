@@ -67,3 +67,24 @@ export function skinOutline(mesh, w = 0.012) {
   o.position.copy(mesh.position); o.quaternion.copy(mesh.quaternion); o.scale.copy(mesh.scale);
   return o;
 }
+
+/** Umriss für beliebige (auch nicht zentrierte) Meshes: Rückseite entlang der Normalen aufgebläht, Breite w in Metern (Welt) */
+const hullMats = new Map();
+export function hullOutline(mesh, w = 0.012) {
+  let m = hullMats.get(w);
+  if (!m) {
+    m = new THREE.MeshBasicMaterial({ color: 0x120a08, side: THREE.BackSide });
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uLine = { value: w };
+      sh.vertexShader = 'uniform float uLine;\n' + sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  transformed += normalize(normal) * uLine / max(length(modelMatrix[0].xyz), 1e-4);',
+      );
+    };
+    hullMats.set(w, m);
+  }
+  const o = new THREE.Mesh(mesh.geometry, m);
+  o.castShadow = false; o.receiveShadow = false; o.userData.isOutline = true; o.userData.noMerge = true;
+  mesh.add(o);
+  return o;
+}

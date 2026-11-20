@@ -9,7 +9,8 @@ import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 import { resolve } from './kollision.js';
 import { ladeModell } from './modelle.js';
 import { cardMesh, nextSuit } from './karten.js';
-import { buildCane, buildFist, ATTACKS, READY_POSE, READY_HAND, attackPose, Trail, BLADE_L, FIST_WRIST, GRIP_L } from './degen.js';
+import { buildCane, buildFist, ATTACKS, READY_POSE, READY_HAND, attackPose, Trail, FIST_WRIST, GRIP_L } from './degen.js';
+import { WAFFEN, schwertLaden, buildSchwert } from './waffen.js';
 
 const MODEL_URL = 'models/magier.glb';
 const WALK = 3.4, RUN = 5.8;          // m/s (Joggen, Rennen)
@@ -161,7 +162,8 @@ export class Player {
     this.queued = false;
     this.potions = POTIONS; this.maxPotions = POTIONS; this.onHeal = null;
     // Werte aus dem Stufen-System (stufe.js): Schaden, Ausdauerkosten – setzt main.js über applyStats
-    this.mods = { light: 1, heavy: 1, poise: 1, roll: 1, atkCost: 1, cardCost: 1 };
+    this.mods = { light: 1, heavy: 1, poise: 1, roll: 1, atkCost: 1, cardCost: 1, range: 0 };
+    this.waffe = WAFFEN.degen;        // Waffe in der Hand (waffen.js), wechselt über setWeapon
     this.t = 0; this.walk = 0; this.moveK = 0; this.time = 0;
     this.rollDir = new THREE.Vector2(0, 1);
     this.root = new THREE.Group();
@@ -187,6 +189,21 @@ export class Player {
     return true;
   }
   /** Werte aus dem Stufen-System übernehmen (mehr Leben/Ausdauer kommen sofort dazu) */
+  /** Waffe wechseln: Degen-Teile oder Kristallklinge in der Hand; Faust passt sich der Griffdicke an, Stock nur beim Degen */
+  setWeapon(id) {
+    const W = WAFFEN[id] || WAFFEN.degen; this.waffe = W;
+    if (!this.sword) return;
+    const deg = W.id === 'degen';
+    this.caneParts.visible = deg; this.sheath.visible = deg;
+    if (this.swordAlt) this.swordAlt.visible = !deg;
+    this.fist.scale.setScalar(W.fist); this.fistL.scale.set(W.fist, -W.fist, W.fist);
+    this.wrist.copy(FIST_WRIST).multiplyScalar(W.fist);
+    if (!deg && !this.swordAlt) schwertLaden().then((s) => {
+      if (this.swordAlt) return;
+      this.swordAlt = buildSchwert(s, true); this.sword.add(this.swordAlt); this.swordAlt.visible = this.waffe.id !== 'degen';
+    }).catch((e) => console.warn('Kristallklinge fehlt.', e));
+  }
+
   applyStats(m) {
     const dh = m.maxHp - this.maxHp, ds = m.maxSt - this.maxSt;
     this.maxHp = m.maxHp; this.maxSt = m.maxSt;
@@ -262,7 +279,8 @@ export class Player {
 
     // Stockdegen: Stock in der linken Hand, Klinge darin (wird beim Angriff gezogen)
     const cane = buildCane();
-    this.sheath = cane.sheath; this.sword = cane.sword; this.fist = cane.fist;
+    this.sheath = cane.sheath; this.sword = cane.sword; this.fist = cane.fist; this.caneParts = cane.parts;
+    this.wrist = FIST_WRIST.clone();
     this.root.parent.add(this.sheath);
     this.root.parent.add(this.sword);
     this.pose = { arm: [0, 0, 0], fore: [0, 0, 0], blade: [0, 0, 1], tw: 0, ln: 0, w: 0 };
@@ -284,6 +302,7 @@ export class Player {
     this.flask.visible = false; this.root.parent.add(this.flask);
     // linke Faust (beidhändiger Griff beim schweren Schlag): gespiegelte Faust am Griff unter der rechten
     this.fistL = buildFist(); this.fistL.scale.set(1, -1, 1); this.fistL.visible = false; this.root.parent.add(this.fistL);
+    this.setWeapon(this.waffe ? this.waffe.id : 'degen');
     this.bladeD = new THREE.Vector3(0, 0, 1);
     this.trail = new Trail(this.root.parent);
     // Karte in der rechten Hand (nur während des Wurfs zu sehen)
@@ -413,7 +432,7 @@ export class Player {
       // schwerer Schlag: Klinge schlägt auf den Boden – Staub an der Spitze, Rütteln
       if (A.slam && !at.slammed && at.t >= A.slam && this.sword) {
         at.slammed = true;
-        const tip = this.sword.localToWorld(new THREE.Vector3(0, 0, BLADE_L)); tip.y = 0.05;
+        const tip = this.sword.localToWorld(new THREE.Vector3(0, 0, this.waffe.bladeL)); tip.y = 0.05;
         if (this.onDust) this.onDust(tip, 16);
         if (this.onSlam) this.onSlam(tip);
       }
@@ -421,7 +440,7 @@ export class Player {
       if (at.t >= A.act[0] && at.t <= A.act[1]) for (const tg of this.targets) {
         if (at.hit.has(tg) || tg.dead) continue;
         const dx = tg.pos.x - this.pos.x, dz = tg.pos.z - this.pos.z, d = Math.hypot(dx, dz);
-        if (d - (tg.radius || 0) > A.range + 0.3) continue; // große Gegner: Reichweite bis zur Körperoberfläche
+        if (d - (tg.radius || 0) > A.range + 0.3 + (this.mods.range || 0)) continue; // große Gegner: Reichweite bis zur Körperoberfläche
         if (Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) > A.arc && d > 0.6) continue;
         at.hit.add(tg);
         this.hitStop = A.heavy ? 0.1 : 0.05;
@@ -863,7 +882,7 @@ export class Player {
       const Y = vE.crossVectors(this.bladeD, X);
       mT.makeBasis(X, Y, this.bladeD);
       this.sword.quaternion.setFromRotationMatrix(mT);
-      this.sword.position.copy(vB).sub(vF.copy(FIST_WRIST).applyQuaternion(this.sword.quaternion));
+      this.sword.position.copy(vB).sub(vF.copy(this.wrist).applyQuaternion(this.sword.quaternion));
     } else {
       this.sword.position.copy(this.sheath.position).addScaledVector(sd, -0.07);
       this.sword.quaternion.copy(this.sheath.quaternion);
@@ -882,7 +901,7 @@ export class Player {
       const Y = vF.crossVectors(this.bladeD, X);
       mT.makeBasis(X, Y, this.bladeD); this.fistL.quaternion.setFromRotationMatrix(mT); this.fistL.position.copy(G);
       // Handgelenk der linken Faust: gespiegelt wie die Faust selbst
-      const W = vT.copy(FIST_WRIST); W.y = -W.y; W.applyQuaternion(this.fistL.quaternion).add(G);
+      const W = vT.copy(this.wrist); W.y = -W.y; W.applyQuaternion(this.fistL.quaternion).add(G);
       // Ellbogen: unten außen; sind die Hände hoch (Ausholen über den Kopf), außen oben – die Arme rahmen den Kopf ein
       const hu = clamp((this.pose.hand[1] + 0.02) / 0.3, 0, 1);
       armIK(vD, W, this.arm.aL, this.arm.bL, bodyDir(0.8, lerp(-0.55, 0.3, hu), lerp(0.15, -0.15, hu), vP), vH, vK);
@@ -893,7 +912,7 @@ export class Player {
     // (at = laufender Angriff, oben gesetzt)
     const trailOn = this.state === 'attack' && at.t > at.a.act[0] - 0.05 && at.t < at.a.act[1] + 0.05;
     vC.copy(this.sword.position).addScaledVector(this.bladeD, 0.25);
-    vB.copy(this.sword.position).addScaledVector(this.bladeD, BLADE_L + 0.015);
+    vB.copy(this.sword.position).addScaledVector(this.bladeD, this.waffe.bladeL);
     this.trail.update(vC, vB, trailOn, at && at.a.heavy);
 
     // 4a) Heiltrank in der linken Hand: Hals zeigt zum Mund, beim Trinken kippt er

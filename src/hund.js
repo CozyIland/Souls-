@@ -592,7 +592,8 @@ class Dog {
 /** Hunde aufstellen: ein einzelner kurz hinter dem Start, ein Rudel weiter nördlich (vor dem Nebeltor) */
 export function spawnDogs(scene) {
   ladeModell(new GLTFLoader(), DOG_URL, (g) => { DOG_GLTF = g; for (const d of dogs) d.useModel(); }, (e) => console.warn('Hunde-Modell fehlt – Grundformen bleiben.', e));
-  for (const [x, z, y] of [[-2, -30, 0.4], [2.5, -33, -0.6], [-1, -36, 2.8], [2.5, 20, -2.6]]) dogs.push(new Dog(scene, x, z, y));
+  // Rudel bei z −30, einer kurz hinter dem Start, drei bewachen die Truhe am Ende der Kartenstraße (world.js TRUHE)
+  for (const [x, z, y] of [[-2, -30, 0.4], [2.5, -33, -0.6], [-1, -36, 2.8], [2.5, 20, -2.6], [29.8, -1.2, -1.45], [30.4, 2.6, -1.9], [28.9, 0.9, -1.6]]) dogs.push(new Dog(scene, x, z, y));
   return dogs;
 }
 

@@ -172,7 +172,10 @@
   als Fläche mit Shader `HFS` – Kristall (Maske aus Sättigung/Farbton) schillert (`hueRot`), Adern flackern, Lichtstreifen wandert, Lichtwelle
   beim Ausrüsten (`uPulse`), goldenes Leuchten um die gewählte Fassung (`uFoc`), Rand per Helligkeit freigestellt. Fassungen `SOCK` (Pixel im
   Bild), Gegenstände `SLOT_ITEM` (oben Stockdegen, rechts unten Heiltrank, links unten Seelen; Bilder `iconTex`, Zahlen `.sq`), Knöpfe `.sock`
-  liegen über den Fassungen (`placeSockets`, folgen der Neigung) → Menü-Fokus/Controller wie überall. **Mitte = ausgerüstete Karte** in 3D
+  liegen über den Fassungen (`placeSockets`, folgen der Neigung) → Menü-Fokus/Controller wie überall. **Obere Fassung = Waffe in der Hand**
+  (Bild je Waffe `wIcon`): antippen/A → `openChoice('waffe')`: die Karte macht Platz, die Waffe dreht sich in 3D in der Mitte (`loadWeapon`,
+  `prepWeapon`: senkrecht, schräg `W_TILT`, `W_LEN` lang, Schein dahinter; Stockdegen = gezogene Klinge `caneShow`), ungefundene als „?“;
+  wählen → steigt auf, bleibt `holdT` stehen, dann kehrt die Karte zurück. **Mitte = ausgerüstete Karte** in 3D
   (`KARTEN`: `herzass` → `models/herzass.glb`, Meshy, mit gltfpack auf 12 % vereinfacht + `KHR_mesh_quantization`; eigene Rückseite
   `backTex`, weil das Modell hinten die Vorderseite gespiegelt zeigt; Glutschein `halo`). Gruppen `root` (Lage, rückt bei der Wahl vor) →
   `anim` (Abläufe `an`: rise = aus dem Kristall wirbeln, sink, flip = Vorschau tauschen, shake) → `spin` (Schweben, Wiegen, alle ~10 s einmal
@@ -182,6 +185,19 @@
   die Wahl. `werte.karte`/`werte.karten` in stufe.js gespeichert. Klänge `sfx.karte`/`huschen`/`ui`/`nein`. Kartenmodelle liest `karteLaden(id)`
   schon 1,5 s nach dem Start im Hintergrund (main.js); lädt es noch, zeigt die Mitte die Rückseite (`models.back`) und dreht sich dann um.
   Neue Karte: Eintrag in `KARTEN` (+ GLB in `models/`, `mini` fürs Auswahl-Kärtchen, CSS `.kmini.<id>`), finden = `werte.karten` ergänzen.
+- **Waffen** (`src/waffen.js`): `WAFFEN` = Stockdegen (Anfang) und **Kristallklinge** (`models/kristallschwert.glb`, Meshy, gltfpack 20 %;
+  Modell senkrecht, Klinge +y, Parierstange unten bei y −0,47 → `buildSchwert` legt sie in den Klingen-Raum: Griff entlang +Z, Maßstab
+  `SCHWERT_K` 0,66 = 1,25 m, Griff 0,22 m wie beim Degen). Je Waffe Faktoren light/heavy/poise/cost, `range` (+m), Klingenspitze `bladeL`,
+  Faustgröße `fist` (Kristallgriff dicker → Faust und Handgelenk-Punkt `player.wrist` ×1,18). Werte wirken über `Werte.mods()`; im Spieler
+  `setWeapon(id)` (aus `applyStats`): Degen-Teile `caneParts` + Stock aus, Kristallklinge (`swordAlt`, Toon + `hullOutline`) an. Ohne Degen
+  hängt beim Kartenwurf die Klinge selbst an der Hüfte. `werte.waffe`/`waffen` gespeichert.
+- **Truhe** (`src/truhe.js`, Klasse `Truhe`, `models/truhe.glb` – ein Mesh ohne Animation): beim Laden wird der **Deckel abgetrennt**
+  (alle Dreiecke über der Fuge `SEAM` 0,22 – dort läuft rundherum eine Rille), dreht sich um das Scharnier hinten (`HINGE_Z`); innen dunkle
+  Kästen (`BackSide`), Licht + Schein. `canOpen(p)` (vor dem Schloss, `front()`), `open(player, onGot)`: Schloss zuckt, Deckel federt auf,
+  Kristallklinge steigt drehend heraus, schwebt, fliegt zum Magier → `werte.findWeapon('schwert')`, Banner `#found`; `setOpen()` (Spielstand
+  `werte.truhe`), `close()` (Testmodus). main.js: Hinweis „Truhe öffnen“ (A/Enter/✋ `#tUse`), Steuerung ruht 1,3 s (`chestT`), Magier schaut hin.
+- **Seitenstraße** = Kartenstraße Ost (Sackgasse von der Kreuzung bis x ≈ 36, Sperre wie an der Westseite nur verschoben, dahinter
+  Sandsäcke/Kiste/Feuertonne), Truhe `TRUHE` (33,4 / 0,8, Schloss nach Westen), drei Hunde davor (hund.js Startliste).
 - `src/world.js` – Straßen der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.
   **Alle festen Teile werden am Ende nach Material zusammengefasst** (`mergeStatic`, behält Vertex-Farben; `userData.noMerge` = auslassen).
