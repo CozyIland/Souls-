@@ -6,6 +6,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { toon, outline, GRADIENT, skinOutline } from './toon.js';
 import { ladeModell } from './modelle.js';
 import { sfx } from './ton.js';
+import { pool } from './blut.js';
 import { resolve } from './kollision.js';
 import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 
@@ -147,7 +148,7 @@ class Dog {
     this.p.copy(this.home); this.yaw = this.homeYaw;
     this.hp = HP; this.dead = false; this.st = 'idle'; this.t = 0; this.v = new THREE.Vector2();
     this.cool = 1 + Math.random(); this.phase = Math.random() * TAU; this.flash = 0; this.circ = Math.random() < 0.5 ? 1 : -1;
-    this.wander = null; this.bit = false; this.deadT = 0; this.alert = 0; this.aggro = false;
+    this.wander = null; this.bit = false; this.deadT = 0; this.alert = 0; this.aggro = false; this.pooled = false;
     this.poise = 0; this.poiseT = 0; this.flinch = 0; this.paceT = 0; this.paceSide = Math.random() < 0.5 ? 1 : -1; this.snapCool = 1;
     this.sm = null; // geglättete Körperhaltung
     this.m.root.visible = true; this.m.root.rotation.set(0, this.yaw, 0);
@@ -219,6 +220,19 @@ class Dog {
       if (B.neck1) rotW(B.neck1, X(), 0.55 * sn); if (B.head) rotW(B.head, X(), 0.25 * sn + Math.sin(this.t * 14) * 0.03 * sn);
     }
     if ((this.st === 'circle' || this.st === 'after' || this.st === 'back') && B.chest) rotW(B.chest, X(), Math.sin(this.t * 6.5) * 0.04);
+    // tot: Beine knicken locker ein, Rücken leicht gekrümmt, Kopf und Schwanz sinken auf den Boden, ein letztes Zucken
+    if (this.dead) {
+      const T = this.deadT, dd = smooth01(T / 0.35), lie = smooth01((T - 0.3) / 0.4), sd = this.deadSide || 1, Z = () => ax(0, 0, 1);
+      swing(B.frontUprL, (0.35 + 0.15 * lie) * dd); swing(B.frontLwrL, 0.95 * dd);
+      swing(B.frontUprR, (0.2 + 0.35 * lie) * dd); swing(B.frontLwrR, 0.7 * dd);
+      swing(B.rearLegL_01, 0.55 * dd); swing(B.rearLwrL, -0.8 * dd); swing(B.rearHorselinkL, 0.6 * dd);
+      swing(B.rearLegR_01, (0.3 + 0.3 * lie) * dd); swing(B.rearLwrR, -0.55 * dd); swing(B.rearHorselinkR, 0.4 * dd);
+      const tw = T > 1.0 && T < 1.35 ? Math.sin((T - 1.0) * 40) * 0.12 * (1.35 - T) / 0.35 : 0;   // letztes Zucken
+      swing(B.rearLegR_01, tw);
+      if (B.spine1) rotW(B.spine1, Y(), 0.18 * sd * lie); if (B.chest) rotW(B.chest, Y(), 0.12 * sd * lie);
+      if (B.neck1) rotW(B.neck1, Z(), -sd * 0.38 * lie); if (B.head) rotW(B.head, Z(), -sd * 0.2 * lie);
+      if (B.tail2) rotW(B.tail2, Z(), -sd * 0.45 * lie); if (B.tail3) rotW(B.tail3, Z(), -sd * 0.3 * lie);
+    }
     // Tatzenschlag (rechte Vorderpfote): hoch und nach außen, dann quer nach innen-unten
     if (this.st === 'swipe' && B.frontUprR) {
       const a = smooth01(this.t / 0.28), b = smooth01((this.t - 0.32) / 0.13), c = smooth01((this.t - 0.5) / 0.3);
@@ -363,6 +377,7 @@ class Dog {
         break;
       case 'dead':
         this.deadT += dt;
+        if (this.deadT > 0.6 && !this.pooled) { this.pooled = true; pool(this.p.x + Math.cos(this.yaw) * 0.25 * (this.deadSide || 1), this.p.z - Math.sin(this.yaw) * 0.25 * (this.deadSide || 1)); }
         if (this.deadT > 25 && d > 18) this.reset(); // kommt irgendwann wieder (zum Üben)
         break;
     }
@@ -413,13 +428,18 @@ class Dog {
       case 'down': { // auf die Seite geworfen, Beine zappeln, dann aufrappeln
         const f = smooth01(this.t / 0.22), u = smooth01((this.t - (DOWN_T - 0.45)) / 0.45), lie = f * (1 - u);
         roll = this.downSide * -1.45 * lie; by = lerp(0.56, 0.24, lie); pitch = -0.15 * lie; headX = 0.2 * lie; jaw = 0.5; tailX = -0.3; break; }
-      case 'dead': { const k = smooth01(this.deadT / 0.45); roll = -(this.deadSide || 1) * k * Math.PI / 2; by = lerp(0.56, 0.22, k); headX = 0.3 * k; jaw = 0.4; legAmp = 0; legBase = 0.3 * k; frontBase = -0.3 * k; tailX = -0.2; break; }
+      case 'dead': { // Beine knicken ein, dann kippt er wie ein Sack auf die Seite, federt kurz nach und bleibt liegen
+        const T = this.deadT, sd = this.deadSide || 1;
+        const buck = smooth01(T / 0.28), f = clamp((T - 0.18) / 0.36, 0, 1), fall = f * f;          // Fallen beschleunigt
+        const bounce = Math.sin(clamp((T - 0.54) / 0.3, 0, 1) * Math.PI) * 0.12 * (1 - smooth01((T - 0.54) / 0.4));
+        roll = -sd * (fall * 1.52 - bounce); by = lerp(0.56, 0.4, buck) - fall * 0.15; pitch = 0.12 * buck * (1 - fall);
+        headX = 0.2; jaw = 0.25; legAmp = 0; tailX = -0.1; break; }
     }
     // in die Kurve legen (je schneller, desto mehr)
     if (!this.dead && this.st !== 'down') roll += clamp(-(this.yawRate || 0) * sp * 0.045, -0.3, 0.3);
     // Haltung weich nachführen (keine Sprünge zwischen den Zuständen) – Sprung und Treffer schneller
     const S = this.sm || (this.sm = { by, pitch, roll, yawOff, headX });
-    const k = damp({ leap: 16, wind: 14, snap: 18, swipe: 16, charge: 14, hurt: 22, down: 11, dead: 10 }[this.st] || 8, dt);
+    const k = damp({ leap: 16, wind: 14, snap: 18, swipe: 16, charge: 14, hurt: 22, down: 11, dead: 40 }[this.st] || 8, dt);
     S.by += (by - S.by) * k; S.pitch += (pitch - S.pitch) * k; S.roll += (roll - S.roll) * k; S.yawOff += (yawOff - S.yawOff) * k; S.headX += (headX - S.headX) * k;
     by = S.by; pitch = S.pitch; roll = S.roll; yawOff = S.yawOff; headX = S.headX;
     // kurzes Zusammenzucken bei Treffern, die die Haltung nicht brechen (läuft über alles drüber)
@@ -476,12 +496,7 @@ class Dog {
       for (const b of M.ctl) b.userData.base.copy(b.quaternion);
       this.bones(dt);
     }
-    // tot: nach einer Weile ausblenden
-    if (this.dead && this.deadT > 3) {
-      const a = clamp(1 - (this.deadT - 3) / 1.2, 0, 1);
-      m.root.traverse((o) => { if (!o.isMesh) return; if (o.userData.isOutline) o.visible = false; else { o.material.transparent = true; o.material.opacity = a; } });
-      if (a <= 0) m.root.visible = false;
-    }
+    // tot: bleibt als Leiche liegen (verschwindet erst, wenn er neu erscheint)
   }
 }
 

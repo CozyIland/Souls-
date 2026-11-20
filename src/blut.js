@@ -41,6 +41,13 @@ export function spray(p, dir, n = 14) {
   }
 }
 
+/** Blutlache unter einem Körper: wächst langsam auf ihre Größe */
+export function pool(x, z, size = 1.1) {
+  if (!scene) return;
+  stain(x, z, 0.15);
+  const st = stains[stains.length - 1]; st.grow = size; st.m.material.opacity = 0.85;
+}
+
 function stain(x, z, size) {
   const m = new THREE.Mesh(stainGeo, stainMats[Math.floor(Math.random() * stainMats.length)].clone());
   m.position.set(x, 0.015 + stains.length * 0.0002, z); m.rotation.y = Math.random() * Math.PI * 2; m.scale.setScalar(size);
@@ -61,5 +68,9 @@ export function updateBlood(dt) {
       scene.remove(q.s); q.s.material.dispose(); drops.splice(i, 1);
     }
   }
-  for (const st of stains) { st.t += dt; if (st.t > 40) st.m.material.opacity = Math.max(0, 1 - (st.t - 40) / 10); }
+  for (const st of stains) {
+    st.t += dt;
+    if (st.grow && st.m.scale.x < st.grow) st.m.scale.setScalar(Math.min(st.grow, st.m.scale.x + dt * 0.3 * (1 - st.m.scale.x / st.grow + 0.1)));
+    if (st.t > (st.grow ? 60 : 40)) st.m.material.opacity = Math.max(0, 1 - (st.t - (st.grow ? 60 : 40)) / 10);
+  }
 }

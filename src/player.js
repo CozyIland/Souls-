@@ -34,6 +34,7 @@ const THROW_K = [
 // Der rechte Fuß tritt (1 + STEP_X) × lunge vor, der Körper folgt lunge im Schlag und STEP_X × lunge beim Nachziehen.
 const STEP_X = 0.45;
 const FLOURISH_T = 0.9; // Dauer des Degen-Kunststücks im Stehen
+const WRIST_WALK = 0.95, WRIST_RUN = 2.0; // Winkel Klinge ↔ Unterarm beim Tragen (Gehen: nach vorn, Rennen: nach hinten)
 function stepK(A, t) {
   const a0 = A.act[0] - 0.1, a1 = A.act[1], b0 = A.act[1] + 0.04, b1 = A.T - 0.04;
   return { s1: smooth((t - a0) / (a1 - a0)), s2: smooth((t - b0) / (b1 - b0)) };
@@ -581,6 +582,10 @@ export class Player {
         P.tw = 0; P.ln = 0; w = (1 - tuck) * this.carry.ik;
         // beim Gehen den Ellbogen leicht beugen (wer etwas trägt, lässt den Arm nicht ganz hängen)
         aim(R.RightForeArm, R.RightHand, bodyDir(-0.1, -0.8, 0.5, vB), (1 - tuck) * this.carry.wk * 0.45);
+        // beim Rennen den Degenarm seitlich halten, nur wenig schwingen – sonst fährt die Klinge durch den Körper
+        const rsw = Math.sin(this.phase * TAU);
+        aim(R.RightArm, R.RightForeArm, bodyDir(-0.42, -0.88, 0.05 + 0.22 * rsw, vB), (1 - tuck) * this.carry.rk * 0.75);
+        aim(R.RightForeArm, R.RightHand, bodyDir(-0.25, -0.7, 0.45 + 0.2 * rsw, vB), (1 - tuck) * this.carry.rk * 0.6);
       }
       bend(R.Spine, AY, P.tw * 0.25 * w); bend(R.Spine1, AY, P.tw * 0.4 * w); bend(R.Spine2, AY, P.tw * 0.4 * w);
       bend(R.Spine1, AX, P.ln * 0.5 * w); bend(R.Spine2, AX, P.ln * 0.4 * w);
@@ -674,9 +679,16 @@ export class Player {
       vA.subVectors(vB, vC).normalize();                                     // Unterarm-Richtung
       if (this.state !== 'attack' && this.carry) {
         // Tragen: Klinge sitzt fest in der Faust – beim Gehen schräg nach vorn unten, beim Rennen nach hinten unten
-        const { ik, wk, rk } = this.carry, F = bodyDir(0, 0, 1, vF), U = vT.set(0, 1, 0);
-        const bw = vH.copy(vA).addScaledVector(F, 1.0).addScaledVector(U, -0.05).normalize();
-        const br2 = vK.copy(vA).addScaledVector(F, -1.15).addScaledVector(U, 0.25).normalize();
+        // fester Handgelenk-Winkel: die Klinge ist gegenüber dem Unterarm um WRIST_* nach vorn (Gehen) bzw. nach hinten (Rennen) gekippt
+        const { ik, wk, rk } = this.carry, F = bodyDir(0, 0, 1, vF);
+        const tilt = (out, toward, ang) => {
+          const n = vP.copy(toward).addScaledVector(vA, -toward.dot(vA));
+          if (n.lengthSq() < 1e-6) n.set(0, 1, 0).addScaledVector(vA, -vA.y);
+          n.normalize();
+          return out.copy(vA).multiplyScalar(Math.cos(ang)).addScaledVector(n, Math.sin(ang)).normalize();
+        };
+        const bw = tilt(vH, F, WRIST_WALK);
+        const br2 = tilt(vK, vT.copy(F).negate().addScaledVector(bodyDir(-1, 0, 0, vE), 0.45), WRIST_RUN); // nach hinten und etwas nach außen
         this.bladeD.multiplyScalar(ik).addScaledVector(bw, wk).addScaledVector(br2, rk).normalize();
         if (this.flourish > 0) { // Kunststück: Klinge einmal um die Hand wirbeln
           const u = 1 - this.flourish / FLOURISH_T, e = u * u * (3 - 2 * u);
