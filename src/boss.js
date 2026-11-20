@@ -92,6 +92,7 @@ export class Boss {
     // Schrittlänge der Clips messen: wie weit wandert eine Pfote im Bodenkontakt pro Durchlauf zurück (Meter bei Größe S)
     const M = this.mm;
     M.walkL = this.stride(M.walk) || 4.8; M.runL = this.stride(M.run) || 15;
+    M.phW = this.stancePhase(M.walk); M.phR = this.stancePhase(M.run);
     const ctl = ['head', 'neck1', 'neck_01', 'jaw', 'chest', 'spine1', 'spine2', 'hips', 'frontUprL', 'frontUprR', 'frontLwrL', 'frontLwrR',
       'frontHorselinkL', 'frontHorselinkR', 'rearLegL_01', 'rearLegR_01', 'rearLwrL', 'rearLwrR', 'rearHorselinkL', 'rearHorselinkR', 'tail2', 'tail3', 'tail4'];
     M.ctl = ctl.map((n) => B[n]).filter(Boolean);
@@ -99,6 +100,16 @@ export class Boss {
     this.place();
   }
 
+  /** Phase (0..1), in der das linke Hinterbein am tiefsten steht (Mitte der Standphase) – um Gehen und Rennen gleich zu takten */
+  stancePhase(a) {
+    if (!a || !this.mm.B.rearToeL) return 0;
+    const M = this.mm, V = new THREE.Vector3(), N = 48; let best = 9, ph = 0;
+    for (const x of [M.idle, M.walk, M.run]) if (x) x.setEffectiveWeight(0);
+    a.setEffectiveWeight(1);
+    for (let i = 0; i < N; i++) { a.time = i / N * a.getClip().duration; M.mixer.update(0); M.holder.updateMatrixWorld(true); M.B.rearToeL.getWorldPosition(V); if (V.y < best) { best = V.y; ph = i / N; } }
+    a.setEffectiveWeight(0);
+    return ph;
+  }
   /** Schrittlänge eines Clips (Meter pro Durchlauf), aus der Bewegung der Pfoten in der Standphase */
   stride(a) {
     if (!a) return 0;
@@ -204,8 +215,10 @@ export class Boss {
         this.cd -= dt * k2;
         want = toP;
         if (d > 15 * K) { spd = 8; } else if (d > 8.5 * K) { spd = 3.8; } else if (d < 4.2 * K) { spd = -1.8; }
-        else { want = toP + this.side * 0.9; spd = 2.2; if (Math.random() < dt * 0.25) this.side *= -1; }
-        if (Math.abs(a) > 1.2 && d < 9 * K) { want = toP; spd = 0; }
+        else { this.sideS = lerp(this.sideS ?? this.side, this.side, damp(1.2, dt)); want = toP + this.sideS * 0.9; spd = 2.2; if (Math.random() < dt * 0.25) this.side *= -1; }
+        // steht der Magier weit seitlich/hinten: erst stehen bleiben und herumdrehen (mit Spielraum, sonst Stop-and-go)
+        if (d < 9 * K) { if (Math.abs(a) > 1.3) this.turning = true; else if (Math.abs(a) < 0.7) this.turning = false; } else this.turning = false;
+        if (this.turning) { want = toP; spd = 0; }
         if (this.cd <= 0) {
           const k = this.choose(d, a);
           if (k) this.attack(k, a);
@@ -264,7 +277,7 @@ export class Boss {
       }
       case 'stomp': {
         want = toP; turn = t < 0.6 ? 1.2 : 0.1;
-        spd = t > 0.55 && t < 0.88 ? 2.8 : 0;
+        spd = t > 0.55 && t < 0.88 ? 1.3 : 0;   // kleiner Schritt nach vorn beim Aufbäumen
         if (t > ATK.stomp.slam && !this.stomped) { this.stomped = true; const cx = this.p.x + fx * 3.3 * K, cz = this.p.z + fz * 3.3 * K; if (this.onSlam) this.onSlam(cx, cz, 0.8); this.strike(pl, cx, cz, 3.8 * K, ATK.stomp.dmg, 2.2); }
         if (t > ATK.stomp.T) { this.stomped = false; this.after('stomp'); }
         break;
@@ -291,14 +304,17 @@ export class Boss {
       this.w += clamp(wT - this.w, -TURN_ACC * dt, TURN_ACC * dt); this.yaw += this.w * dt;
     } else this.w *= Math.exp(-6 * dt);
     this.yawRate = dt > 0 ? angDiff(prevYaw, this.yaw) / dt : 0;
-    // Tempo mit Trägheit (Ansturm beschleunigt schnell, bremst rutschend)
-    if (this.st !== 'leap' && this.st !== 'dead') {
-      const loco = this.st === 'stalk';
+    // Tempo mit Trägheit wie bei den Hunden: ein Riese bremst nicht schlagartig – er rutscht ins Ausholen hinein.
+    // Antreten (Vorstoß, Ansturm) darf kräftig sein, Abbremsen ist begrenzt. Im Sprung bestimmt die Flugbahn die Lage.
+    if (this.st !== 'dead' && !(this.st === 'leap' && t >= 0.6)) {
+      const loco = this.st === 'stalk' || this.st === 'wake';
       if (loco && spd > 0) spd *= 1 - 0.7 * sm((Math.abs(angDiff(this.yaw, want ?? this.yaw)) - 0.3) / 1.0);
-      const acc = this.st === 'charge' ? (spd > this.sv ? 16 : 9) : loco ? 4 : 20;
+      const up = Math.abs(spd) > Math.abs(this.sv) && spd * this.sv >= 0;
+      const acc = this.st === 'charge' ? (up ? 14 : 8) : loco ? (up ? 4.5 : 6) : (up ? 22 : 7.5);
       this.sv += clamp(spd - this.sv, -acc * dt, acc * dt);
       this.v.set(Math.sin(this.yaw) * this.sv, Math.cos(this.yaw) * this.sv);
     } else if (this.st === 'dead') this.v.multiplyScalar(Math.exp(-5 * dt));
+    else this.sv = 0;
     this.p.x += this.v.x * dt; this.p.z += this.v.y * dt;
     // in der Arena bleiben (Ansturm endet an der Wand)
     const A = this.arena, m = 3.2 * K;
@@ -374,19 +390,27 @@ export class Boss {
     // in die Kurve legen, beim Treffer kurz zucken
     let r2 = S0.roll + (st !== 'dead' ? clamp(-this.yawRate * sp * 0.03, -0.15, 0.15) : 0), p2 = S0.pitch;
     if (this.flinch > 0) { const e = (this.flinch / 0.35) ** 2; p2 += 0.05 * e; r2 += 0.04 * e * Math.sin(this.t * 40); }
+    // Gewicht vor beim Antreten, zurück beim Bremsen (wie bei den Hunden)
+    const acF = dt > 0 ? (fwd - (this.fwd0 ?? fwd)) / dt : 0; this.fwd0 = fwd;
+    this.accL = lerp(this.accL || 0, st === 'dead' || st === 'leap' ? 0 : clamp(acF * 0.01, -0.07, 0.06), damp(5, dt));
+    p2 += this.accL;
     M.holder.position.y = S0.y * K; M.holder.rotation.set(p2, 0, r2);
     // ---------- Beine: Clips nach Tempo (Schritte passen zur Strecke), beim Drehen auf der Stelle treten ----------
-    const gsp = Math.min(st === 'spin' ? 3.5 : 99, Math.max(sp, Math.abs(this.yawRate) * 2.2 * K));
+    // Drehen auf der Stelle = Gehschritte (die Pfoten sind ~2,6 m von der Mitte weg), nie Galopp; Rennen nur aus echtem Tempo
+    const gsp = Math.max(sp, Math.min(3.0, Math.abs(this.yawRate) * 2.1 * K));
     const still = st === 'sleep' || st === 'dead' || st === 'leap' || st === 'stagger' || st === 'howl' || st === 'stomp' || st === 'wake';
-    const run = sm((gsp - 4.5) / 2.5), walk = still ? 0 : sm((gsp - 0.25) / 0.6) * (1 - run);
-    const idle = 1 - walk - run * (still ? 0 : 1);
+    // solange er noch in Bewegung ist (ins Ausholen hineinrutschen, Ducken vor dem Sprung, Herumdrehen), laufen die Beine mit
+    const legOk = !still || (st === 'leap' && t < 0.6) || (st === 'stomp' && t < 0.3) || (st === 'wake' && t > 0.9);
+    const run = sm((sp - 4.5) / 2.5), walk = legOk ? sm((gsp - 0.25) / 0.6) * (1 - run) : 0;
+    const idle = 1 - walk - (legOk ? run : 0);
     const L = lerp(M.walkL, M.runL, run);
     this.it = (this.it || 0) + dt * 0.62;     // eigene Uhr fürs Atmen im Stehen
     this.gp = (this.gp + (fwd < -0.2 ? -1 : 1) * dt * gsp / Math.max(0.5, L) + 1) % 1;
-    for (const [k, a2, w2] of [['idle', M.idle, idle], ['walk', M.walk, walk], ['run', M.run, still ? 0 : run]]) {
+    for (const [k, a2, w2] of [['idle', M.idle, idle], ['walk', M.walk, walk], ['run', M.run, legOk ? run : 0]]) {
       this.aw[k] = lerp(this.aw[k], w2, damp(8, dt));
       if (!a2) continue;
-      a2.time = (k === 'idle' ? (this.it % 1) : this.gp) * a2.getClip().duration;
+      // Rennen in derselben Schrittphase wie Gehen (linkes Hinterbein setzt gleichzeitig auf) → kein Beinsalat beim Übergang
+      a2.time = (k === 'idle' ? (this.it % 1) : k === 'run' ? (this.gp - M.phW + M.phR + 2) % 1 : this.gp) * a2.getClip().duration;
     }
     for (const b of M.ctl) b.quaternion.copy(b.userData.base);
     if (M.idle) M.idle.setEffectiveWeight(this.aw.idle);
@@ -404,7 +428,8 @@ export class Boss {
     this.lk = lerp(this.lk || 0, lt, damp(5, dt));
     const down = alive ? clamp((9 * K - (this.lookD || 9)) / (9 * K), 0, 1) * 0.35 : 0;
     rotW(B.neck1, Y, this.lk * 0.5); rotW(B.head, Y, this.lk * 0.35);
-    rotW(B.neck1, X, S0.neck + down); rotW(B.head, X, S0.head + down * 0.4);
+    const nod = Math.sin(this.gp * TAU * 2 + 0.6) * 0.035 * this.aw.walk;      // Kopf nickt mit jedem Schritt
+    rotW(B.neck1, X, S0.neck + down + nod); rotW(B.head, X, S0.head + down * 0.4);
     if (B.jaw) rotW(B.jaw, X, S0.jaw);
     // in die Kurve biegen
     this.tb = lerp(this.tb || 0, alive ? clamp(this.yawRate * 0.12, -0.25, 0.25) : 0, damp(6, dt));

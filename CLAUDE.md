@@ -125,7 +125,11 @@
   löst es auch aus. Tod: `reset()` (offen); Sieg: `vanish()` (löst sich auf).
 - `src/boss.js` – **Boss „Garm, der Aschenhund“** (`models/boss.glb`, Meshy, Clips dog_idle/dog_walk/dog_run), Größe `S` 4,3 (Kopf ≈ 5,4 m,
   gut 3× der Magier), alle Reichweiten × `K`. 640 Leben (`BOSS_HP`). Clips nach Tempo gemischt, Schrittlänge beim Laden aus den Hinterpfoten
-  gemessen (`stride` – die Vorderzehen krümmen sich im Schwung nach unten), beim Drehen treten die Beine. Lenkung mit Drehtempo/-beschleunigung.
+  gemessen (`stride` – die Vorderzehen krümmen sich im Schwung nach unten), Gehen und Rennen in derselben Schrittphase (`stancePhase`,
+  `phW`/`phR`). **Bewegung wie bei den Hunden**: Drehtempo/-beschleunigung begrenzt; Drehen auf der Stelle = Gehschritte (`gsp` ≤ 3 m/s,
+  Rennen nur aus echtem Tempo – kein Galopp auf der Stelle); Tempo mit Trägheit (Lauern 4,5/6 m/s², Angriffe antreten 22, bremsen nur 7,5 –
+  er rutscht ins Ausholen hinein, die Beine laufen dabei mit `legOk`); Gewicht vor/zurück `accL`, Kopf nickt beim Gehen, Lauern mit weichem
+  Seitenwechsel (`sideS`) und Stehenbleiben zum Herumdrehen mit Spielraum (`turning`, 1,3/0,7 rad).
   Zustände: sleep (schnüffelt) → wake (Kopf hoch, heulen) → stalk (herankommen/umkreisen/zurückweichen, Abklingzeit `cd`) → Angriffe `ATK`
   (`choose(d, a)` nach Abstand/Winkel): bite (zurückziehen, vorstoßen), swipe (Pranke links/rechts holt aus und fegt), leap (ducken, Sprung
   zur Stelle des Spielers, Aufschlag mit Flächenschaden), charge (Ansturm, endet an der Wand), spin (wer hinter ihm steht: einmal herum),
