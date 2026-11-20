@@ -158,3 +158,5 @@ body.menuOpen #prompt, body.menuOpen #hint, body.menuOpen #tUse, body.menuOpen #
 .navhint { text-align: center; margin: 8px 0 0; }
 body.touch .navhint { display: none; }
 #resumeBtn { display: block; margin: 0 auto; }
+
+#godTag { display: none; margin: 2px 0 2px; font-size: 11px; letter-spacing: 0.14em; color: #9fe0ff; text-shadow: 0 1px 3px #000; }

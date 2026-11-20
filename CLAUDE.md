@@ -152,7 +152,8 @@
   Controller: LB/RB bzw. Q/E Seite (`inp.tab`), Steuerkreuz/Stick/Pfeile auswählen (`inp.nav`/`navX`, Klasse `padFocus`), A/Enter bestätigen,
   B/Esc/Start zu. Charakter: Stufe, Seelen, nächste Kosten, Werte mit Beschreibung, abgeleitete Zahlen (Leben, Ausdauer, Degen leicht/schwer,
   Karte, Rolle). Inventar: Stockdegen, Spielkarten, Heiltrank, Seelen. **Test**: Stufe −/+ bzw. 1/20 (`setLevel`, Punkte reihum), jeder Wert
-  −/+ (`bump`), Seelen +100/+1000/0, Sprünge zum Stein / vors Nebeltor / in die Arena, alles zurücksetzen. Start/Esc öffnet „Charakter“.
+  −/+ (`bump`), **Unverwundbar** an/aus (`werte.god` → `player.god`, `invulnerable` ist dann immer wahr, Hinweis `#godTag` unter der
+  Lebensleiste, wird mitgespeichert), Seelen +100/+1000/0, Sprünge zum Stein / vors Nebeltor / in die Arena, alles zurücksetzen. Start/Esc öffnet „Charakter“.
 - `src/world.js` – Straßen der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.
   **Alle festen Teile werden am Ende nach Material zusammengefasst** (`mergeStatic`, behält Vertex-Farben; `userData.noMerge` = auslassen).

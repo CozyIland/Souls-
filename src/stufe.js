@@ -25,7 +25,7 @@ export function cost(lv) {
 const KEY = 'aschenblatt-stufe';
 export class Werte {
   constructor() { this.reset(); this.load(); }
-  reset() { this.souls = 0; this.s = { aus: BASE, str: BASE, tri: BASE, mag: BASE }; }
+  reset() { this.souls = 0; this.s = { aus: BASE, str: BASE, tri: BASE, mag: BASE }; this.god = false; }
   /** Stufe = 1 + alle verteilten Punkte */
   get lv() { return 1 + STATS.reduce((n, x) => n + this.s[x.k] - BASE, 0); }
   get next() { return cost(this.lv + 1); }
@@ -59,11 +59,11 @@ export class Werte {
       card: 1 + 0.08 * m, cardCost: Math.max(0.55, 1 - 0.025 * m),
     };
   }
-  save() { try { localStorage.setItem(KEY, JSON.stringify({ souls: this.souls, s: this.s })); } catch (e) { /* kein Speicher – egal */ } }
+  save() { try { localStorage.setItem(KEY, JSON.stringify({ souls: this.souls, s: this.s, god: this.god })); } catch (e) { /* kein Speicher – egal */ } }
   load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (d && d.s) { this.souls = d.souls | 0; for (const x of STATS) this.s[x.k] = Math.max(BASE, d.s[x.k] | 0); }
+      if (d && d.s) { this.souls = d.souls | 0; for (const x of STATS) this.s[x.k] = Math.max(BASE, d.s[x.k] | 0); this.god = !!d.god; }
     } catch (e) { /* kaputter oder fehlender Speicher – neu anfangen */ }
   }
 }

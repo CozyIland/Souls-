@@ -55,7 +55,8 @@ targets.push(boss);
 let passT = -1, victoryT = -1;
 // ---------- Stufen-System: Seelen sammeln, am Seelenstein aufsteigen ----------
 const werte = new Werte();
-function applyStats() { const m = werte.mods(); player.applyStats(m); cardMods.dmg = m.card; }
+const $ = (id) => document.getElementById(id);
+function applyStats() { const m = werte.mods(); player.applyStats(m); cardMods.dmg = m.card; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
 applyStats(); player.hp = player.maxHp; player.st = player.maxSt;
 let soulShow = werte.souls;
 function gainSouls(n) {
@@ -117,7 +118,6 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---------- Zustände & Menüs ----------
-const $ = (id) => document.getElementById(id);
 let state = 'title'; // title | play | pause
 setupInput(canvas, () => state === 'play');
 

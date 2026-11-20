@@ -82,6 +82,7 @@ export class Menue {
       <div class="trow"><span class="tl">Stufe</span><button class="sbtn" data-lv="-1">−</button><span class="tv">${w.lv}</span><button class="sbtn" data-lv="1">+</button>
         <button class="sbtn" data-lv="-99">Stufe 1</button><button class="sbtn" data-lv="99">Stufe 20</button></div>
       ${STATS.map((s) => `<div class="trow"><span class="tl">${s.icon} ${s.n}</span><button class="sbtn" data-b="${s.k}" data-d="-1">−</button><span class="tv">${w.s[s.k]}</span><button class="sbtn" data-b="${s.k}" data-d="1">+</button></div>`).join('')}
+      <div class="trow"><span class="tl">Unverwundbar</span><button class="sbtn" data-god="1">${w.god ? 'AN – ausschalten' : 'AUS – einschalten'}</button></div>
       <div class="trow"><span class="tl">Seelen</span><button class="sbtn" data-s="100">+100</button><button class="sbtn" data-s="1000">+1000</button><button class="sbtn" data-s="0">auf 0</button></div>
       <div class="trow"><span class="tl">Springen</span><button class="sbtn" data-j="stone">Zum Seelenstein</button><button class="sbtn" data-j="gate">Vor das Nebeltor</button><button class="sbtn" data-j="arena">In die Arena</button></div>
       <div class="trow"><span class="tl">Neu</span><button class="sbtn" data-r="1">Alles zurücksetzen</button></div>
@@ -91,6 +92,7 @@ export class Menue {
     for (const b of el.querySelectorAll('[data-b]')) b.onclick = () => { w.bump(b.dataset.b, Number(b.dataset.d)); re(); };
     for (const b of el.querySelectorAll('[data-s]')) b.onclick = () => { const n = Number(b.dataset.s); if (n) w.addSouls(n); else { w.souls = 0; w.save(); } re(); };
     for (const b of el.querySelectorAll('[data-j]')) b.onclick = () => { this.o.jump(b.dataset.j); };
+    for (const b of el.querySelectorAll('[data-god]')) b.onclick = () => { w.god = !w.god; w.save(); re(); };
     for (const b of el.querySelectorAll('[data-r]')) b.onclick = () => { w.reset(); w.save(); if (this.o.reset) this.o.reset(); re(); };
   }
 }

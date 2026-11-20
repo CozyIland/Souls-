@@ -173,7 +173,7 @@ export class Player {
     ladeModell(new GLTFLoader(), MODEL_URL, (g) => this.onModel(g), (e) => console.warn('Magier-Modell fehlt – Platzhalter bleibt.', e));
   }
 
-  get invulnerable() { return (this.state === 'roll' && this.t > 0.05 && this.t < 0.42) || this.state === 'dead' || this.iframe > 0; }
+  get invulnerable() { return this.god || (this.state === 'roll' && this.t > 0.05 && this.t < 0.42) || this.state === 'dead' || this.iframe > 0; }
 
   /** Schaden nehmen (Biss usw.): wegstoßen, kurz taumeln; bei 0 Leben fallen */
   damage(n, dir) {
