@@ -16,7 +16,11 @@ export class OrbitCam {
     this.focus = new THREE.Vector3();
     this.lock = null;        // erfasstes Ziel {pos, name}
     this.blockers = [];      // Meshes, durch die die Kamera nicht hindurchsoll
+    this.shakeA = 0; this.shakeT = 0; // Wackeln bei Treffern
   }
+
+  /** Kurz wackeln (Stärke in Metern) */
+  shake(a) { this.shakeA = Math.max(this.shakeA, a); }
 
   /** Vorwärts auf dem Boden (von der Kamera weg) */
   forward() { return { x: -Math.sin(this.yaw), z: -Math.cos(this.yaw) }; }
@@ -82,5 +86,12 @@ export class OrbitCam {
     this.cam.position.copy(this.focus).addScaledVector(dir, this.dist);
     if (this.cam.position.y < 0.3) this.cam.position.y = 0.3;
     this.cam.lookAt(look);
+    if (this.shakeA > 0.001) {
+      this.shakeT += dt * 60;
+      const a = this.shakeA, t = this.shakeT;
+      this.cam.position.x += Math.sin(t * 1.7) * a; this.cam.position.y += Math.sin(t * 2.3 + 1) * a * 0.7;
+      this.cam.rotateZ(Math.sin(t * 1.3) * a * 0.15);
+      this.shakeA *= Math.exp(-14 * dt);
+    }
   }
 }

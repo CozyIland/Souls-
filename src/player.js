@@ -339,6 +339,8 @@ export class Player {
       // Ausrichten nur am Anfang (zum Ziel oder in Stick-Richtung)
       if (at.t < A.act[0] && at.face !== null) this.yaw += angDiff(this.yaw, at.face) * damp(25, dt);
       if (lockTarget && at.t < A.act[0]) at.face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
+      // Schwung-Geräusch kurz vor dem Treffer-Moment
+      if (!at.swung && at.t >= A.act[0] - 0.06) { at.swung = true; if (this.onSwing) this.onSwing(A.heavy); }
       // Treffer prüfen
       if (at.t >= A.act[0] && at.t <= A.act[1]) for (const tg of this.targets) {
         if (at.hit.has(tg) || tg.dead) continue;
@@ -346,7 +348,7 @@ export class Player {
         if (d > A.range + 0.3) continue;
         if (Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) > A.arc && d > 0.6) continue;
         at.hit.add(tg);
-        this.hitStop = A.heavy ? 0.12 : 0.06;
+        this.hitStop = A.heavy ? 0.1 : 0.05;
         if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy, A.dmg);
       }
       this.running = false;
@@ -532,6 +534,13 @@ export class Player {
       const fo = bodyDir(P.fore[0], P.fore[1], P.fore[2], vB);
       fo.addScaledVector(this.bladeD, -0.8 * fo.dot(this.bladeD)).normalize();
       aim(R.RightForeArm, R.RightHand, fo, w);
+      if (this.state === 'attack') {
+        // linker Arm hält das Gleichgewicht (schwingt gegen die Klinge), Kopf bleibt beim Gegner
+        aim(R.LeftArm, R.LeftForeArm, bodyDir(P.la[0], P.la[1], P.la[2], vB), w);
+        aim(R.LeftForeArm, R.LeftHand, bodyDir(P.lf[0], P.lf[1], P.lf[2], vB), w);
+        bend(R.Neck, AY, -P.tw * 0.55 * w); bend(R.Head, AY, -P.tw * 0.25 * w);
+        bend(R.Neck, AX, -P.ln * 0.4 * w);
+      }
       bladeOn = true;
     }
     // Hüfte und Knie leicht gebeugt beim Stehen (wirkt kampfbereit)

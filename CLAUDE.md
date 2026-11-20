@@ -41,10 +41,12 @@
   Halbringe um den Griff, Daumen oben) – solange er den Degen hält, wird die Meshy-Hand (`RightHand`, keine Fingerknochen) auf 2 %
   verkleinert; das Handgelenk der Faust `FIST_WRIST` sitzt am Hand-Knochen, Klingen-Raum X = Unterarm-Richtung ⟂ Klinge), Angriffe `ATTACKS` (l1 waagerecht, l2 schräg zurück, l3 Stoß = leichte Kombo; h = schwerer Überkopf-Schlag):
   je `T`, Trefferfenster `act`, Ausdauer `cost`, Reichweite `range`, Winkel `arc`, Ausfallschritt `lunge`, Schlüsselhaltungen
-  (Oberarm, Unterarm, Klinge, Schulterdrehung, Vorbeugen) über `attackPose`; Schwungspur `Trail`. In `player.js`: Zustand
+  (Oberarm, Unterarm, Klinge, Schulterdrehung, Vorbeugen, Kurve `e` 'out'/'in'/'lin'/'io', linker Arm `la`/`lf`) über `attackPose`
+  – Richtungen werden auf dem Kugelbogen überblendet (`slerp3`, Klinge fliegt im Bogen; Schlüssel höchstens ~90° auseinander),
+  Ausholen bremst ab, Schlag beschleunigt, linker Arm schwingt gegen, Kopf bleibt beim Gegner; Schwungspur `Trail` (dezent). In `player.js`: Zustand
   `attack` (`startAttack`, Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
-  nach 3 s Ruhe zurück in den Stock; Kartenwurf steckt sie sofort weg), Treffer über `targets`/`onHit`, `hitStop` (main.js
-  verlangsamt dann kurz). **Degen ist immer gezogen** (nur beim Kartenwurf kurz im Stock). Schaden: `damage(n, dir)` → `hurt`
+  nach 3 s Ruhe zurück in den Stock; Kartenwurf steckt sie sofort weg), Treffer über `targets`/`onHit`, `hitStop` (0,05 / schwer 0,1 s; main.js
+  verlangsamt dann kurz), `onSwing` (Schwung-Geräusch). **Degen ist immer gezogen** (nur beim Kartenwurf kurz im Stock). Schaden: `damage(n, dir)` → `hurt`
   (0,42 s, danach 0,5 s unverwundbar `iframe`) oder `dead`; `revive`. Ohne Ziel dreht ein Schlag zum nächsten Gegner vorn.
   **Beinarbeit beim Angriff** (`stepK`, `legIK`): rechter Fuß tritt (1 + `STEP_X`) × `lunge` vor, linker bleibt stehen und wird
   danach nachgezogen; der Körper bewegt sich genau mit (kein Rutschen), Hüfte sinkt um `drop`. Beine per Zwei-Knochen-IK. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
@@ -53,13 +55,18 @@
   Eingabe `inp.card`: LB oder F, Handy-Knopf `#tCard` 🃏.
 - `src/hund.js` – **Streunende Hunde** (`spawnDogs`, `updateDogs`, `resetDogs`, `dogs`): **Meshy-Modell `models/hund.glb`**
   (Pitbull mit Geschirr, nur Clip „dog_walk“; `DOG_S` 0,72, Füße bei y −0,67, schaut nach +Z) – je Hund geklont (`useModel`,
-  eigene Toon-Materialien zum Aufblitzen), Clip-Zeit passend zum Tempo (`DOG_STRIDE` 1,3, Schritt wächst beim Rennen), Clip-Gewicht `aw` weich nachgeführt, Galopp-Wippen, Haltungen (ducken, Sprung, taumeln,
+  eigene Toon-Materialien), Clip-Zeit passend zum Tempo (`DOG_STRIDE` 1,3, Schritt wächst beim Rennen), Clip-Gewicht `aw` weich nachgeführt, Galopp-Wippen, Haltungen (ducken, Sprung, taumeln,
   umfallen) über den Halter `mm.holder`. Ohne Modell: Grundformen (`buildDog`). Zustände idle (streunen) →
   growl (knurren, ab 13 m) → chase → circle (umkreisen, solange `cool` läuft) → wind (ducken) → leap (Sprung + Biss 15 Schaden,
-  `player.damage`) → rec (verwundbar) · hurt (Treffer, schwer = länger) · dead (umfallen, ausblenden, kommt nach 25 s wieder,
+  `player.damage`) → rec (verwundbar) · hurt (zuckt weg von der Trefferrichtung `hx`/`hz`, Kopf reißt zurück) · down (schwerer
+  Schlag wirft ihn auf die Seite, Beine zappeln, nach `DOWN_T` 1,5 s rappelt er sich auf) · dead (zur Seite umfallen, ausblenden, kommt nach 25 s wieder,
   wenn man weit weg ist). 60 Leben; Treffer über `onHit(dmg, dir, heavy)` – Ziele mit `onHit` sind Gegner (`targets` enthält
   Puppen und Hunde, `dead` wird überall übersprungen). Lebensleisten `.ebar`, roter Rand `#hurtFx`, Tod: `#death` „GESTORBEN“,
   nach 4 s am Spieltisch (`REST`) wieder aufstehen (`player.revive`), Hunde zurück.
+- `src/ton.js` – erzeugte Geräusche `sfx` (Web Audio, ohne Dateien; erst nach Klick/Taste hörbar): swing, hit, thud, card,
+  yelp, growl, bite.
+- `src/blut.js` – `spray(p, dir, n)` Blutspritzer (fliegen, fallen, hinterlassen Flecken, max. 50), `updateBlood`.
+  Treffer auf Lebewesen: Blut + `sfx.hit` + Kamerawackeln `cam.shake` – **kein Aufleuchten**. Puppen: Strohstaub + `sfx.thud`.
 - `src/kollision.js` – `colliders`, `block`, `blockRot` (gedreht), `resolve`, `blockers`.
 - `src/world.js` – Kreuzung der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.

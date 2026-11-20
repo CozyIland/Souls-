@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { toon, outline, GRADIENT, skinOutline } from './toon.js';
 import { ladeModell } from './modelle.js';
+import { sfx } from './ton.js';
 import { resolve } from './kollision.js';
 import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 
@@ -15,6 +16,8 @@ const LEAP_RANGE = 2.8, LEAP_V = 9.5;
 const T_WIND = 0.38, T_LEAP = 0.34, T_REC = 0.7;
 const BITE = 15;                      // Schaden pro Biss
 const RADIUS = 0.42;
+const DOWN_T = 1.5; // so lange liegt ein umgeworfener Hund
+const smooth01 = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 // Meshy-Hund (models/hund.glb): nur der Clip „dog_walk“ (0,67 s); schaut nach +Z, Füße bei y −0,67, ~1,3 m hoch
 const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.3, DOG_C = 0.42;
 let DOG_GLTF = null;
@@ -132,10 +135,15 @@ class Dog {
   /** Treffer vom Magier (Degen oder Karte) */
   onHit(dmg, dir, heavy) {
     if (this.dead) return;
-    this.hp -= dmg; this.flash = 0.18; this.alert = 1;
-    if (this.hp <= 0) { this.hp = 0; this.dead = true; this.st = 'dead'; this.t = 0; this.v.set(dir.x * 4, dir.z * 4); return; }
-    // Taumeln: schwere Treffer und Treffer im Anlauf unterbrechen
-    if (heavy || this.st !== 'leap') { this.st = 'hurt'; this.t = 0; this.hurtT = heavy ? 0.65 : 0.32; this.v.set(dir.x * (heavy ? 5 : 3), dir.z * (heavy ? 5 : 3)); }
+    this.hp -= dmg; this.alert = 1;
+    // Trefferrichtung im Hund-Raum (x seitlich, z vorn): danach richtet sich das Zurückzucken
+    const rel = angDiff(this.yaw, Math.atan2(dir.x, dir.z));
+    this.hx = Math.sin(rel); this.hz = Math.cos(rel);
+    sfx.yelp(heavy || this.hp <= 0);
+    if (this.hp <= 0) { this.hp = 0; this.dead = true; this.st = 'dead'; this.t = 0; this.deadSide = this.hx >= 0 ? 1 : -1; this.v.set(dir.x * 5, dir.z * 5); return; }
+    // schwerer Schlag wirft ihn um; leichte Treffer lassen ihn zurückzucken (auch mitten im Sprung)
+    if (heavy) { this.st = 'down'; this.t = 0; this.downSide = this.hx >= 0 ? 1 : -1; this.v.set(dir.x * 6, dir.z * 6); }
+    else { this.st = 'hurt'; this.t = 0; this.hurtT = 0.38; this.v.set(dir.x * 3.2, dir.z * 3.2); }
   }
 
   update(dt, pl) {
@@ -148,7 +156,7 @@ class Dog {
       case 'idle': // streunen
         if (!this.wander || this.t > this.wander.t) this.wander = { a: Math.random() * TAU, t: this.t + 1.5 + Math.random() * 2.5, go: Math.random() < 0.6 };
         if (this.wander.go) { want = this.wander.a; spd = WALK_V; if (this.p.distanceTo(this.home) > 5) want = Math.atan2(this.home.x - this.p.x, this.home.z - this.p.z); }
-        if (plOk && (d < SEE || this.alert)) { this.st = 'growl'; this.t = 0; }
+        if (plOk && (d < SEE || this.alert)) { this.st = 'growl'; this.t = 0; sfx.growl(false); }
         break;
       case 'growl': // knurren: Kopf runter, Blick zum Magier
         want = toP; turn = 10;
@@ -158,7 +166,7 @@ class Dog {
         want = toP; spd = RUN_V; turn = 9;
         if (!plOk || d > LOSE) { this.st = 'idle'; this.t = 0; this.alert = 0; break; }
         this.cool -= dt;
-        if (d < LEAP_RANGE && this.cool <= 0) { this.st = 'wind'; this.t = 0; }
+        if (d < LEAP_RANGE && this.cool <= 0) { this.st = 'wind'; this.t = 0; sfx.growl(true); }
         else if (d < 3.6 && this.cool > 0) { this.st = 'circle'; this.t = 0; }
         break;
       case 'circle': // im Abstand umkreisen, bis der Sprung wieder geht
@@ -177,7 +185,7 @@ class Dog {
         this.yaw = this.leapA;
         const hx = this.p.x + Math.sin(this.yaw) * 0.55, hz = this.p.z + Math.cos(this.yaw) * 0.55;
         if (!this.bit && plOk && Math.hypot(pl.pos.x - hx, pl.pos.z - hz) < 0.75) {
-          this.bit = true;
+          this.bit = true; sfx.bite();
           pl.damage(BITE, new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)));
         }
         if (this.t > T_LEAP) { this.st = 'rec'; this.t = 0; }
@@ -189,6 +197,9 @@ class Dog {
       case 'hurt':
         if (this.t > this.hurtT) { this.st = 'chase'; this.t = 0; this.cool = Math.max(this.cool, 0.6); }
         break;
+      case 'down': // umgeworfen: fällt auf die Seite, zappelt, rappelt sich auf
+        if (this.t > DOWN_T) { this.st = 'chase'; this.t = 0; this.cool = Math.max(this.cool, 0.9); }
+        break;
       case 'dead':
         this.deadT += dt;
         if (this.deadT > 25 && d > 18) this.reset(); // kommt irgendwann wieder (zum Üben)
@@ -196,7 +207,7 @@ class Dog {
     }
     // Bewegen
     if (want !== null && this.st !== 'leap') this.yaw += angDiff(this.yaw, want) * damp(turn, dt);
-    if (this.st === 'hurt' || this.st === 'dead') this.v.multiplyScalar(Math.exp(-6 * dt));
+    if (this.st === 'hurt' || this.st === 'dead' || this.st === 'down') this.v.multiplyScalar(Math.exp(-6 * dt));
     else { const tv = spd; this.v.x = lerp(this.v.x, Math.sin(this.yaw) * tv, damp(this.st === 'leap' ? 30 : 8, dt)); this.v.y = lerp(this.v.y, Math.cos(this.yaw) * tv, damp(this.st === 'leap' ? 30 : 8, dt)); }
     this.p.x += this.v.x * dt; this.p.z += this.v.y * dt;
     resolve(this.p, RADIUS);
@@ -210,7 +221,7 @@ class Dog {
     m.root.rotation.y = this.yaw;
     this.phase += dt * (3 + sp * 2.6);
     const gait = clamp(sp / 2, 0, 1), ph = this.phase;
-    let pitch = 0, by = 0.56 + Math.abs(Math.sin(ph)) * 0.035 * gait, headX = 0, jaw = 0.05, tailX = -0.3, tailW = Math.sin(this.t * 3) * 0.2, roll = 0;
+    let yawOff = 0, pitch = 0, by = 0.56 + Math.abs(Math.sin(ph)) * 0.035 * gait, headX = 0, jaw = 0.05, tailX = -0.3, tailW = Math.sin(this.t * 3) * 0.2, roll = 0;
     let legAmp = 0.55 * gait, legBase = 0, frontBase = 0;
     switch (this.st) {
       case 'growl': headX = 0.35; jaw = 0.25 + Math.sin(this.t * 40) * 0.05; tailX = -0.8; by = 0.5; break;
@@ -219,8 +230,14 @@ class Dog {
       case 'wind': { const k = clamp(this.t / T_WIND, 0, 1); by = 0.56 - 0.16 * k; pitch = 0.18 * k; headX = 0.45 * k; jaw = 0.3; tailX = -0.9; legBase = -0.5 * k; frontBase = 0.5 * k; legAmp = 0; break; }
       case 'leap': { const k = clamp(this.t / T_LEAP, 0, 1); by = 0.56 + Math.sin(k * Math.PI) * 0.45; pitch = -0.35 + k * 0.6; headX = -0.2; jaw = k < 0.7 ? 0.7 : 0.1; frontBase = -1.0; legBase = 0.9; legAmp = 0; tailX = 0.2; break; }
       case 'rec': { const k = clamp(this.t / T_REC, 0, 1); by = 0.5 + 0.06 * k; pitch = 0.1 * (1 - k); headX = 0.1; jaw = 0.1; tailX = -0.5; break; }
-      case 'hurt': { const k = clamp(this.t / this.hurtT, 0, 1); pitch = -0.25 * (1 - k); headX = -0.4 * (1 - k); jaw = 0.5; roll = Math.sin(this.t * 30) * 0.12 * (1 - k); tailX = -1.1; break; }
-      case 'dead': { const k = clamp(this.deadT / 0.5, 0, 1); roll = k * Math.PI / 2; by = lerp(0.56, 0.22, k); headX = 0.3 * k; jaw = 0.4; legAmp = 0; legBase = 0.3 * k; frontBase = -0.3 * k; tailX = -0.2; break; }
+      case 'hurt': { // zurückzucken: weg von der Trefferrichtung, Kopf reißt zurück, kurzes Zittern
+        const k = clamp(this.t / this.hurtT, 0, 1), e = (1 - k) * (1 - k);
+        pitch = 0.32 * this.hz * e; roll = -0.4 * this.hx * e + Math.sin(this.t * 45) * 0.05 * e; yawOff = 0.55 * this.hx * e;
+        headX = -0.45 * e; jaw = 0.6; tailX = -1.2; by = 0.56 - 0.06 * e; break; }
+      case 'down': { // auf die Seite geworfen, Beine zappeln, dann aufrappeln
+        const f = smooth01(this.t / 0.22), u = smooth01((this.t - (DOWN_T - 0.45)) / 0.45), lie = f * (1 - u);
+        roll = this.downSide * -1.45 * lie; by = lerp(0.56, 0.24, lie); pitch = -0.15 * lie; headX = 0.2 * lie; jaw = 0.5; tailX = -0.3; break; }
+      case 'dead': { const k = smooth01(this.deadT / 0.45); roll = -(this.deadSide || 1) * k * Math.PI / 2; by = lerp(0.56, 0.22, k); headX = 0.3 * k; jaw = 0.4; legAmp = 0; legBase = 0.3 * k; frontBase = -0.3 * k; tailX = -0.2; break; }
     }
     m.body.position.y = by;
     m.body.rotation.set(pitch, 0, roll);
@@ -235,19 +252,15 @@ class Dog {
       L.hip.rotation.x = s * legAmp + (L.front ? frontBase : legBase);
       L.knee.rotation.x = (L.front ? -1 : 1) * Math.max(0, Math.cos(ph + off)) * 0.7 * gait + (L.front ? 0 : 0.2);
     }
-    // Treffer: rot aufblitzen
-    this.flash = Math.max(0, this.flash - dt);
-    const f = this.flash > 0 ? 0.9 : 0;
-    for (const mt of m.mats) mt.emissive.setRGB(f, f * 0.15, f * 0.1);
     // Meshy-Modell: gleiche Körperhaltung, Beine aus dem Lauf-Clip (Schritte passend zum Tempo)
     const M = this.mm;
     if (M) {
-      for (const mt of M.mats) mt.emissive.setRGB(f, f * 0.15, f * 0.1);
       M.holder.position.y = DOG_C + (by - 0.56) * 0.9;
-      M.holder.rotation.set(pitch + headX * 0.15, 0, roll);
+      M.holder.rotation.set(pitch + headX * 0.15, yawOff, roll);
       // Gewicht weich nachführen (sonst flackert es zwischen Stehen und Laufen)
       let wt = clamp((sp - 0.15) / 0.5, 0, 1), tt;
       if (this.st === 'leap') { wt = 1; tt = 0.55; }
+      else if (this.st === 'down') { wt = 1; this.gp = (this.gp + dt * 2.6) % 1; tt = this.gp; } // Beine zappeln
       else if (this.st === 'wind') { wt = 0.7; tt = this.gp; }
       else {
         // Schrittlänge wächst mit dem Tempo (beim Rennen weitere Sprünge statt Trippeln)

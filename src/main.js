@@ -8,6 +8,8 @@ import { makeComposer } from './bildfilter.js';
 import { setupCards, throwCard, updateCards, hitFx } from './karten.js';
 import { spawnDogs, updateDogs, resetDogs, DOG_HP } from './hund.js';
 import { rumble } from './input.js';
+import { setupBlood, updateBlood, spray } from './blut.js';
+import { sfx } from './ton.js';
 
 // ---------- Renderer ----------
 const canvas = document.getElementById('c');
@@ -33,7 +35,9 @@ cam.blockers = blockers;
 setupCards(scene, targets);
 player.onThrow = (from, dir, suit) => throwCard(from, dir, cam.lock, suit);
 player.targets = targets;
-player.onHit = (tg, dir, heavy, dmg) => hitFx(tg, dir, heavy, dmg);
+player.onHit = (tg, dir, heavy, dmg) => { hitFx(tg, dir, heavy, dmg); cam.shake(heavy ? 0.07 : 0.035); };
+player.onSwing = (heavy) => sfx.swing(heavy);
+setupBlood(scene);
 // Gegner: streunende Hunde (zählen als Ziele für Kamera, Karten und Degen)
 const dogs = spawnDogs(scene);
 targets.push(...dogs);
@@ -41,6 +45,8 @@ const REST = { x: -6.6, z: 6.4, yaw: Math.PI * 0.75 }; // am Spieltisch wieder a
 let deathT = -1;
 player.onDamage = (n, dead) => {
   rumble(dead ? 1 : 0.7, 0.8, dead ? 600 : 220);
+  cam.shake(dead ? 0.1 : 0.06); sfx.hit(true);
+  spray(new THREE.Vector3(player.pos.x, 1.1, player.pos.z), new THREE.Vector3(Math.sin(player.yaw + Math.PI), 0, Math.cos(player.yaw + Math.PI)), 8);
   if (dead) { deathT = 0; cam.lock = null; }
 };
 const post = makeComposer(renderer, scene, camera, { ao: !MOBILE });
@@ -159,7 +165,7 @@ function frame(now) {
   }
   fill.position.set(player.pos.x + (camera.position.x - player.pos.x) * 0.35, 2.4, player.pos.z + (camera.position.z - player.pos.z) * 0.35);
   updateWorld(dt, time, world, player.pos);
-  if (state !== 'pause') updateCards(dt);
+  if (state !== 'pause') { updateCards(dt); updateBlood(dt); }
   post.render(time);
 }
 setState('title');

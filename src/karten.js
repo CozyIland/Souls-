@@ -5,6 +5,8 @@ import { colliders } from './kollision.js';
 import { cardFront, CARD_BACK, CARD_W, CARD_H } from './kartenbild.js';
 import { GLOW } from './requisiten.js';
 import { rumble } from './input.js';
+import { spray } from './blut.js';
+import { sfx } from './ton.js';
 
 const SPEED = 24, LIFE = 0.9, STICK = 2.5;
 const CARD_DMG = 8;
@@ -31,6 +33,7 @@ export function nextSuit() { return SUITS[suitI++ % 4]; }
 
 /** Karte losschicken: from = Startpunkt, dir = Richtung (Länge egal), target = erfasstes Ziel oder null */
 export function throwCard(from, dir, target, suit) {
+  sfx.card();
   const m = cardMesh(suit);
   m.position.copy(from);
   scene.add(m);
@@ -60,9 +63,15 @@ function stick(c, hitNode) {
 /** Treffer mit dem Degen: Funken, Puppe wackelt, Controller rüttelt */
 export function hitFx(tg, dir, heavy, dmg) {
   const p = tg.pos.clone(); p.addScaledVector(dir, -0.25);
-  burst(p, tg.onHit ? (heavy ? 0xff6040 : 0xff9a70) : (heavy ? 0xffc860 : 0xe8f0ff), heavy ? 26 : 14);
-  if (tg.onHit) tg.onHit(dmg || 10, dir, heavy);
-  else { tg.hitT = 0.6; tg.hitDir = dir.clone(); }
+  if (tg.onHit) { // Lebewesen: Blut statt Funken, kein Aufleuchten
+    spray(p, dir, heavy ? 26 : 14);
+    sfx.hit(heavy);
+    tg.onHit(dmg || 10, dir, heavy);
+  } else { // Übungspuppe: Stroh/Staub
+    burst(p, 0xd8c08a, heavy ? 16 : 9);
+    sfx.thud();
+    tg.hitT = 0.6; tg.hitDir = dir.clone();
+  }
   rumble(heavy ? 0.8 : 0.4, heavy ? 0.6 : 0.5, heavy ? 180 : 100);
 }
 
@@ -96,8 +105,8 @@ export function updateCards(dt) {
     c.hist.unshift(c.m.position.clone()); if (c.hist.length > 12) c.hist.pop();
     c.trail.forEach((s, j) => { const h = c.hist[Math.min(c.hist.length - 1, j * 2)]; s.position.copy(h); s.material.opacity = 0.6 * (1 - j / c.trail.length); });
     if (hit) {
-      burst(c.m.position, 0xffd27a, 14);
-      if (hit.onHit) hit.onHit(CARD_DMG, c.vel.clone().setY(0).normalize(), false);
+      if (!hit.onHit) burst(c.m.position, 0xffd27a, 10);
+      if (hit.onHit) { const dd = c.vel.clone().setY(0).normalize(); spray(c.m.position, dd, 6); sfx.hit(false); hit.onHit(CARD_DMG, dd, false); }
       else { hit.hitT = 0.6; hit.hitDir = c.vel.clone().normalize(); }
       rumble(0.2, 0.5, 90);
       flying.splice(i, 1); stick(c, hit.node);
