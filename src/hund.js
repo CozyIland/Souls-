@@ -10,11 +10,15 @@ import { resolve } from './kollision.js';
 import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 
 const HP = 60;
-const SEE = 13, LOSE = 22;            // Entdecken / Aufgeben (m)
-const RUN_V = 4.4, WALK_V = 1.2, CIRCLE_V = 2.4;
+const SEE = 13;                       // Entdecken (m) – wer dich einmal gesehen hat, bleibt an dir dran
+const RUN_V = 4.4, WALK_V = 1.2, PACE_V = 1.5;
 const LEAP_RANGE = 2.8, LEAP_V = 9.5;
 const T_WIND = 0.38, T_LEAP = 0.34, T_REC = 0.7;
-const BITE = 15;                      // Schaden pro Biss
+const BITE = 28;                      // Schaden pro Sprung-Biss
+const SNAP = 18;                      // Schaden pro schnellem Schnapper aus der Nähe
+// Haltung (unsichtbare Leiste): jeder Treffer füllt sie; erst wenn sie voll ist, wird der Hund zurückgestoßen
+// (schwerer Schlag: umgeworfen). Sonst zuckt er nur kurz und macht weiter – auch mitten im Angriff.
+const POISE_MAX = 40, POISE_REGEN = 18, POISE_WAIT = 2.2;
 const RADIUS = 0.42;
 const DOWN_T = 1.5; // so lange liegt ein umgeworfener Hund
 const smooth01 = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
@@ -127,27 +131,42 @@ class Dog {
     this.p.copy(this.home); this.yaw = this.homeYaw;
     this.hp = HP; this.dead = false; this.st = 'idle'; this.t = 0; this.v = new THREE.Vector2();
     this.cool = 1 + Math.random(); this.phase = Math.random() * TAU; this.flash = 0; this.circ = Math.random() < 0.5 ? 1 : -1;
-    this.wander = null; this.bit = false; this.deadT = 0; this.alert = 0;
+    this.wander = null; this.bit = false; this.deadT = 0; this.alert = 0; this.aggro = false;
+    this.poise = 0; this.poiseT = 0; this.flinch = 0; this.paceT = 0; this.paceSide = Math.random() < 0.5 ? 1 : -1; this.snapCool = 1;
+    this.sm = null; // geglättete Körperhaltung
     this.m.root.visible = true; this.m.root.rotation.set(0, this.yaw, 0);
     this.m.root.traverse((o) => { if (!o.isMesh) return; if (o.userData.isOutline) o.visible = true; else if (o.material.transparent) { o.material.transparent = false; o.material.opacity = 1; } });
     this.pos.set(this.p.x, 0.55, this.p.z);
   }
   /** Treffer vom Magier (Degen oder Karte) */
-  onHit(dmg, dir, heavy) {
+  onHit(dmg, dir, heavy, poiseDmg) {
     if (this.dead) return;
-    this.hp -= dmg; this.alert = 1;
+    this.hp -= dmg; this.alert = 1; this.aggro = true;
     // Trefferrichtung im Hund-Raum (x seitlich, z vorn): danach richtet sich das Zurückzucken
     const rel = angDiff(this.yaw, Math.atan2(dir.x, dir.z));
     this.hx = Math.sin(rel); this.hz = Math.cos(rel);
     sfx.yelp(heavy || this.hp <= 0);
     if (this.hp <= 0) { this.hp = 0; this.dead = true; this.st = 'dead'; this.t = 0; this.deadSide = this.hx >= 0 ? 1 : -1; this.v.set(dir.x * 5, dir.z * 5); return; }
-    // schwerer Schlag wirft ihn um; leichte Treffer lassen ihn zurückzucken (auch mitten im Sprung)
-    if (heavy) { this.st = 'down'; this.t = 0; this.downSide = this.hx >= 0 ? 1 : -1; this.v.set(dir.x * 6, dir.z * 6); }
-    else { this.st = 'hurt'; this.t = 0; this.hurtT = 0.38; this.v.set(dir.x * 3.2, dir.z * 3.2); }
+    // Haltung: erst wenn die Leiste voll ist, wird er zurückgestoßen bzw. umgeworfen
+    this.poise += poiseDmg != null ? poiseDmg : (heavy ? 28 : dmg); this.poiseT = 0;
+    if (this.poise >= POISE_MAX) {
+      this.poise = 0;
+      if (heavy) { this.st = 'down'; this.t = 0; this.downSide = this.hx >= 0 ? 1 : -1; this.v.set(dir.x * 6, dir.z * 6); }
+      else { this.st = 'hurt'; this.t = 0; this.hurtT = 0.6; this.v.set(dir.x * 4.5, dir.z * 4.5); }
+    } else {
+      this.flinch = 0.28; // nur kurz zusammenzucken, Angriff läuft weiter
+      if (this.st !== 'leap') { this.v.x += dir.x * 1.2; this.v.y += dir.z * 1.2; }
+    }
   }
 
-  update(dt, pl) {
+  /** Spieler tot: zurück zum Streunen */
+  calm() { this.st = 'idle'; this.t = 0; this.alert = 0; this.aggro = false; }
+
+  update(dt, pl, attackers = 0) {
     this.t += dt;
+    this.snapCool -= dt; this.flinch = Math.max(0, this.flinch - dt);
+    // Haltung erholt sich, wenn eine Weile kein Treffer kam
+    this.poiseT += dt; if (this.poiseT > POISE_WAIT) this.poise = Math.max(0, this.poise - POISE_REGEN * dt);
     const dx = pl.pos.x - this.p.x, dz = pl.pos.z - this.p.z, d = Math.hypot(dx, dz);
     const toP = Math.atan2(dx, dz);
     const plOk = pl.state !== 'dead';
@@ -156,26 +175,43 @@ class Dog {
       case 'idle': // streunen
         if (!this.wander || this.t > this.wander.t) this.wander = { a: Math.random() * TAU, t: this.t + 1.5 + Math.random() * 2.5, go: Math.random() < 0.6 };
         if (this.wander.go) { want = this.wander.a; spd = WALK_V; if (this.p.distanceTo(this.home) > 5) want = Math.atan2(this.home.x - this.p.x, this.home.z - this.p.z); }
-        if (plOk && (d < SEE || this.alert)) { this.st = 'growl'; this.t = 0; sfx.growl(false); }
+        if (plOk && (d < SEE || this.alert)) { this.st = 'growl'; this.t = 0; this.aggro = true; sfx.growl(false); }
         break;
       case 'growl': // knurren: Kopf runter, Blick zum Magier
         want = toP; turn = 10;
         if (this.t > 0.6) { this.st = 'chase'; this.t = 0; }
         break;
-      case 'chase':
-        want = toP; spd = RUN_V; turn = 9;
-        if (!plOk || d > LOSE) { this.st = 'idle'; this.t = 0; this.alert = 0; break; }
+      case 'chase': // hinrennen – gibt nie auf, solange du lebst
+        want = toP; spd = RUN_V * clamp((d - 1.2) / 1.5, 0.35, 1); turn = 9;
+        if (!plOk) { this.calm(); break; }
         this.cool -= dt;
-        if (d < LEAP_RANGE && this.cool <= 0) { this.st = 'wind'; this.t = 0; sfx.growl(true); }
-        else if (d < 3.6 && this.cool > 0) { this.st = 'circle'; this.t = 0; }
+        if (d < 1.5 && this.snapCool <= 0 && attackers < 2) { this.st = 'snap'; this.t = 0; this.bit = false; sfx.growl(true); }
+        else if (d < LEAP_RANGE && this.cool <= 0 && attackers < 2) { this.st = 'wind'; this.t = 0; sfx.growl(true); }
+        else if (d < 3.4 && (this.cool > 0 || attackers >= 2)) { this.st = 'circle'; this.t = 0; this.paceT = 0; }
         break;
-      case 'circle': // im Abstand umkreisen, bis der Sprung wieder geht
+      case 'circle': { // lauern: Blick immer auf dich, ein paar Schritte hin und her, Abstand halten
         this.cool -= dt;
-        want = toP + this.circ * (Math.PI / 2 - (d - 3.2) * 0.5); spd = CIRCLE_V; turn = 7;
-        if (this.t > 2.2 && Math.random() < dt) this.circ *= -1;
-        if (!plOk) { this.st = 'idle'; this.t = 0; break; }
-        if (this.cool <= 0 || d > 5) { this.st = 'chase'; this.t = 0; }
+        if (!plOk) { this.calm(); break; }
+        this.paceT += dt;
+        const pacing = (this.paceT % 1.6) < 0.9;           // 0,9 s gehen, 0,7 s stehen und fixieren
+        if (pacing) { want = toP + this.paceSide * (1.25 - clamp((d - 3) * 0.6, -0.5, 0.5)); spd = PACE_V; turn = 6; }
+        else { want = toP; spd = d > 3.6 ? PACE_V : 0; turn = 9; }
+        if (this.paceT > 1.6) { this.paceT -= 1.6; if (Math.random() < 0.6) this.paceSide *= -1; }
+        if (d < 1.5 && this.snapCool <= 0 && attackers < 2) { this.st = 'snap'; this.t = 0; this.bit = false; sfx.growl(true); }
+        else if ((this.cool <= 0 && attackers < 2) || d > 4.8) { this.st = 'chase'; this.t = 0; }
         break;
+      }
+      case 'snap': { // schneller Schnapper aus der Nähe
+        want = toP; turn = this.t < 0.2 ? 12 : 2;
+        spd = this.t > 0.2 && this.t < 0.34 ? 3.5 : 0;
+        const hx = this.p.x + Math.sin(this.yaw) * 0.55, hz = this.p.z + Math.cos(this.yaw) * 0.55;
+        if (!this.bit && this.t > 0.24 && this.t < 0.36 && plOk && Math.hypot(pl.pos.x - hx, pl.pos.z - hz) < 0.8) {
+          this.bit = true; sfx.bite();
+          pl.damage(SNAP, new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)));
+        }
+        if (this.t > 0.75) { this.st = 'chase'; this.t = 0; this.snapCool = 1.6 + Math.random(); this.cool = Math.max(this.cool, 0.5); }
+        break;
+      }
       case 'wind': // ducken und Anlauf nehmen
         want = toP; turn = 14;
         if (this.t > T_WIND) { this.st = 'leap'; this.t = 0; this.bit = false; this.leapA = this.yaw; }
@@ -192,7 +228,7 @@ class Dog {
         break;
       }
       case 'rec': // landen, kurz verwundbar
-        if (this.t > T_REC) { this.st = 'chase'; this.t = 0; this.cool = 1.2 + Math.random() * 1.6; }
+        if (this.t > T_REC) { this.st = 'chase'; this.t = 0; this.cool = 0.7 + Math.random() * 1.1; }
         break;
       case 'hurt':
         if (this.t > this.hurtT) { this.st = 'chase'; this.t = 0; this.cool = Math.max(this.cool, 0.6); }
@@ -207,7 +243,7 @@ class Dog {
     }
     // Bewegen
     if (want !== null && this.st !== 'leap') this.yaw += angDiff(this.yaw, want) * damp(turn, dt);
-    if (this.st === 'hurt' || this.st === 'dead' || this.st === 'down') this.v.multiplyScalar(Math.exp(-6 * dt));
+    if (this.st === 'hurt' || this.st === 'dead' || this.st === 'down' || (this.flinch > 0 && spd === 0)) this.v.multiplyScalar(Math.exp(-6 * dt));
     else { const tv = spd; this.v.x = lerp(this.v.x, Math.sin(this.yaw) * tv, damp(this.st === 'leap' ? 30 : 8, dt)); this.v.y = lerp(this.v.y, Math.cos(this.yaw) * tv, damp(this.st === 'leap' ? 30 : 8, dt)); }
     this.p.x += this.v.x * dt; this.p.z += this.v.y * dt;
     resolve(this.p, RADIUS);
@@ -229,6 +265,9 @@ class Dog {
       case 'circle': headX = 0.3; jaw = 0.22; tailX = -0.8; break;
       case 'wind': { const k = clamp(this.t / T_WIND, 0, 1); by = 0.56 - 0.16 * k; pitch = 0.18 * k; headX = 0.45 * k; jaw = 0.3; tailX = -0.9; legBase = -0.5 * k; frontBase = 0.5 * k; legAmp = 0; break; }
       case 'leap': { const k = clamp(this.t / T_LEAP, 0, 1); by = 0.56 + Math.sin(k * Math.PI) * 0.45; pitch = -0.35 + k * 0.6; headX = -0.2; jaw = k < 0.7 ? 0.7 : 0.1; frontBase = -1.0; legBase = 0.9; legAmp = 0; tailX = 0.2; break; }
+      case 'snap': { // Kopf zurück, dann nach vorn schnappen
+        const a = smooth01(this.t / 0.2), b = smooth01((this.t - 0.2) / 0.12), c = smooth01((this.t - 0.38) / 0.35);
+        pitch = (-0.12 * a + 0.32 * b) * (1 - c); headX = (-0.3 * a + 0.75 * b) * (1 - c); jaw = 0.3 + 0.6 * b * (1 - c); by = 0.56 - 0.05 * a; tailX = -0.9; break; }
       case 'rec': { const k = clamp(this.t / T_REC, 0, 1); by = 0.5 + 0.06 * k; pitch = 0.1 * (1 - k); headX = 0.1; jaw = 0.1; tailX = -0.5; break; }
       case 'hurt': { // zurückzucken: weg von der Trefferrichtung, Kopf reißt zurück, kurzes Zittern
         const k = clamp(this.t / this.hurtT, 0, 1), e = (1 - k) * (1 - k);
@@ -238,6 +277,16 @@ class Dog {
         const f = smooth01(this.t / 0.22), u = smooth01((this.t - (DOWN_T - 0.45)) / 0.45), lie = f * (1 - u);
         roll = this.downSide * -1.45 * lie; by = lerp(0.56, 0.24, lie); pitch = -0.15 * lie; headX = 0.2 * lie; jaw = 0.5; tailX = -0.3; break; }
       case 'dead': { const k = smooth01(this.deadT / 0.45); roll = -(this.deadSide || 1) * k * Math.PI / 2; by = lerp(0.56, 0.22, k); headX = 0.3 * k; jaw = 0.4; legAmp = 0; legBase = 0.3 * k; frontBase = -0.3 * k; tailX = -0.2; break; }
+    }
+    // Haltung weich nachführen (keine Sprünge zwischen den Zuständen) – Sprung und Treffer schneller
+    const S = this.sm || (this.sm = { by, pitch, roll, yawOff, headX });
+    const k = damp({ leap: 16, wind: 14, snap: 18, hurt: 22, down: 11, dead: 10 }[this.st] || 8, dt);
+    S.by += (by - S.by) * k; S.pitch += (pitch - S.pitch) * k; S.roll += (roll - S.roll) * k; S.yawOff += (yawOff - S.yawOff) * k; S.headX += (headX - S.headX) * k;
+    by = S.by; pitch = S.pitch; roll = S.roll; yawOff = S.yawOff; headX = S.headX;
+    // kurzes Zusammenzucken bei Treffern, die die Haltung nicht brechen (läuft über alles drüber)
+    if (this.flinch > 0) {
+      const e = (this.flinch / 0.28) ** 2;
+      pitch += 0.16 * (this.hz || 0) * e; yawOff += 0.28 * (this.hx || 0) * e; roll -= 0.16 * (this.hx || 0) * e; headX -= 0.25 * e;
     }
     m.body.position.y = by;
     m.body.rotation.set(pitch, 0, roll);
@@ -259,9 +308,9 @@ class Dog {
       M.holder.rotation.set(pitch + headX * 0.15, yawOff, roll);
       // Gewicht weich nachführen (sonst flackert es zwischen Stehen und Laufen)
       let wt = clamp((sp - 0.15) / 0.5, 0, 1), tt;
-      if (this.st === 'leap') { wt = 1; tt = 0.55; }
+      if (this.st === 'leap') { wt = 1; this.gp = 0.55; tt = 0.55; }
       else if (this.st === 'down') { wt = 1; this.gp = (this.gp + dt * 2.6) % 1; tt = this.gp; } // Beine zappeln
-      else if (this.st === 'wind') { wt = 0.7; tt = this.gp; }
+      else if (this.st === 'wind') { wt = 0.8; this.gp += (0.55 - this.gp) * damp(8, dt); tt = this.gp; } // Beine gehen in die Sprunghaltung
       else {
         // Schrittlänge wächst mit dem Tempo (beim Rennen weitere Sprünge statt Trippeln)
         const cyc = DOG_STRIDE * DOG_S * (1 + clamp((sp - 1.5) / 2.5, 0, 1) * 0.7);
@@ -295,7 +344,10 @@ export function spawnDogs(scene) {
 
 /** Hunde bewegen; Hunde und Magier schieben sich gegenseitig weg */
 export function updateDogs(dt, pl) {
-  for (const d of dogs) d.update(dt, pl);
+  // höchstens zwei Hunde greifen gleichzeitig an, die anderen lauern
+  let attackers = 0;
+  for (const d of dogs) if (d.st === 'wind' || d.st === 'leap' || d.st === 'snap') attackers++;
+  for (const d of dogs) d.update(dt, pl, attackers);
   for (const d of dogs) {
     if (d.dead) continue;
     const dx = pl.pos.x - d.p.x, dz = pl.pos.z - d.p.z, l = Math.hypot(dx, dz), min = RADIUS + 0.4;

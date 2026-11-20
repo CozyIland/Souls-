@@ -35,7 +35,7 @@ cam.blockers = blockers;
 setupCards(scene, targets);
 player.onThrow = (from, dir, suit) => throwCard(from, dir, cam.lock, suit);
 player.targets = targets;
-player.onHit = (tg, dir, heavy, dmg) => { hitFx(tg, dir, heavy, dmg); cam.shake(heavy ? 0.07 : 0.035); };
+player.onHit = (tg, dir, heavy, dmg, poise) => { hitFx(tg, dir, heavy, dmg, poise); cam.shake(heavy ? 0.07 : 0.035); };
 player.onSwing = (heavy) => sfx.swing(heavy);
 setupBlood(scene);
 // Gegner: streunende Hunde (zählen als Ziele für Kamera, Karten und Degen)
@@ -120,7 +120,7 @@ function enemyHud() {
     e.style.top = ((1 - ev.y) / 2 * window.innerHeight) + 'px';
     e.firstChild.style.width = (100 * d.hp / DOG_HP) + '%';
   });
-  $('hurtFx').style.opacity = Math.min(1, player.hurtFlash * 1.2 + (player.hp < 30 ? 0.25 + 0.1 * Math.sin(time * 4) : 0));
+  $('hurtFx').style.opacity = Math.min(1, player.hurtFlash * 0.55 + (player.hp < 30 ? 0.25 + 0.1 * Math.sin(time * 4) : 0));
   const dt2 = deathT < 0 ? 0 : Math.min(1, Math.max(0, (deathT - 1.0) / 0.8)) * (deathT > 3.6 ? Math.max(0, 1 - (deathT - 3.6) / 0.6) : 1);
   $('death').style.opacity = dt2; $('death').style.display = dt2 > 0 ? 'flex' : 'none';
 }

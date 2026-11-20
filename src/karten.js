@@ -61,12 +61,12 @@ function stick(c, hitNode) {
 }
 
 /** Treffer mit dem Degen: Funken, Puppe wackelt, Controller rüttelt */
-export function hitFx(tg, dir, heavy, dmg) {
+export function hitFx(tg, dir, heavy, dmg, poise) {
   const p = tg.pos.clone(); p.addScaledVector(dir, -0.25);
   if (tg.onHit) { // Lebewesen: Blut statt Funken, kein Aufleuchten
     spray(p, dir, heavy ? 26 : 14);
     sfx.hit(heavy);
-    tg.onHit(dmg || 10, dir, heavy);
+    tg.onHit(dmg || 10, dir, heavy, poise);
   } else { // Übungspuppe: Stroh/Staub
     burst(p, 0xd8c08a, heavy ? 16 : 9);
     sfx.thud();
@@ -106,7 +106,7 @@ export function updateCards(dt) {
     c.trail.forEach((s, j) => { const h = c.hist[Math.min(c.hist.length - 1, j * 2)]; s.position.copy(h); s.material.opacity = 0.6 * (1 - j / c.trail.length); });
     if (hit) {
       if (!hit.onHit) burst(c.m.position, 0xffd27a, 10);
-      if (hit.onHit) { const dd = c.vel.clone().setY(0).normalize(); spray(c.m.position, dd, 6); sfx.hit(false); hit.onHit(CARD_DMG, dd, false); }
+      if (hit.onHit) { const dd = c.vel.clone().setY(0).normalize(); spray(c.m.position, dd, 6); sfx.hit(false); hit.onHit(CARD_DMG, dd, false, 5); }
       else { hit.hitT = 0.6; hit.hitDir = c.vel.clone().normalize(); }
       rumble(0.2, 0.5, 90);
       flying.splice(i, 1); stick(c, hit.node);

@@ -49,7 +49,9 @@
   verlangsamt dann kurz), `onSwing` (Schwung-Geräusch). **Degen ist immer gezogen** (nur beim Kartenwurf kurz im Stock). Schaden: `damage(n, dir)` → `hurt`
   (0,42 s, danach 0,5 s unverwundbar `iframe`) oder `dead`; `revive`. Ohne Ziel dreht ein Schlag zum nächsten Gegner vorn.
   **Beinarbeit beim Angriff** (`stepK`, `legIK`): rechter Fuß tritt (1 + `STEP_X`) × `lunge` vor, linker bleibt stehen und wird
-  danach nachgezogen; der Körper bewegt sich genau mit (kein Rutschen), Hüfte sinkt um `drop`. Beine per Zwei-Knochen-IK. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
+  danach nachgezogen; der Körper bewegt sich genau mit (kein Rutschen), Hüfte sinkt um `drop`. Beine per Zwei-Knochen-IK.
+  **Weich nachführen** (`smQ`): jede Knochendrehung läuft der berechneten Haltung leicht hinterher (vor der Bein-IK) – glättet alle
+  Übergänge. Kein Aufleuchten bei Schaden (nur dezenter roter Bildrand). Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
 - `src/karten.js` – fliegende Karten (`throwCard`, `updateCards`): drehen sich flach, Leuchtspur, lenken leicht zum Ziel,
   bleiben in Puppen (wackeln, `hitT`) und Wänden stecken, Funken, Rütteln. Bilder in `src/kartenbild.js`.
   Eingabe `inp.card`: LB oder F, Handy-Knopf `#tCard` 🃏.
@@ -57,8 +59,12 @@
   (Pitbull mit Geschirr, nur Clip „dog_walk“; `DOG_S` 0,72, Füße bei y −0,67, schaut nach +Z) – je Hund geklont (`useModel`,
   eigene Toon-Materialien), Clip-Zeit passend zum Tempo (`DOG_STRIDE` 1,3, Schritt wächst beim Rennen), Clip-Gewicht `aw` weich nachgeführt, Galopp-Wippen, Haltungen (ducken, Sprung, taumeln,
   umfallen) über den Halter `mm.holder`. Ohne Modell: Grundformen (`buildDog`). Zustände idle (streunen) →
-  growl (knurren, ab 13 m) → chase → circle (umkreisen, solange `cool` läuft) → wind (ducken) → leap (Sprung + Biss 15 Schaden,
-  `player.damage`) → rec (verwundbar) · hurt (zuckt weg von der Trefferrichtung `hx`/`hz`, Kopf reißt zurück) · down (schwerer
+  growl (knurren, ab 13 m; danach `aggro` – sie geben nie auf, nur wenn du stirbst `calm`) → chase → circle (lauern: Blick auf dich,
+  ein paar Schritte hin und her, Abstand halten) → wind (ducken) → leap (Sprung + Biss `BITE` 28, `player.damage`) → rec (verwundbar);
+  aus der Nähe snap (schneller Schnapper `SNAP` 18). Höchstens zwei greifen gleichzeitig an (`attackers` in `updateDogs`).
+  **Haltung** (unsichtbare Leiste `poise`, `POISE_MAX` 40, erholt sich nach `POISE_WAIT`): nur wenn sie voll ist → hurt/down,
+  sonst kurzes Zucken `flinch` und der Angriff läuft weiter; Haltungsschaden je Angriff `ATTACKS[k].poise`, Karte 5.
+  Körperhaltung wird weich nachgeführt (`sm`) · hurt (zuckt weg von der Trefferrichtung `hx`/`hz`, Kopf reißt zurück) · down (schwerer
   Schlag wirft ihn auf die Seite, Beine zappeln, nach `DOWN_T` 1,5 s rappelt er sich auf) · dead (zur Seite umfallen, ausblenden, kommt nach 25 s wieder,
   wenn man weit weg ist). 60 Leben; Treffer über `onHit(dmg, dir, heavy)` – Ziele mit `onHit` sind Gegner (`targets` enthält
   Puppen und Hunde, `dead` wird überall übersprungen). Lebensleisten `.ebar`, roter Rand `#hurtFx`, Tod: `#death` „GESTORBEN“,

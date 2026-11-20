@@ -349,7 +349,7 @@ export class Player {
         if (Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) > A.arc && d > 0.6) continue;
         at.hit.add(tg);
         this.hitStop = A.heavy ? 0.1 : 0.05;
-        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy, A.dmg);
+        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy, A.dmg, A.poise);
       }
       this.running = false;
     } else if (this.state === 'roll') {
@@ -475,7 +475,6 @@ export class Player {
     let hurtK = 0;
     if (this.state === 'hurt') { hurtK = Math.sin(clamp(this.t / 0.42, 0, 1) * Math.PI); rx = -0.18 * hurtK; }
     if (this.state === 'dead') { const f = smooth(this.t / 0.9); rx = -f * 1.45; y = lerp(CENTER, 0.3, f); hurtK = 1 - f; }
-    if (this.mat && this.mat.emissive) this.mat.emissive.setRGB(this.hurtFlash * 0.7, this.hurtFlash * 0.05, this.hurtFlash * 0.03);
     this.pivot.rotation.x = rx;
     this.pivot.position.y = y;
     this.legs.rotation.y = this.legYaw;
@@ -550,6 +549,14 @@ export class Player {
       bend(R.LeftLeg, AX, 0.14 * still); bend(R.RightLeg, AX, 0.14 * still);
       bend(R.LeftUpLeg, AZ, -0.05 * still); bend(R.RightUpLeg, AZ, 0.05 * still);
     }
+    // 3b) Weich nachführen: jede Knochendrehung läuft der berechneten Haltung ganz leicht hinterher.
+    //     Das glättet alle Übergänge (Laufen ↔ Schlag ↔ Kombo ↔ Treffer), ohne die Bewegung träge zu machen.
+    //     Vor der Bein-IK, damit die Füße beim Ausfallschritt trotzdem genau stehen.
+    if (!this.smQ || this.smQ.length !== bones.length) this.smQ = bones.map((b) => b.quaternion.clone());
+    const kq = dt > 0 ? damp(rolling ? 45 : this.state === 'attack' ? 26 : 18, dt) : 1;
+    for (let i = 0; i < bones.length; i++) { this.smQ[i].slerp(bones[i].quaternion, kq); bones[i].quaternion.copy(this.smQ[i]); }
+    this.model.updateMatrixWorld(true);
+
     // Füße beim Angriff fest auf dem Boden: rechter Fuß tritt vor, linker bleibt stehen und kommt danach nach
     if (at && at.t >= at.a.act[0] - 0.1) {
       R.LeftFoot.getWorldPosition(vC); R.RightFoot.getWorldPosition(vD); // natürliche Lage in diesem Bild
