@@ -38,6 +38,7 @@ player.targets = targets;
 player.onHit = (tg, dir, heavy, dmg, poise) => { hitFx(tg, dir, heavy, dmg, poise); cam.shake(heavy ? 0.07 : 0.035); cam.punch(heavy ? 3.5 : 1.5); };
 player.onSwing = (heavy) => sfx.swing(heavy);
 player.onDust = (p, n) => dust(p, n);
+player.onSlam = () => { cam.shake(0.05); sfx.thud(); rumble(0.6, 0.4, 160); }; // schwerer Schlag trifft den Boden
 setupBlood(scene);
 // Gegner: streunende Hunde (zählen als Ziele für Kamera, Karten und Degen)
 const dogs = spawnDogs(scene);

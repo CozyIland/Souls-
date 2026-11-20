@@ -39,11 +39,15 @@
 - `src/degen.js` – **Stockdegen**: `buildCane` (Stock = Scheide `sheath`, hängt links am Mantel-Gürtel an `Hips`; Klinge `sword`
   mit Griff; beide zeigen entlang +Z; **Faust** `fist` (eigenes Modell im Klingen-Raum: Handteller, 4 Finger als
   Halbringe um den Griff, Daumen oben) – solange er den Degen hält, wird die Meshy-Hand (`RightHand`, keine Fingerknochen) auf 2 %
-  verkleinert; das Handgelenk der Faust `FIST_WRIST` sitzt am Hand-Knochen, Klingen-Raum X = Unterarm-Richtung ⟂ Klinge), Angriffe `ATTACKS` (l1 waagerecht, l2 schräg zurück, l3 Stoß = leichte Kombo; h = schwerer Überkopf-Schlag):
+  verkleinert; das Handgelenk der Faust `FIST_WRIST` sitzt am Hand-Knochen, Klingen-Raum X = Unterarm-Richtung ⟂ Klinge), Angriffe `ATTACKS` (l1 waagerecht rechts→links, l2 Rückhand schräg nach oben, l3 Stoß = leichte Kombo; h = **beidhändiger
+  Spalt-Hieb**: über die rechte Schulter laden, kurz halten, mit Ausfallschritt senkrecht bis zum Boden, `slam` = Aufschlag → `onSlam`/`onDust`):
   je `T`, Trefferfenster `act`, Ausdauer `cost`, Reichweite `range`, Winkel `arc`, Ausfallschritt `lunge`, Schlüsselhaltungen
-  (Oberarm, Unterarm, Klinge, Schulterdrehung, Vorbeugen, Kurve `e` 'out'/'in'/'lin'/'io', linker Arm `la`/`lf`) über `attackPose`
-  – **fließende Kurve** (`sample`/`speedAt`/`prog`): Richtungen laufen auf dem Kugelbogen (`slerp3`, gleichmäßiges Winkeltempo),
-  das Tempo ist über die Schlüssel hinweg stetig (Stillstand nur bei Umkehr, 'out' am Schlüssel oder 'in' am nächsten), Rumpf führt
+  `K(t, {h, b, el, tw, hip, ln, cr, sh, th, la, lf, e})`: **h = Lage der Hand** (m ab der rechten Schulter, Körperachsen x links/y oben/z vorn),
+  b Klinge, el Ellbogen-Richtung, tw Schultern/hip Hüfte drehen (+ = nach links), ln vorbeugen, cr in die Knie, sh Gewicht vor/zurück,
+  th beidhändig, la/lf linker Arm, Kurve `e` 'out'/'in'/'lin'/'io'; `R0` = Grundhaltung (`READY_HAND` aus den echten Armlängen).
+  Prinzip: Hand wandert wenig, Klinge viel; Hüfte und Schultern drehen voraus. Über `attackPose`
+  – **fließende Kurve**: Handlage per Hermite mit stetigem Tempo (`samplePos`/`velAt`), Richtungen auf dem Kugelbogen (`sample`/`speedAt`/`prog`,
+  `slerp3`, gleichmäßiges Winkeltempo), Stillstand nur bei Umkehr, 'out' am Schlüssel oder 'in' am nächsten; Rumpf führt
   (`twLead`/`twMid` = Drehung 45/22 ms voraus → Peitsche: Hüfte, dann Schultern, dann Arm), Ausholen bremst ab, Schlag beschleunigt, linker Arm schwingt gegen, Kopf bleibt beim Gegner; Schwungspur `Trail` (dezent). In `player.js`: Zustand
   `attack` (`startAttack` merkt die Haltung beim Start in `atk.from` – der neue Schlag blendet aus ihr heraus, bei Kombos direkt aus dem
   Nachschwingen ins Ausholen, ohne Umweg über die Grundhaltung; Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
@@ -62,6 +66,13 @@
   fester Handgelenk-Winkel `WRIST_WALK` zum Unterarm; **Rennen hält sie genauso wie Gehen**, der Arm schwingt nur schneller und etwas
   vom Körper weg). Die Klinge selbst wird wie die Knochen weich nachgeführt (`bladeB` im Körper-Raum, gleiche Rate `kq`) – kein Sprung bei Übergängen. **Kombo fließend**: vorgemerkter Schlag startet schon im Nachschwingen (`act[1]` + 0,11 s,
   schwer + 0,2 s), Laufen bricht spätes Nachschwingen ab; Füße stellen nach (`atk.pre`, IK). Treffer: `cam.punch` (Blickwinkel-Ruck). **Ruhe**: Gewicht verlagern, tiefer atmen, ab und zu umschauen (`lookA`),
+  **Angriffs-Körper** (player.js, `animateRig`): Haltung wird früh bestimmt (`atP`, Knie `cr` und Gewicht `sh` über `pivot`),
+  Hüfte dreht (`bend(Hips)`), Schulterblatt hebt sich mit der Hand (`RightShoulder`/`LeftShoulder`), rechter Arm per **`armIK`**
+  (Zwei-Knochen-Lösung zur Handlage, Ellbogen nach `el`, Längen `this.arm`); Füße von Anfang an per IK: erst in die **Fechtstellung**
+  `STANCE` treten (aus dem Gehen/der Kombo mit kleinem Schritt), dann Ausfallschritt. Beidhändig: linke Faust `fistL` (gespiegeltes
+  `buildFist`, am Griff bei `GRIP_L`, Griff dafür 0,22 m lang), linker Arm per `armIK` zum Faust-Handgelenk (Ellbogen bei hohen Händen
+  nach außen oben – Arme rahmen den Kopf), Meshy-Hand auf 2 %. Handgelenk: Klinge höchstens 160° zum Unterarm; Faust-Lage um den Griff
+  gleitet weiter (`fistX`), wenn die Klinge fast in Armverlängerung liegt (sonst Sprung). Glättung im Angriff schwächer (`kq` 34).
   Kunststück `flourish` (Klinge wirbelt einmal um die Hand, `FLOURISH_T`). Scheide pendelt beim Gehen. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
 - `src/karten.js` – fliegende Karten (`throwCard`, `updateCards`): drehen sich flach, Leuchtspur, lenken leicht zum Ziel,
   bleiben in Puppen (wackeln, `hitT`) und Wänden stecken, Funken, Rütteln. Bilder in `src/kartenbild.js`.

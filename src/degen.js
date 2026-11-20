@@ -20,8 +20,8 @@ export function buildCane() {
   for (const z of [0.25, 0.55]) sheath.add(cyl(0.0175, 0.0175, 0.012, gold, z, 0));
   // Klinge mit Griff
   const sword = new THREE.Group();
-  sword.add(cyl(0.019, 0.017, 0.12, dark, -0.06));           // Griff
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), gold); knob.position.z = -0.135; knob.castShadow = true; outline(knob, 0.004); sword.add(knob);
+  sword.add(cyl(0.019, 0.017, 0.22, dark, -0.11));           // Griff (lang genug für zwei Hände)
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), gold); knob.position.z = -0.235; knob.castShadow = true; outline(knob, 0.004); sword.add(knob);
   sword.add(cyl(0.02, 0.02, 0.02, gold, 0.005, 0.003));      // Ring statt Parierstange (versteckte Klinge)
   const bladeGeo = new THREE.BoxGeometry(0.022, 0.006, BLADE_L);
   const p = bladeGeo.attributes.position; // Spitze zulaufen lassen
@@ -36,7 +36,8 @@ export function buildCane() {
 
 // ---------- Faust ----------
 export const FIST_WRIST = new THREE.Vector3(-0.085, 0.0, -0.068);
-function buildFist() {
+export const GRIP_L = -0.105; // linke Faust (beidhändig) sitzt so weit unter der rechten am Griff
+export function buildFist() {
   const skin = toon(0xe9b59a), dark = toon(0xc98f78);
   const g = new THREE.Group();
   const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0, line = 0.004) => {
@@ -64,44 +65,58 @@ function buildFist() {
 }
 
 // ---------- Angriffe ----------
-// Richtungen im Körper (x links, y oben, z vorn): Oberarm, Unterarm, Klinge; tw = Schultern drehen, ln = vorbeugen.
-// lunge = Ausfallschritt (m): das rechte Bein tritt so weit vor, das linke bleibt stehen und wird danach nachgezogen; drop = Hüfte tiefer.
+// Achsen im Körper: x = links, y = oben, z = vorn. Jede Schlüsselhaltung sagt, WO DIE HAND IST (h, Meter ab der rechten Schulter)
+// und wohin die Klinge zeigt (b); Schulter und Ellbogen richtet der Code selbst aus (Zwei-Knochen-Lösung, Ellbogen zeigt nach el).
+// Prinzip guter Schwünge: die Hand wandert wenig, die Klinge viel (Hebel); Hüfte und Schultern drehen voraus, der Arm folgt.
+// tw = Schultern drehen, hip = Hüfte drehen (+ = nach links, gegen den Uhrzeigersinn von oben), ln = vorbeugen, cr = in die Knie (m),
+// sh = Gewicht vor/zurück (m), th = beidhändig (0..1), la/lf = linker Ober-/Unterarm (einhändig, schwingt gegen).
+// Kurve bis zum Schlüssel: 'out' = abbremsen (Ausholen, Nachschwingen), 'in' = aus dem Stand beschleunigen, 'lin'/'io' = fließend.
+// lunge = Ausfallschritt (m): das rechte Bein tritt so weit vor, das linke wird danach nachgezogen; drop = Hüfte tiefer.
 const READY = { arm: [-0.35, -0.85, 0.3], fore: [-0.2, -0.15, 1], blade: [0.1, 0.28, 1], tw: 0, ln: 0 };
-// K(Zeit, Oberarm, Unterarm, Klinge, Schultern drehen, vorbeugen, Kurve bis hierher, linker Oberarm, linker Unterarm)
-// Kurven: 'out' = abbremsen (Ausholen, Nachschwingen), 'in' = beschleunigen (Schlag), 'lin' = gleichmäßig schnell, 'io' = weich
-const K = (t, arm, fore, blade, tw = 0, ln = 0, e = 'io', la = null, lf = null) => ({ t, arm, fore, blade, tw, ln, e, la, lf });
-const R0 = (t, e = 'io') => K(t, READY.arm, READY.fore, READY.blade, 0, 0, e);
+/** Lage der rechten Hand in der Grundhaltung (wird beim Laden aus den echten Armlängen berechnet) */
+export const READY_HAND = [-0.15, -0.27, 0.33];
+const EL0 = [-0.75, -0.65, 0.1];                     // Ellbogen locker nach außen unten
 const LA0 = [0.28, -1, 0.06], LF0 = [0.08, -1, 0.32]; // linker Arm locker
+const K = (t, o = {}) => ({ t, e: 'io', ...o });
+const R0 = (t, e = 'io', o = {}) => K(t, { h: 'R', b: READY.blade, el: EL0, e, ...o });
+// linker Arm: Gegenschwung-Haltungen
+const L_OUT = { la: [0.5, -0.6, 0.6], lf: [0.25, -0.2, 1] }, L_MID = { la: [0.45, -0.75, 0.35], lf: [0.3, -0.55, 0.75] }, L_BACK = { la: [0.32, -0.9, -0.35], lf: [0.15, -0.9, -0.4] };
 export const ATTACKS = {
   // leichte Kombo: waagerecht rechts→links, Rückhand schräg links→rechts nach oben, Stoß nach vorn
-  l1: { T: 0.56, act: [0.18, 0.28], cost: 14, dmg: 12, poise: 11, range: 2.0, arc: 1.3, lunge: 0.3, drop: 0.07, next: 'l2', heavy: false, keys: [
+  l1: { T: 0.6, act: [0.19, 0.29], cost: 14, dmg: 12, poise: 11, range: 2.0, arc: 1.3, lunge: 0.3, drop: 0.06, next: 'l2', heavy: false, keys: [
     R0(0),
-    K(0.15, [-0.9, 0.2, -0.15], [-0.6, 0.45, -0.65], [-0.55, 0.25, -0.8], 0.55, -0.05, 'out', [0.5, -0.6, 0.6], [0.2, -0.2, 1]),
-    K(0.21, [-0.6, 0.05, 0.8], [-0.2, 0.05, 1], [-0.75, 0.05, 0.65], 0.2, 0.08, 'in', [0.45, -0.7, 0.4], [0.3, -0.5, 0.8]),
-    K(0.255, [0.1, 0, 1], [0.7, 0, 0.7], [0.6, -0.05, 0.8], -0.35, 0.15, 'lin', [0.35, -0.85, -0.1], [0.2, -0.8, -0.3]),
-    K(0.34, [0.5, -0.15, 0.8], [0.95, -0.1, 0.2], [0.85, -0.15, -0.4], -0.6, 0.15, 'out', [0.3, -0.9, -0.35], [0.15, -0.9, -0.4]),
-    R0(0.56)] },
-  l2: { T: 0.56, act: [0.16, 0.27], cost: 14, dmg: 12, poise: 11, range: 2.0, arc: 1.3, lunge: 0.3, drop: 0.07, next: 'l3', heavy: false, keys: [
+    K(0.15, { h: [-0.3, 0.05, 0.0], b: [-0.45, 0.22, -0.87], el: [-0.4, -0.9, -0.2], tw: -0.6, hip: -0.22, ln: -0.04, sh: -0.03, ...L_OUT, e: 'out' }),
+    K(0.205, { h: [-0.3, -0.02, 0.28], b: [-0.95, 0.05, 0.25], el: [-0.6, -0.8, -0.1], tw: -0.3, hip: -0.08, ln: 0.04, ...L_MID, e: 'in' }),
+    K(0.245, { h: [-0.12, -0.08, 0.45], b: [0.5, -0.05, 0.86], el: [-0.7, -0.7, 0], tw: 0.1, hip: 0.12, ln: 0.12, sh: 0.03, ...L_BACK }),
+    K(0.29, { h: [0.08, -0.1, 0.42], b: [0.97, -0.1, 0.2], el: [-0.5, -0.85, 0.1], tw: 0.42, hip: 0.25, ln: 0.15, sh: 0.03, ...L_BACK }),
+    K(0.38, { h: [0.24, -0.15, 0.27], b: [0.65, -0.15, -0.74], el: [-0.2, -0.9, 0.3], tw: 0.62, hip: 0.3, ln: 0.1, ...L_BACK, e: 'out' }),
+    R0(0.6)] },
+  l2: { T: 0.6, act: [0.17, 0.28], cost: 14, dmg: 12, poise: 11, range: 2.0, arc: 1.3, lunge: 0.3, drop: 0.06, next: 'l3', heavy: false, keys: [
     R0(0),
-    K(0.14, [0.45, -0.1, 0.85], [0.95, 0.05, 0.25], [0.75, -0.45, -0.35], -0.5, 0.05, 'out', [0.45, -0.9, -0.2], [0.2, -0.9, -0.3]),
-    K(0.2, [0.05, 0.05, 1], [0.2, 0.2, 1], [0.3, -0.2, 0.95], -0.15, 0.1, 'in', [0.4, -0.8, 0.3], [0.2, -0.6, 0.7]),
-    K(0.25, [-0.55, 0.3, 0.75], [-0.75, 0.45, 0.5], [-0.8, 0.45, 0.35], 0.35, 0.1, 'lin', [0.5, -0.6, 0.6], [0.3, -0.2, 1]),
-    K(0.34, [-0.85, 0.35, 0.1], [-0.7, 0.6, -0.3], [-0.55, 0.6, -0.6], 0.5, 0.05, 'out', [0.5, -0.6, 0.6], [0.3, -0.2, 1]),
-    R0(0.56)] },
-  l3: { T: 0.68, act: [0.25, 0.35], cost: 16, dmg: 18, poise: 16, range: 2.4, arc: 0.6, lunge: 0.5, drop: 0.17, next: null, heavy: false, keys: [
+    K(0.14, { h: [0.24, -0.22, 0.26], b: [0.6, -0.45, -0.66], el: [-0.3, -0.9, 0.3], tw: 0.5, hip: 0.22, ln: 0.04, ...L_BACK, e: 'out' }),
+    K(0.195, { h: [0.08, -0.15, 0.42], b: [0.8, -0.5, 0.33], el: [-0.5, -0.85, 0.1], tw: 0.28, hip: 0.1, ln: 0.06, ...L_MID, e: 'in' }),
+    K(0.24, { h: [-0.14, -0.02, 0.45], b: [-0.45, 0.4, 0.8], el: [-0.75, -0.6, 0], tw: -0.08, hip: -0.08, ln: 0.1, sh: 0.03, ...L_OUT }),
+    K(0.285, { h: [-0.3, 0.12, 0.3], b: [-0.88, 0.45, 0.15], el: [-0.8, -0.4, -0.2], tw: -0.42, hip: -0.2, ln: 0.06, sh: 0.03, ...L_OUT }),
+    K(0.37, { h: [-0.34, 0.2, 0.1], b: [-0.5, 0.62, -0.6], el: [-0.8, -0.3, -0.3], tw: -0.55, hip: -0.24, ln: 0.02, ...L_OUT, e: 'out' }),
+    R0(0.6)] },
+  l3: { T: 0.74, act: [0.26, 0.35], cost: 16, dmg: 18, poise: 16, range: 2.4, arc: 0.6, lunge: 0.5, drop: 0.15, next: null, heavy: false, keys: [
     R0(0),
-    K(0.2, [-0.4, -0.75, -0.55], [-0.1, -0.05, 1], [0.05, 0.05, 1], 0.45, -0.1, 'out', [0.5, -0.3, 0.85], [0.3, 0.2, 1]),
-    K(0.27, [-0.1, 0.1, 1], [-0.03, 0.05, 1], [0, 0.02, 1], -0.35, 0.3, 'in', [0.45, -0.7, -0.6], [0.3, -0.5, -0.8]),
-    K(0.42, [-0.1, 0.08, 1], [-0.03, 0.04, 1], [0, 0, 1], -0.35, 0.28, 'lin', [0.45, -0.7, -0.6], [0.3, -0.5, -0.8]),
-    R0(0.68)] },
-  // schwer: langsam über den Kopf ausholen, dann mit ganzer Kraft senkrecht herunter, tief nachschwingen
-  h: { T: 1.0, act: [0.5, 0.6], cost: 26, dmg: 32, poise: 30, range: 2.3, arc: 0.9, lunge: 0.42, drop: 0.22, next: null, heavy: true, keys: [
+    K(0.2, { h: [-0.08, -0.24, 0.04], b: [0.06, 0.1, 1], el: [-0.5, -0.5, -0.7], tw: -0.5, hip: -0.25, ln: -0.1, sh: -0.06, cr: 0.03, la: [0.5, -0.3, 0.85], lf: [0.3, 0.2, 1], e: 'out' }),
+    K(0.265, { h: [0.06, -0.14, 0.52], b: [0.04, 0.02, 1], el: [-0.85, -0.5, 0], tw: 0.38, hip: 0.25, ln: 0.3, sh: 0.05, la: [0.45, -0.7, -0.6], lf: [0.3, -0.5, -0.8], e: 'in' }),
+    K(0.42, { h: [0.06, -0.15, 0.51], b: [0.04, 0.0, 1], el: [-0.85, -0.5, 0], tw: 0.38, hip: 0.25, ln: 0.28, sh: 0.05, la: [0.45, -0.7, -0.6], lf: [0.3, -0.5, -0.8], e: 'lin' }),
+    R0(0.74)] },
+  // schwer: beidhändig über die rechte Schulter laden (Körper spannt nach hinten, Gewicht zurück, kurzes Halten),
+  // dann mit Ausfallschritt senkrecht hindurch bis zum Boden (slam = Aufschlag), schwer wieder aufrichten
+  h: { T: 1.15, act: [0.53, 0.63], slam: 0.6, cost: 26, dmg: 32, poise: 30, range: 2.3, arc: 0.9, lunge: 0.5, drop: 0.05, next: null, heavy: true, keys: [
     R0(0),
-    K(0.42, [-0.35, 0.9, -0.3], [0.15, 0.9, -0.45], [0.1, 0.35, -0.95], 0.3, -0.2, 'out', [0.6, -0.4, 0.7], [0.4, 0.2, 0.9]),
-    K(0.5, [-0.25, 0.75, 0.6], [-0.05, 0.6, 0.8], [0, 0.95, 0.3], 0.1, 0.05, 'in', [0.55, -0.6, 0.5], [0.3, -0.3, 0.9]),
-    K(0.56, [-0.12, -0.15, 1], [-0.05, -0.45, 0.9], [0, -0.55, 0.85], -0.1, 0.4, 'lin', [0.45, -0.8, -0.3], [0.25, -0.8, -0.5]),
-    K(0.74, [-0.1, -0.35, 0.95], [0, -0.6, 0.8], [0.1, -0.85, 0.5], -0.1, 0.35, 'out', [0.45, -0.8, -0.3], [0.25, -0.8, -0.5]),
-    R0(1.0)] },
+    K(0.2, { h: [-0.04, 0.1, 0.26], b: [-0.25, 0.9, 0.2], el: [-0.9, -0.3, -0.1], tw: -0.15, hip: -0.05, ln: -0.05, th: 1 }),
+    K(0.42, { h: [0.04, 0.3, -0.08], b: [-0.25, -0.18, -0.95], el: [-0.9, 0.25, -0.1], tw: -0.45, hip: -0.2, ln: -0.28, cr: 0.06, sh: -0.07, th: 1, e: 'out' }),
+    K(0.48, { h: [0.05, 0.32, -0.1], b: [-0.18, -0.3, -0.94], el: [-0.9, 0.25, -0.1], tw: -0.5, hip: -0.22, ln: -0.32, cr: 0.07, sh: -0.08, th: 1 }),
+    K(0.53, { h: [0.12, 0.3, 0.22], b: [0, 0.93, 0.37], el: [-0.9, 0, 0.2], tw: -0.12, hip: -0.05, ln: 0.05, cr: 0.08, th: 1, e: 'in' }),
+    K(0.575, { h: [0.2, -0.36, 0.44], b: [0.04, -0.6, 0.8], el: [-0.85, -0.5, 0.2], tw: 0.22, hip: 0.18, ln: 0.55, cr: 0.22, sh: 0.08, th: 1, e: 'lin' }),
+    K(0.64, { h: [0.21, -0.48, 0.36], b: [0.06, -0.86, 0.5], el: [-0.8, -0.6, 0.2], tw: 0.25, hip: 0.2, ln: 0.62, cr: 0.26, sh: 0.08, th: 1, e: 'out' }),
+    K(0.85, { h: [0.19, -0.4, 0.4], b: [0.08, -0.7, 0.7], el: [-0.8, -0.6, 0.1], tw: 0.15, hip: 0.12, ln: 0.45, cr: 0.18, sh: 0.05, th: 0.9 }),
+    R0(1.15, 'io', { th: 0 })] },
 };
 export const READY_POSE = READY;
 
@@ -126,7 +141,7 @@ const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] /
 const angB = (a, b) => Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
 // Bewegungsrichtung von a nach b, gesehen am Punkt p (Tangente auf der Kugel)
 const tang = (p, q) => { const d = q[0] * p[0] + q[1] * p[1] + q[2] * p[2]; return nrm([q[0] - d * p[0], q[1] - d * p[1], q[2] - d * p[2]]); };
-const val = (key, field, def) => key[field] ?? def;
+const val = (key, field, def) => { const v = key[field]; return v === 'R' ? READY_HAND : v ?? def; };
 /** Tempo (Winkel bzw. Wert pro Sekunde) am Schlüssel j; 0 an den Enden, bei Umkehr und bei 'out'/'in' */
 function speedAt(k, j, field, def, dir) {
   if (j <= 0 || j >= k.length - 1 || k[j].e === 'out' || k[j + 1].e === 'in') return 0;
@@ -158,14 +173,35 @@ function sample(k, t, field, out, def) {
   const m0 = Math.min(2.5, Math.max(0, speedAt(k, i, field, 0, false) * d / dv)), m1 = Math.min(2.5, Math.max(0, speedAt(k, i + 1, field, 0, false) * d / dv));
   return A + dv * prog(u, m0, m1);
 }
-/** Haltung eines Angriffs zur Zeit t (Richtungen, Drehung, linker Arm); twLead/twMid = Hüfte/Rumpf eilen voraus (Peitsche) */
+/** Lage (Punkt, keine Richtung) mit stetigem Tempo: Hermite-Kurve, Tempo am Schlüssel = Mittel der Nachbarn (0 bei Umkehr/'out'/'in') */
+function velAt(k, j, field) {
+  if (j <= 0 || j >= k.length - 1 || k[j].e === 'out' || k[j + 1].e === 'in') return null;
+  const A = val(k[j - 1], field), B = val(k[j], field), C = val(k[j + 1], field), d0 = k[j].t - k[j - 1].t, d1 = k[j + 1].t - k[j].t;
+  const u = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], v = [C[0] - B[0], C[1] - B[1], C[2] - B[2]];
+  const lu = Math.hypot(...u), lv = Math.hypot(...v);
+  if (lu < 1e-5 || lv < 1e-5) return null;
+  const turn = Math.max(0, (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (lu * lv)); // Umkehr → stehen bleiben
+  return [0, 1, 2].map((i) => turn * 0.5 * (u[i] / d0 + v[i] / d1));
+}
+function samplePos(k, t, field, out) {
+  let i = 0; while (i < k.length - 2 && t > k[i + 1].t) i++;
+  const a = k[i], b = k[i + 1], d = b.t - a.t, u = Math.min(1, Math.max(0, (t - a.t) / d));
+  const A = val(a, field), B = val(b, field), va = velAt(k, i, field), vb = velAt(k, i + 1, field);
+  const u2 = u * u, u3 = u2 * u, h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+  for (let c = 0; c < 3; c++) out[c] = h00 * A[c] + h01 * B[c] + h10 * (va ? va[c] * d : 0) + h11 * (vb ? vb[c] * d : 0);
+  return out;
+}
+/**
+ * Haltung eines Angriffs zur Zeit t: Handlage, Klinge, Ellbogen, linker Arm, Rumpf (tw, Hüfte, vorbeugen, Knie, Gewicht), beidhändig.
+ * twLead/twMid = untere Wirbelsäule ist der Drehung voraus (Peitsche: Hüfte → Brust → Schulter → Arm).
+ */
 export function attackPose(atk, t, out) {
   const k = atk.keys, T = Math.min(atk.T, Math.max(0, t));
-  sample(k, T, 'arm', out.arm); sample(k, T, 'fore', out.fore); sample(k, T, 'blade', out.blade);
-  out.la = out.la || [0, 0, 0]; out.lf = out.lf || [0, 0, 0];
-  sample(k, T, 'la', out.la, LA0); sample(k, T, 'lf', out.lf, LF0);
-  out.tw = sample(k, T, 'tw'); out.ln = sample(k, T, 'ln');
-  // Rumpf führt: untere Wirbelsäule ist der Haltung ein Stück voraus
+  out.hand = samplePos(k, T, 'h', out.hand || [0, 0, 0]);
+  sample(k, T, 'b', out.blade); out.el = sample(k, T, 'el', out.el || [0, 0, 0], EL0);
+  out.la = sample(k, T, 'la', out.la || [0, 0, 0], LA0); out.lf = sample(k, T, 'lf', out.lf || [0, 0, 0], LF0);
+  out.tw = sample(k, T, 'tw'); out.ln = sample(k, T, 'ln'); out.hip = sample(k, T, 'hip');
+  out.cr = sample(k, T, 'cr'); out.sh = sample(k, T, 'sh'); out.th = Math.min(1, Math.max(0, sample(k, T, 'th')));
   out.twLead = sample(k, Math.min(atk.T, T + 0.045), 'tw'); out.twMid = sample(k, Math.min(atk.T, T + 0.022), 'tw');
   out.w = sm(t / 0.06) * (1 - sm((t - (atk.T - 0.1)) / 0.1));
   return out;

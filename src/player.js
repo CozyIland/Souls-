@@ -9,7 +9,7 @@ import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 import { resolve } from './kollision.js';
 import { ladeModell } from './modelle.js';
 import { cardMesh, nextSuit } from './karten.js';
-import { buildCane, ATTACKS, READY_POSE, attackPose, Trail, BLADE_L, FIST_WRIST } from './degen.js';
+import { buildCane, buildFist, ATTACKS, READY_POSE, READY_HAND, attackPose, Trail, BLADE_L, FIST_WRIST, GRIP_L } from './degen.js';
 
 const MODEL_URL = 'models/magier.glb';
 const WALK = 3.4, RUN = 5.8;          // m/s (Joggen, Rennen)
@@ -33,6 +33,8 @@ const THROW_K = [
 // Ausfallschritt: s1 = rechter Fuß tritt vor (bis Ende Trefferfenster), s2 = linker Fuß wird nachgezogen.
 // Der rechte Fuß tritt (1 + STEP_X) × lunge vor, der Körper folgt lunge im Schlag und STEP_X × lunge beim Nachziehen.
 const STEP_X = 0.45;
+// Fechtstellung beim Angriff (Meter, Körper: x links, z vorn): linker Fuß [x, z], rechter Fuß [x, z] – rechts etwas vorn
+const STANCE = [0.12, -0.07, -0.11, 0.09];
 const FLOURISH_T = 0.9; // Dauer des Degen-Kunststücks im Stehen
 const WRIST_WALK = 0.95, WRIST_RUN = 2.0; // Winkel Klinge ↔ Unterarm beim Tragen (Gehen: nach vorn, Rennen: nach hinten)
 function stepK(A, t) {
@@ -114,6 +116,23 @@ function legIK(up, low, foot, target, w) {
   up.updateWorldMatrix(false, true);
   low.getWorldPosition(vK);
   aim(low, foot, vB.subVectors(vT, vK).normalize(), w);
+}
+
+/**
+ * Arm als Zwei-Knochen-Kette: Schulter S → Ziel T (Welt), Ellbogen zeigt Richtung pole (Welt).
+ * Liefert die Richtungen von Ober- und Unterarm (Welt) in outA/outB. Zu weit weg → Arm gestreckt in Richtung Ziel.
+ */
+const vI1 = new THREE.Vector3(), vI2 = new THREE.Vector3(), vI3 = new THREE.Vector3(), vI4 = new THREE.Vector3();
+function armIK(S, T, a, b, pole, outA, outB) {
+  const dir = vI1.subVectors(T, S); let d = dir.length(); dir.multiplyScalar(1 / (d || 1));
+  d = Math.min(Math.max(d, Math.abs(a - b) + 0.01), (a + b) * 0.995);
+  const x = (a * a - b * b + d * d) / (2 * d), h = Math.sqrt(Math.max(0, a * a - x * x));
+  const pl = vI2.copy(pole).addScaledVector(dir, -pole.dot(dir));
+  if (pl.lengthSq() < 1e-6) pl.set(0, -1, 0).addScaledVector(dir, dir.y);
+  pl.normalize();
+  const E = vI3.copy(S).addScaledVector(dir, x).addScaledVector(pl, h);
+  outA.subVectors(E, S).normalize();
+  outB.copy(S).addScaledVector(dir, d).sub(E).normalize();
 }
 
 /** Knochen um eine Achse im Körper drehen */
@@ -234,6 +253,15 @@ export class Player {
     this.root.parent.add(this.sheath);
     this.root.parent.add(this.sword);
     this.pose = { arm: [0, 0, 0], fore: [0, 0, 0], blade: [0, 0, 1], tw: 0, ln: 0, w: 0 };
+    // Armlängen (für die Arm-Lösung) und Handlage der Grundhaltung
+    model.updateMatrixWorld(true);
+    const len = (a, b) => a.getWorldPosition(new THREE.Vector3()).distanceTo(b.getWorldPosition(new THREE.Vector3()));
+    this.arm = { aR: len(B.RightArm, B.RightForeArm), bR: len(B.RightForeArm, B.RightHand), aL: len(B.LeftArm, B.LeftForeArm), bL: len(B.LeftForeArm, B.LeftHand) };
+    { const n = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); }, I = READY_POSE, ar = n(I.arm), bl = n(I.blade);
+      let fo = n(I.fore); const d = fo[0] * bl[0] + fo[1] * bl[1] + fo[2] * bl[2]; fo = n(fo.map((x, i) => x - 0.8 * d * bl[i]));
+      for (let i = 0; i < 3; i++) READY_HAND[i] = ar[i] * this.arm.aR + fo[i] * this.arm.bR; }
+    // linke Faust (beidhändiger Griff beim schweren Schlag): gespiegelte Faust am Griff unter der rechten
+    this.fistL = buildFist(); this.fistL.scale.set(1, -1, 1); this.fistL.visible = false; this.root.parent.add(this.fistL);
     this.bladeD = new THREE.Vector3(0, 0, 1);
     this.trail = new Trail(this.root.parent);
     // Karte in der rechten Hand (nur während des Wurfs zu sehen)
@@ -350,6 +378,13 @@ export class Player {
       if (lockTarget && at.t < A.act[0]) at.face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
       // Schwung-Geräusch kurz vor dem Treffer-Moment
       if (!at.swung && at.t >= A.act[0] - 0.06) { at.swung = true; if (this.onSwing) this.onSwing(A.heavy); }
+      // schwerer Schlag: Klinge schlägt auf den Boden – Staub an der Spitze, Rütteln
+      if (A.slam && !at.slammed && at.t >= A.slam && this.sword) {
+        at.slammed = true;
+        const tip = this.sword.localToWorld(new THREE.Vector3(0, 0, BLADE_L)); tip.y = 0.05;
+        if (this.onDust) this.onDust(tip, 16);
+        if (this.onSlam) this.onSlam(tip);
+      }
       // Treffer prüfen
       if (at.t >= A.act[0] && at.t <= A.act[1]) for (const tg of this.targets) {
         if (at.hit.has(tg) || tg.dead) continue;
@@ -397,9 +432,11 @@ export class Player {
   startAttack(k, mv, lockTarget, prevAtk) {
     const A = ATTACKS[k];
     // Kombo aus einem laufenden Ausfallschritt: wo die Füße gerade stehen, merken (sonst springen sie)
+    // Füße: wo sie gerade stehen (davon aus treten sie in die Fechtstellung, auch aus dem Gehen oder aus der Kombo)
     let pre = null;
-    if (prevAtk && prevAtk.L0 && this.rig) {
+    if (this.rig) {
       pre = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+      this.model.updateMatrixWorld(true);
       this.rig.LeftFoot.getWorldPosition(pre.L); this.rig.RightFoot.getWorldPosition(pre.R);
     }
     // Haltung im Moment des Starts merken: der neue Schlag fließt aus ihr heraus (Kombo: direkt aus dem Nachschwingen ins Ausholen)
@@ -407,6 +444,7 @@ export class Player {
     const from = { arm: P0.arm.slice(), fore: P0.fore.slice(), blade: this.bladeB ? this.bladeB.toArray() : P0.blade.slice(),
       la: wasAtk && P0.la ? P0.la.slice() : null, lf: wasAtk && P0.lf ? P0.lf.slice() : null,
       tw: P0.tw || 0, ln: P0.ln || 0, twLead: P0.twLead || 0, twMid: P0.twMid || 0, w: this.lastW || 0, wl: wasAtk ? this.lastW || 0 : 0,
+      hip: wasAtk ? P0.hip || 0 : 0, cr: wasAtk ? P0.cr || 0 : 0, sh: wasAtk ? P0.sh || 0 : 0, th: wasAtk ? P0.th || 0 : 0,
       T: wasAtk ? Math.min(0.16, A.keys[1].t * 0.9) : 0.1 };
     this.state = 'attack'; this.t = 0;
     let face = null;
@@ -482,6 +520,20 @@ export class Player {
     this.mixer.update(0);
     for (let i = 0; i < bones.length; i++) { this.animQ[i].copy(bones[i].quaternion); this.animP[i].copy(bones[i].position); }
 
+    // Angriff: Haltung schon hier bestimmen – in die Knie gehen und Gewicht verlagern wirken auf den ganzen Körper.
+    // Beim Start blendet sie aus der Haltung des vorigen Schlags heraus (Kombo ohne Umweg über die Grundhaltung).
+    const atP = this.state === 'attack' ? this.atk : null;
+    let aW = 0, aWl = 1, aB = 1;
+    if (atP) {
+      const P = this.pose;
+      attackPose(atP.a, atP.t, P); aW = smooth(atP.t / 0.06);
+      const F = atP.from;
+      if (F && atP.t < F.T) {
+        aB = smooth(atP.t / F.T);
+        for (const k of ['tw', 'ln', 'twLead', 'twMid', 'hip', 'cr', 'sh', 'th']) P[k] = lerp(F[k] || 0, P[k], aB);
+        aW = lerp(F.w, 1, aB); aWl = lerp(F.wl, 1, aB);
+      }
+    }
     // 2) Ganzer Körper: Rolle
     let rx = 0, y = CENTER, tuck = 0, rz = 0, dive = 0, rec = 0;
     if (rolling) {
@@ -507,7 +559,7 @@ export class Player {
     const at = this.state === 'attack' ? this.atk : null;
     if (at) {
       const A = at.a; ({ s1, s2 } = stepK(A, at.t));
-      y -= (A.drop || 0) * Math.sin(Math.min(1, s1) * Math.PI / 2) * (1 - s2);
+      y -= (A.drop || 0) * Math.sin(Math.min(1, s1) * Math.PI / 2) * (1 - s2) + this.pose.cr * aW;
     }
     let hurtK = 0;
     if (this.state === 'hurt') { hurtK = Math.sin(clamp(this.t / 0.42, 0, 1) * Math.PI); rx = -0.18 * hurtK; }
@@ -515,6 +567,7 @@ export class Player {
     this.pivot.rotation.order = 'ZXY'; // Rollachse wird erst geneigt, dann gedreht
     this.pivot.rotation.x = rx; this.pivot.rotation.z = rz;
     this.pivot.position.y = y;
+    this.pivot.position.z = at ? this.pose.sh * aW : 0;                 // Gewicht vor/zurück (Füße bleiben stehen)
     this.legs.rotation.y = this.legYaw;
     this.model.updateMatrixWorld(true);
 
@@ -578,17 +631,7 @@ export class Player {
     if (this.state === 'attack' || (this.drawn && this.state !== 'throw')) {
       const P = this.pose;
       let w, wl = 1;
-      if (this.state === 'attack') {
-        attackPose(this.atk.a, this.atk.t, P); w = smooth(this.atk.t / 0.06);
-        const F = this.atk.from;
-        if (F && this.atk.t < F.T) { // aus der Haltung beim Start heraus überblenden (kein Umweg über die Grundhaltung)
-          const b = smooth(this.atk.t / F.T);
-          mixDir(P.arm, F.arm, b); mixDir(P.fore, F.fore, b); mixDir(P.blade, F.blade, b);
-          if (F.la) { mixDir(P.la, F.la, b); mixDir(P.lf, F.lf, b); }
-          P.tw = lerp(F.tw, P.tw, b); P.ln = lerp(F.ln, P.ln, b); P.twLead = lerp(F.twLead, P.twLead, b); P.twMid = lerp(F.twMid, P.twMid, b);
-          w = lerp(F.w, 1, b); wl = lerp(F.wl, 1, b);
-        }
-      }
+      if (this.state === 'attack') { w = aW; wl = aWl; }
       else {
         // Stehen: Bereitschaftshaltung. Gehen/Rennen: der Arm schwingt natürlich aus der Lauf-Animation (gegengleich zum
         // rechten Bein), die Klinge liegt fest in der Hand und folgt dem Unterarm (wird nach dem Glätten gesetzt, Abschnitt 4).
@@ -606,20 +649,40 @@ export class Player {
       }
       // Peitsche: Hüfte/untere Wirbelsäule drehen zuerst, Schultern folgen
       const twL = P.twLead ?? P.tw, twM = P.twMid ?? P.tw;
+      if (this.state === 'attack') bend(R.Hips, AY, (P.hip || 0) * w);   // Hüfte dreht mit (Füße bleiben per IK stehen)
       bend(R.Spine, AY, twL * 0.25 * w); bend(R.Spine1, AY, twM * 0.4 * w); bend(R.Spine2, AY, P.tw * 0.4 * w);
       bend(R.Spine1, AX, P.ln * 0.5 * w); bend(R.Spine2, AX, P.ln * 0.4 * w);
-      aim(R.RightArm, R.RightForeArm, bodyDir(P.arm[0], P.arm[1], P.arm[2], vB), w);
-      // Faustgriff: der Griff liegt quer in der Hand → Unterarm etwa senkrecht zur Klinge
-      bodyDir(P.blade[0], P.blade[1], P.blade[2], this.bladeD);
-      const fo = bodyDir(P.fore[0], P.fore[1], P.fore[2], vB);
-      fo.addScaledVector(this.bladeD, -0.8 * fo.dot(this.bladeD)).normalize();
-      aim(R.RightForeArm, R.RightHand, fo, w);
       if (this.state === 'attack') {
-        // linker Arm hält das Gleichgewicht (schwingt gegen die Klinge), Kopf bleibt beim Gegner
-        aim(R.LeftArm, R.LeftForeArm, bodyDir(P.la[0], P.la[1], P.la[2], vB), wl);
-        aim(R.LeftForeArm, R.LeftHand, bodyDir(P.lf[0], P.lf[1], P.lf[2], vB), wl);
-        bend(R.Neck, AY, -P.tw * 0.55 * w); bend(R.Head, AY, -P.tw * 0.25 * w);
+        // Schulterblatt hebt sich, wenn die Hand hoch geht (sonst knickt die Schulter beim Ausholen über den Kopf)
+        const up = clamp((P.hand[1] + 0.02) / 0.32, 0, 1);
+        bend(R.RightShoulder, AZ, -0.32 * up * w);
+        if (P.th > 0.01) bend(R.LeftShoulder, AZ, 0.28 * up * P.th * w);
+        // rechter Arm: Hand an die Schlüssel-Lage, Ellbogen nach el (Zwei-Knochen-Lösung)
+        R.RightArm.updateWorldMatrix(true, false); R.RightArm.getWorldPosition(vC);
+        vD.set(P.hand[0], P.hand[1], P.hand[2]).applyQuaternion(qBody).add(vC);
+        armIK(vC, vD, this.arm.aR, this.arm.bR, bodyDir(P.el[0], P.el[1], P.el[2], vE), vH, vK);
+        qInv.copy(qBody).invert();
+        vH.applyQuaternion(qInv); vK.applyQuaternion(qInv);
+        P.arm = [vH.x, vH.y, vH.z]; P.fore = [vK.x, vK.y, vK.z];
+        const F = this.atk.from;
+        if (F && aB < 1) { mixDir(P.arm, F.arm, aB); mixDir(P.fore, F.fore, aB); mixDir(P.blade, F.blade, aB); if (F.la) { mixDir(P.la, F.la, aB); mixDir(P.lf, F.lf, aB); } }
+        aim(R.RightArm, R.RightForeArm, bodyDir(P.arm[0], P.arm[1], P.arm[2], vB), w);
+        aim(R.RightForeArm, R.RightHand, bodyDir(P.fore[0], P.fore[1], P.fore[2], vB), w);
+        bodyDir(P.blade[0], P.blade[1], P.blade[2], this.bladeD);
+        // linker Arm hält das Gleichgewicht (schwingt gegen die Klinge) – beidhändig greift er stattdessen den Griff (Abschnitt 4)
+        const wL = wl * (1 - P.th);
+        aim(R.LeftArm, R.LeftForeArm, bodyDir(P.la[0], P.la[1], P.la[2], vB), wL);
+        aim(R.LeftForeArm, R.LeftHand, bodyDir(P.lf[0], P.lf[1], P.lf[2], vB), wL);
+        // Kopf bleibt beim Gegner
+        bend(R.Neck, AY, -P.tw * 0.55 * w); bend(R.Head, AY, -(P.tw * 0.25 + (P.hip || 0) * 0.5) * w);
         bend(R.Neck, AX, -P.ln * 0.4 * w);
+      } else {
+        aim(R.RightArm, R.RightForeArm, bodyDir(P.arm[0], P.arm[1], P.arm[2], vB), w);
+        // Faustgriff: der Griff liegt quer in der Hand → Unterarm etwa senkrecht zur Klinge
+        bodyDir(P.blade[0], P.blade[1], P.blade[2], this.bladeD);
+        const fo = bodyDir(P.fore[0], P.fore[1], P.fore[2], vB);
+        fo.addScaledVector(this.bladeD, -0.8 * fo.dot(this.bladeD)).normalize();
+        aim(R.RightForeArm, R.RightHand, fo, w);
       }
       bladeOn = true; this.lastW = w;
     }
@@ -635,29 +698,33 @@ export class Player {
     //     Das glättet alle Übergänge (Laufen ↔ Schlag ↔ Kombo ↔ Treffer), ohne die Bewegung träge zu machen.
     //     Vor der Bein-IK, damit die Füße beim Ausfallschritt trotzdem genau stehen.
     if (!this.smQ || this.smQ.length !== bones.length) this.smQ = bones.map((b) => b.quaternion.clone());
-    const kq = dt > 0 ? damp(rolling ? 45 : this.state === 'attack' ? 22 : 18, dt) : 1;
+    const kq = dt > 0 ? damp(rolling ? 45 : this.state === 'attack' ? 34 : 18, dt) : 1;
     for (let i = 0; i < bones.length; i++) { this.smQ[i].slerp(bones[i].quaternion, kq); bones[i].quaternion.copy(this.smQ[i]); }
     this.model.updateMatrixWorld(true);
 
-    // Füße beim Angriff fest auf dem Boden: rechter Fuß tritt vor, linker bleibt stehen und kommt danach nach
-    if (at && at.pre && at.t < at.a.act[0] - 0.1) {
-      // Kombo: die Füße stehen noch vom letzten Ausfallschritt – kurzer Nachstell-Schritt in die Grundstellung
-      R.LeftFoot.getWorldPosition(vC); R.RightFoot.getWorldPosition(vD);
-      const g = smooth(at.t / Math.max(0.05, at.a.act[0] - 0.1));
-      const tL = at.pre.L.clone().lerp(vC, g); tL.y += Math.sin(g * Math.PI) * 0.08;
-      const tR = at.pre.R.clone().lerp(vD, g);
-      legIK(R.RightUpLeg, R.RightLeg, R.RightFoot, tR, 1);
-      legIK(R.LeftUpLeg, R.LeftLeg, R.LeftFoot, tL, 1);
-    } else if (at && at.t >= at.a.act[0] - 0.1) {
-      R.LeftFoot.getWorldPosition(vC); R.RightFoot.getWorldPosition(vD); // natürliche Lage in diesem Bild
-      if (!at.L0) { at.L0 = vC.clone(); at.R0 = vD.clone(); at.fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
-      const A = at.a;
-      const tR = vE.copy(at.R0).addScaledVector(at.fwd, A.lunge * (1 + STEP_X) * s1); tR.y += Math.sin(s1 * Math.PI) * 0.13;
+    // Füße beim Angriff fest auf dem Boden: erst in die Fechtstellung treten (rechts vorn), dann tritt der rechte Fuß
+    // zum Ausfallschritt vor, der linke bleibt stehen und wird nachgezogen. Hüfte, Knie und Gewicht dürfen sich dabei frei bewegen.
+    if (at && at.pre) {
+      const A = at.a, a0 = A.act[0] - 0.1;
+      R.LeftFoot.getWorldPosition(vC); R.RightFoot.getWorldPosition(vD); // natürliche Lage (für das Ende des Angriffs)
+      if (!at.N || at.t < a0) { // Fechtstellung relativ zur Figur (folgt dem Ausrichten, bis der Schritt beginnt)
+        const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), lx = Math.cos(this.yaw), lz = -Math.sin(this.yaw), fy = Math.min(at.pre.L.y, at.pre.R.y);
+        if (!at.N) at.N = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+        at.N.L.set(this.pos.x + lx * STANCE[0] + fx * STANCE[1], fy, this.pos.z + lz * STANCE[0] + fz * STANCE[1]);
+        at.N.R.set(this.pos.x + lx * STANCE[2] + fx * STANCE[3], fy, this.pos.z + lz * STANCE[2] + fz * STANCE[3]);
+        at.fwd = new THREE.Vector3(fx, 0, fz);
+      }
+      const g = smooth(at.t / Math.max(0.08, Math.min(0.2, a0)));
+      const lift = (p, q) => (p.distanceTo(q) > 0.04 ? Math.sin(g * Math.PI) * 0.07 : 0);
+      const bL = vT.copy(at.pre.L).lerp(at.N.L, g); bL.y += lift(at.pre.L, at.N.L);
+      const bR = vP.copy(at.pre.R).lerp(at.N.R, g); bR.y += lift(at.pre.R, at.N.R);
+      const tR = vE.copy(bR).addScaledVector(at.fwd, A.lunge * (1 + STEP_X) * s1); tR.y += Math.sin(s1 * Math.PI) * 0.13;
       tR.lerp(vD, s2);
-      const tL = vC.clone().copy(at.L0).lerp(vC, s2); tL.y += Math.sin(s2 * Math.PI) * 0.1;
-      const w = (at.pre ? 1 : smooth((at.t - (A.act[0] - 0.1)) / 0.05)) * (1 - smooth((at.t - (A.T - 0.05)) / 0.05));
-      legIK(R.RightUpLeg, R.RightLeg, R.RightFoot, tR, w);
-      legIK(R.LeftUpLeg, R.LeftLeg, R.LeftFoot, tL, w);
+      const tL = vF.copy(bL).lerp(vC, s2); tL.y += Math.sin(s2 * Math.PI) * 0.1;
+      const w = 1 - smooth((at.t - (A.T - 0.06)) / 0.06);
+      const tR2 = tR.clone(), tL2 = tL.clone();
+      legIK(R.RightUpLeg, R.RightLeg, R.RightFoot, tR2, w);
+      legIK(R.LeftUpLeg, R.LeftLeg, R.LeftFoot, tL2, w);
     }
     // Rolle: Hände voraus beim Abtauchen, Hocke mit ausgebreiteten Armen beim Aufstehen
     if (dive > 0.001) {
@@ -719,7 +786,21 @@ export class Player {
       qInv.copy(qBody).invert(); vS.copy(this.bladeD).applyQuaternion(qInv);
       if (!this.bladeB || dt <= 0 || !this.bladeWas) this.bladeB = vS.clone(); else this.bladeB.lerp(vS, kq).normalize();
       this.bladeD.copy(this.bladeB).applyQuaternion(qBody);
-      const X = vD.copy(vA).addScaledVector(this.bladeD, -vA.dot(this.bladeD)).normalize();
+      if (this.state === 'attack') { // Handgelenk: die Klinge kann nicht zum Ellbogen zurück zeigen (höchstens 160°)
+        const c = clamp(vA.dot(this.bladeD), -1, 1), ang = Math.acos(c), lim = Math.min(ang, 2.8);
+        if (Math.abs(lim - ang) > 1e-3) {
+          const n = vT.copy(this.bladeD).addScaledVector(vA, -c); if (n.lengthSq() < 1e-6) n.set(0, 1, 0).addScaledVector(vA, -vA.y);
+          n.normalize(); this.bladeD.copy(vA).multiplyScalar(Math.cos(lim)).addScaledVector(n, Math.sin(lim));
+        }
+      }
+      // Faust-Lage um den Griff: Unterarm-Richtung quer zur Klinge. Liegt die Klinge fast in Verlängerung des Arms (Stoß,
+      // Treffer mit gestrecktem Arm), ist diese Richtung unbestimmt – dann gleitend die Lage vom letzten Bild nehmen.
+      const X = vD.copy(vA).addScaledVector(this.bladeD, -vA.dot(this.bladeD));
+      const xl = X.length();
+      if (!this.fistX) this.fistX = new THREE.Vector3(1, 0, 0);
+      const fx = vP.copy(this.fistX).addScaledVector(this.bladeD, -this.fistX.dot(this.bladeD)).normalize();
+      X.normalize().lerp(fx, 1 - smooth(xl / 0.45)).normalize();
+      this.fistX.copy(X);
       const Y = vE.crossVectors(this.bladeD, X);
       mT.makeBasis(X, Y, this.bladeD);
       this.sword.quaternion.setFromRotationMatrix(mT);
@@ -729,6 +810,26 @@ export class Player {
       this.sword.quaternion.copy(this.sheath.quaternion);
     }
     this.bladeWas = bladeOn;
+    // Beidhändig (schwerer Schlag): die linke Hand greift den Griff unter der rechten – linker Arm per Zwei-Knochen-Lösung,
+    // die Meshy-Hand wird durch eine (gespiegelte) Faust ersetzt
+    const th = this.state === 'attack' && bladeOn ? (this.pose.th || 0) * aW : 0;
+    this.fistL.visible = th > 0.55;
+    R.LeftHand.scale.setScalar(th > 0.55 ? 0.02 : 1);
+    if (th > 0.01) {
+      this.sword.updateMatrixWorld(true);
+      const G = vC.set(0, 0, GRIP_L).applyMatrix4(this.sword.matrixWorld);           // Griffstelle der linken Faust
+      R.LeftArm.updateWorldMatrix(true, false); R.LeftArm.getWorldPosition(vD);
+      const X = vE.subVectors(G, vD); X.addScaledVector(this.bladeD, -X.dot(this.bladeD)).normalize(); // Unterarm-Richtung ⟂ Klinge
+      const Y = vF.crossVectors(this.bladeD, X);
+      mT.makeBasis(X, Y, this.bladeD); this.fistL.quaternion.setFromRotationMatrix(mT); this.fistL.position.copy(G);
+      // Handgelenk der linken Faust: gespiegelt wie die Faust selbst
+      const W = vT.copy(FIST_WRIST); W.y = -W.y; W.applyQuaternion(this.fistL.quaternion).add(G);
+      // Ellbogen: unten außen; sind die Hände hoch (Ausholen über den Kopf), außen oben – die Arme rahmen den Kopf ein
+      const hu = clamp((this.pose.hand[1] + 0.02) / 0.3, 0, 1);
+      armIK(vD, W, this.arm.aL, this.arm.bL, bodyDir(0.8, lerp(-0.55, 0.3, hu), lerp(0.15, -0.15, hu), vP), vH, vK);
+      aim(R.LeftArm, R.LeftForeArm, vH, th);
+      aim(R.LeftForeArm, R.LeftHand, vK, th);
+    }
     // Schwungspur
     // (at = laufender Angriff, oben gesetzt)
     const trailOn = this.state === 'attack' && at.t > at.a.act[0] - 0.05 && at.t < at.a.act[1] + 0.05;
