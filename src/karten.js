@@ -75,6 +75,19 @@ export function hitFx(tg, dir, heavy, dmg, poise) {
   rumble(heavy ? 0.8 : 0.4, heavy ? 0.6 : 0.5, heavy ? 180 : 100);
 }
 
+/** Staubwolke am Boden (Rolle, Landung) */
+let dustTex = null;
+export function dust(p, n = 8) {
+  if (!dustTex) dustTex = GLOW;
+  for (let i = 0; i < n; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTex, color: 0x6a5a4c, transparent: true, depthWrite: false, opacity: 0.5 }));
+    s.position.set(p.x + (Math.random() - 0.5) * 0.5, 0.12, p.z + (Math.random() - 0.5) * 0.5); s.scale.setScalar(0.3);
+    scene.add(s);
+    const a = Math.random() * Math.PI * 2;
+    sparks.push({ s, v: new THREE.Vector3(Math.cos(a) * 1.2, 0.5 + Math.random() * 0.4, Math.sin(a) * 1.2), t: 0, life: 0.6 + Math.random() * 0.4, dust: true });
+  }
+}
+
 const tmp = new THREE.Vector3(), want = new THREE.Vector3();
 export function updateCards(dt) {
   for (let i = flying.length - 1; i >= 0; i--) {
@@ -122,8 +135,10 @@ export function updateCards(dt) {
     if (s.t > STICK) { s.m.removeFromParent(); stuck.splice(i, 1); }
   }
   for (let i = sparks.length - 1; i >= 0; i--) {
-    const p = sparks[i]; p.t += dt; p.v.y -= 9 * dt;
-    p.s.position.addScaledVector(p.v, dt); p.s.material.opacity = 1 - p.t / p.life;
+    const p = sparks[i]; p.t += dt;
+    if (p.dust) { p.v.multiplyScalar(Math.exp(-4 * dt)); p.s.scale.setScalar(0.3 + p.t * 1.6); p.s.material.opacity = 0.5 * (1 - p.t / p.life); }
+    else { p.v.y -= 9 * dt; p.s.material.opacity = 1 - p.t / p.life; }
+    p.s.position.addScaledVector(p.v, dt);
     if (p.t > p.life) { scene.remove(p.s); p.s.material.dispose(); sparks.splice(i, 1); }
   }
   // getroffene Puppen wackeln

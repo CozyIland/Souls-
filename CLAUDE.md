@@ -51,7 +51,10 @@
   **Beinarbeit beim Angriff** (`stepK`, `legIK`): rechter Fuß tritt (1 + `STEP_X`) × `lunge` vor, linker bleibt stehen und wird
   danach nachgezogen; der Körper bewegt sich genau mit (kein Rutschen), Hüfte sinkt um `drop`. Beine per Zwei-Knochen-IK.
   **Weich nachführen** (`smQ`): jede Knochendrehung läuft der berechneten Haltung leicht hinterher (vor der Bein-IK) – glättet alle
-  Übergänge. Kein Aufleuchten bei Schaden (nur dezenter roter Bildrand). Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
+  Übergänge. Kein Aufleuchten bei Schaden (nur dezenter roter Bildrand).
+  **Rolle** (`ROLL_T` 0,66): abtauchen (Hände voraus) → über die Schulter rollen (Rollachse geneigt, `pivot.rotation.order` 'ZXY',
+  `rollSide`) → aus der Hocke aufstehen (`rec`), Staub `onDust` beim Abrollen und Aufkommen. Kurvenlage `bank` aus `yawRate`,
+  Gewicht vor/zurück beim Anlaufen/Bremsen `accLean`. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
 - `src/karten.js` – fliegende Karten (`throwCard`, `updateCards`): drehen sich flach, Leuchtspur, lenken leicht zum Ziel,
   bleiben in Puppen (wackeln, `hitT`) und Wänden stecken, Funken, Rütteln. Bilder in `src/kartenbild.js`.
   Eingabe `inp.card`: LB oder F, Handy-Knopf `#tCard` 🃏.
@@ -61,7 +64,12 @@
   umfallen) über den Halter `mm.holder`. Ohne Modell: Grundformen (`buildDog`). Zustände idle (streunen) →
   growl (knurren, ab 13 m; danach `aggro` – sie geben nie auf, nur wenn du stirbst `calm`) → chase → circle (lauern: Blick auf dich,
   ein paar Schritte hin und her, Abstand halten) → wind (ducken) → leap (Sprung + Biss `BITE` 28, `player.damage`) → rec (verwundbar);
-  aus der Nähe snap (schneller Schnapper `SNAP` 18). Höchstens zwei greifen gleichzeitig an (`attackers` in `updateDogs`).
+  **Angriffsmuster** (`attack(d)` nach Entfernung): Doppelschnapper/Schnapper (`snap`, `SNAP` 18), Tatzenschlag (`swipe`: aufrichten,
+  rechte Vorderpfote holt aus und schlägt seitlich, `SWIPE` 22), Sprungbiss (`wind`→`leap`), Täuschung (`feint`: duckt sich, weicht
+  zurück), Sprintbiss aus 4–7 m (`charge`, `CHARGE` 26, beißt im Vorbeirennen). Danach `after`: Blick auf dich, dann sofort
+  nachsetzen, 1–2 Schritte rückwärts (`back`, Clip läuft rückwärts) oder lauern. Höchstens zwei greifen gleichzeitig an (`attackers`).
+  Knochen per Code (`bones`, `rotW`, Rücksetzen über `userData.base` – Mixer schreibt nur Änderungen): Kopf/Hals schauen zu dir,
+  Tatze; Kurvenlage aus `yawRate`.
   **Haltung** (unsichtbare Leiste `poise`, `POISE_MAX` 40, erholt sich nach `POISE_WAIT`): nur wenn sie voll ist → hurt/down,
   sonst kurzes Zucken `flinch` und der Angriff läuft weiter; Haltungsschaden je Angriff `ATTACKS[k].poise`, Karte 5.
   Körperhaltung wird weich nachgeführt (`sm`) · hurt (zuckt weg von der Trefferrichtung `hx`/`hz`, Kopf reißt zurück) · down (schwerer

@@ -14,7 +14,7 @@ import { buildCane, ATTACKS, READY_POSE, attackPose, Trail, BLADE_L, FIST_WRIST 
 const MODEL_URL = 'models/magier.glb';
 const WALK = 3.4, RUN = 5.8;          // m/s (Joggen, Rennen)
 const LOCK_WALK = 2.5;                // erfasst: ruhigere Schritte
-const ROLL_T = 0.6, ROLL_V = 8.5;     // Dauer (s), Anfangstempo (m/s)
+const ROLL_T = 0.66, ROLL_V = 8.2;    // Dauer (s), Anfangstempo (m/s)
 const ROLL_COST = 22, RUN_COST = 16;  // Ausdauer
 const RADIUS = 0.38;
 const CENTER = 0.9;                   // Drehpunkt für die Rolle (Körpermitte)
@@ -313,7 +313,7 @@ export class Player {
     }
     if (this.state === 'idle') {
       if (roll && this.st > 0 && !this.exhausted) {
-        this.state = 'roll'; this.t = 0;
+        this.state = 'roll'; this.t = 0; this.rollDust = 0; this.rollSide = Math.random() < 0.5 ? 1 : -1;
         this.st -= ROLL_COST; this.stDelay = 0.6; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
         if (ml > 0.2) this.rollDir.set(mv.x / ml, mv.z / ml);
         else this.rollDir.set(-Math.sin(this.yaw), -Math.cos(this.yaw)); // ohne Richtung: nach hinten
@@ -354,7 +354,10 @@ export class Player {
       this.running = false;
     } else if (this.state === 'roll') {
       const k = this.t / ROLL_T;
-      const sp = ROLL_V * (k < 0.7 ? 1 - k * 0.5 : 0.65 * (1 - (k - 0.7) / 0.3));
+      // Abstoßen (schnell), Rolle (hält Tempo), Aufstehen (bremst ab)
+      const sp = ROLL_V * (k < 0.12 ? 0.7 + k * 2.5 : k < 0.62 ? 1 - (k - 0.12) * 0.5 : 0.75 * Math.max(0, 1 - (k - 0.62) / 0.38));
+      if (!this.rollDust && k > 0.16) { this.rollDust = 1; if (this.onDust) this.onDust(this.pos, 6); }
+      if (this.rollDust === 1 && k > 0.62) { this.rollDust = 2; if (this.onDust) this.onDust(this.pos, 9); }
       this.vel.set(this.rollDir.x * sp, this.rollDir.y * sp);
       this.yaw += angDiff(this.yaw, Math.atan2(this.rollDir.x, this.rollDir.y)) * damp(30, dt);
       if (this.t >= ROLL_T) { this.state = 'idle'; this.t = 0; }
@@ -374,6 +377,7 @@ export class Player {
       this.running = running && !throwing;
     }
 
+    this.yawRate = dt > 0 ? angDiff(this.prevYaw ?? this.yaw, this.yaw) / dt : 0; this.prevYaw = this.yaw;
     this.pos.x += this.vel.x * dt; this.pos.z += this.vel.y * dt;
     resolve(this.pos, RADIUS);
     this.root.position.copy(this.pos);
@@ -458,13 +462,25 @@ export class Player {
     for (let i = 0; i < bones.length; i++) { this.animQ[i].copy(bones[i].quaternion); this.animP[i].copy(bones[i].position); }
 
     // 2) Ganzer Körper: Rolle
-    let rx = 0, y = CENTER, tuck = 0;
+    let rx = 0, y = CENTER, tuck = 0, rz = 0, dive = 0, rec = 0;
     if (rolling) {
+      // Rolle wie in Souls-Spielen: abtauchen (Hände voraus), über die Schulter abrollen, aus der Hocke aufstehen
       const k = this.t / ROLL_T;
-      rx = smooth(k / 0.82) * TAU;
-      y = CENTER - Math.sin(clamp(k, 0, 1) * Math.PI) * 0.42;
-      tuck = Math.sin(clamp(k / 0.88, 0, 1) * Math.PI);
+      const kr = clamp((k - 0.12) / 0.5, 0, 1), er = kr * kr * (3 - 2 * kr);
+      rx = k < 0.12 ? 0.55 * smooth(k / 0.12) : 0.55 + (TAU - 0.55) * er;
+      dive = smooth(k / 0.1) * (1 - smooth((k - 0.14) / 0.1));
+      tuck = smooth((k - 0.08) / 0.12) * (1 - smooth((k - 0.56) / 0.12));
+      rec = smooth((k - 0.56) / 0.1) * (1 - smooth((k - 0.76) / 0.24));
+      rz = 0.38 * Math.sin(kr * Math.PI) * (this.rollSide || 1);          // schräge Rollachse (Schulterrolle)
+      y = CENTER - 0.26 * dive - 0.47 * tuck - 0.32 * rec;
     }
+    // Kurvenlage und Gewichtsverlagerung beim Anlaufen/Bremsen (nicht beim Rollen/Angreifen)
+    const free = !rolling && this.state !== 'attack' && this.state !== 'dead';
+    const fwdV = this.vel.x * Math.sin(this.yaw) + this.vel.y * Math.cos(this.yaw);
+    const acc = dt > 0 ? (fwdV - (this.prevFwd || 0)) / dt : 0; this.prevFwd = fwdV;
+    this.accLean = lerp(this.accLean || 0, free ? clamp(acc * 0.03, -0.2, 0.22) : 0, damp(6, dt));
+    this.bank = lerp(this.bank || 0, free ? clamp(-(this.yawRate || 0) * sp * 0.035, -0.2, 0.2) : 0, damp(7, dt));
+    if (!rolling) rz = this.bank;
     // Ausfallschritt: Fortschritt Vortreten (s1) und Nachziehen (s2), Hüfte geht dabei runter
     let s1 = 0, s2 = 0;
     const at = this.state === 'attack' ? this.atk : null;
@@ -475,7 +491,8 @@ export class Player {
     let hurtK = 0;
     if (this.state === 'hurt') { hurtK = Math.sin(clamp(this.t / 0.42, 0, 1) * Math.PI); rx = -0.18 * hurtK; }
     if (this.state === 'dead') { const f = smooth(this.t / 0.9); rx = -f * 1.45; y = lerp(CENTER, 0.3, f); hurtK = 1 - f; }
-    this.pivot.rotation.x = rx;
+    this.pivot.rotation.order = 'ZXY'; // Rollachse wird erst geneigt, dann gedreht
+    this.pivot.rotation.x = rx; this.pivot.rotation.z = rz;
     this.pivot.position.y = y;
     this.legs.rotation.y = this.legYaw;
     this.model.updateMatrixWorld(true);
@@ -493,6 +510,11 @@ export class Player {
     bend(R.Spine1, AX, Math.sin(t * 1.8) * 0.02 * still + tuck * 0.45 + lean * 0.3);
     bend(R.Spine2, AX, Math.sin(t * 1.8 + 0.4) * 0.015 * still + tuck * 0.35);
     bend(R.Neck, AX, tuck * 0.4 - lean * 0.3);
+    // Gewicht nach vorn beim Anlaufen, nach hinten beim Bremsen
+    bend(R.Spine, AX, this.accLean * 0.5); bend(R.Spine1, AX, this.accLean * 0.5);
+    // Rolle: abtauchen (Kopf runter) und aus der Hocke aufrichten (Oberkörper vor)
+    if (dive > 0.001) { bend(R.Spine1, AX, 0.4 * dive); bend(R.Neck, AX, 0.3 * dive); }
+    if (rec > 0.001) { bend(R.Spine, AX, 0.25 * rec); bend(R.Spine1, AX, 0.3 * rec); bend(R.Neck, AX, -0.25 * rec); }
     if (hurtK > 0) { bend(R.Spine1, AX, -0.25 * hurtK); bend(R.Neck, AX, -0.3 * hurtK); }
     // Stehen: Arme aus der A-Haltung locker herunter
     const ak = still * (1 - tuck);
@@ -568,6 +590,18 @@ export class Player {
       const w = smooth((at.t - (A.act[0] - 0.1)) / 0.05) * (1 - smooth((at.t - (A.T - 0.05)) / 0.05));
       legIK(R.RightUpLeg, R.RightLeg, R.RightFoot, tR, w);
       legIK(R.LeftUpLeg, R.LeftLeg, R.LeftFoot, tL, w);
+    }
+    // Rolle: Hände voraus beim Abtauchen, Hocke mit ausgebreiteten Armen beim Aufstehen
+    if (dive > 0.001) {
+      aim(R.LeftArm, R.LeftForeArm, bodyDir(0.3, -0.75, 0.6, vB), dive); aim(R.LeftForeArm, R.LeftHand, bodyDir(0.1, -0.8, 0.6, vB), dive);
+      aim(R.RightArm, R.RightForeArm, bodyDir(-0.3, -0.75, 0.6, vB), dive); aim(R.RightForeArm, R.RightHand, bodyDir(-0.1, -0.8, 0.6, vB), dive);
+    }
+    if (rec > 0.001) {
+      for (const [U, L, F, sx] of [[R.LeftUpLeg, R.LeftLeg, R.LeftFoot, 1], [R.RightUpLeg, R.RightLeg, R.RightFoot, -1]]) {
+        aim(U, L, bodyDir(sx * 0.15, -0.55, 0.8, vB), rec); aim(L, F, bodyDir(0, -1, -0.25, vB), rec);
+      }
+      aim(R.LeftArm, R.LeftForeArm, bodyDir(0.8, -0.5, 0.25, vB), rec * 0.8);
+      aim(R.RightArm, R.RightForeArm, bodyDir(-0.8, -0.5, 0.25, vB), rec * 0.8);
     }
     // Rolle: Knie zur Brust, Arme an den Körper
     if (tuck > 0.001) {

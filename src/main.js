@@ -5,7 +5,7 @@ import { buildWorld, updateWorld, targets, blockers } from './world.js';
 import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
 import { makeComposer } from './bildfilter.js';
-import { setupCards, throwCard, updateCards, hitFx } from './karten.js';
+import { setupCards, throwCard, updateCards, hitFx, dust } from './karten.js';
 import { spawnDogs, updateDogs, resetDogs, DOG_HP } from './hund.js';
 import { rumble } from './input.js';
 import { setupBlood, updateBlood, spray } from './blut.js';
@@ -37,6 +37,7 @@ player.onThrow = (from, dir, suit) => throwCard(from, dir, cam.lock, suit);
 player.targets = targets;
 player.onHit = (tg, dir, heavy, dmg, poise) => { hitFx(tg, dir, heavy, dmg, poise); cam.shake(heavy ? 0.07 : 0.035); };
 player.onSwing = (heavy) => sfx.swing(heavy);
+player.onDust = (p, n) => dust(p, n);
 setupBlood(scene);
 // Gegner: streunende Hunde (zählen als Ziele für Kamera, Karten und Degen)
 const dogs = spawnDogs(scene);
