@@ -11,7 +11,7 @@ import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
 import { makeComposer } from './bildfilter.js';
 import { setupCards, throwCard, updateCards, hitFx, dust, cardMods, wurf } from './karten.js';
-import { spawnDogs, updateDogs, resetDogs, DOG_HP } from './hund.js';
+import { spawnDogs, updateDogs, resetDogs, DOG_HP, FENCE } from './hund.js';
 import { rumble } from './input.js';
 import { setupBlood, updateBlood, spray } from './blut.js';
 import { sfx } from './ton.js';
@@ -48,6 +48,7 @@ player.onSlam = () => { cam.shake(0.05); sfx.thud(); rumble(0.6, 0.4, 160); }; /
 setupBlood(scene);
 // Gegner: streunende Hunde (zählen als Ziele für Kamera, Karten und Degen)
 const dogs = spawnDogs(scene);
+FENCE.z = GATE.z + 0.75; // Hunde bleiben vor dem Nebeltor
 targets.push(...dogs);
 // Nebeltor und Boss hinter dem Nebel
 const fog = new FogGate(scene, GATE);

@@ -138,7 +138,7 @@ export class Boss {
     this.st = 'sleep'; this.t = 0; this.v.set(0, 0); this.sv = 0; this.w = 0; this.yawRate = 0;
     this.cd = 1.2; this.poise = 0; this.poiseT = 0; this.flinch = 0; this.hitDone = false; this.combo = 0;
     this.deadT = 0; this.pooled = false; this.gp = 0; this.aw = { idle: 1, walk: 0, run: 0 }; this.lag = BOSS_HP;
-    this.sm = null; this.side = 1; this.leap = null;
+    this.sm = null; this.side = 1; this.leap = null; this.it = this.it || 0; // it = eigene Atem-Uhr (muss vor dem ersten Bild stehen)
     this.place();
   }
 
@@ -385,7 +385,9 @@ export class Boss {
     if (st === 'stalk') { neck = 0.18; jaw = 0.15; y = -0.1; }
     const S0 = this.sm || (this.sm = { y, pitch, roll, neck, head, jaw, legF, legR, tail });
     const kq = damp({ bite: 16, swipe: 14, leap: 20, stomp: 14, howl: 9, stagger: 10, dead: 30, charge: 10, spin: 16 }[st] || 6, dt);
-    for (const k of ['y', 'pitch', 'roll', 'neck', 'head', 'jaw', 'legF', 'legR', 'tail']) S0[k] += (({ y, pitch, roll, neck, head, jaw, legF, legR, tail })[k] - S0[k]) * (k === 'y' && rise ? 1 : kq);
+    const tg = { y, pitch, roll, neck, head, jaw, legF, legR, tail };
+    // ungültige Zahl (NaN) nie in der Glättung behalten – sonst bleibt z. B. der Kopf für immer weg
+    for (const k in tg) { if (!Number.isFinite(tg[k])) tg[k] = 0; S0[k] = Number.isFinite(S0[k]) ? S0[k] + (tg[k] - S0[k]) * (k === 'y' && rise ? 1 : kq) : tg[k]; }
     if (rise) S0.y = y;
     // in die Kurve legen, beim Treffer kurz zucken
     let r2 = S0.roll + (st !== 'dead' ? clamp(-this.yawRate * sp * 0.03, -0.15, 0.15) : 0), p2 = S0.pitch;

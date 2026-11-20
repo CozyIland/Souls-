@@ -39,7 +39,13 @@
 - `src/degen.js` – **Stockdegen**: `buildCane` (Stock = Scheide `sheath`, hängt links am Mantel-Gürtel an `Hips`; Klinge `sword`
   mit Griff; beide zeigen entlang +Z; **Faust** `fist` (eigenes Modell im Klingen-Raum: Handteller, 4 Finger als
   Halbringe um den Griff, Daumen oben) – solange er den Degen hält, wird die Meshy-Hand (`RightHand`, keine Fingerknochen) auf 2 %
-  verkleinert; das Handgelenk der Faust `FIST_WRIST` sitzt am Hand-Knochen, Klingen-Raum X = Unterarm-Richtung ⟂ Klinge), Angriffe `ATTACKS` (l1 waagerecht rechts→links, l2 Rückhand schräg nach oben, l3 Stoß = leichte Kombo; h = **beidhändiger
+  verkleinert; das Handgelenk der Faust `FIST_WRIST` sitzt am Hand-Knochen, Klingen-Raum X = Unterarm-Richtung ⟂ Klinge – dreht sich höchstens
+  18 rad/s um den Griff, sonst kippt sie, wenn die Klinge die Unterarm-Linie kreuzt), Angriffe `ATTACKS` – **leichte Kombo wie ein Säbelfechter**
+  (jeder Schlag vollständig: Gewicht zurück und über `LA_FWD` die linke Hand zum Gegner, ausholen, Hüfte → Schultern → Arm → Handgelenk, Schritt,
+  Nachschwingen, hinteren Fuß nachziehen, zurück): l1 schräg von oben rechts nach unten links (über die rechte Schulter geladen, Klinge kommt
+  über oben herein, 0,82 s), l2 Rückhand schräg von unten links nach oben rechts (startet dort, wo l1 endet, 0,78 s), l3 Ausfall mit Stoß
+  (zurückziehen, tief nach vorn fallen, linker Arm `LA_FENCE` nach hinten, 1,0 s); geprüft mit Klingenspitzen-Tempo (kein Ruck) und Winkel
+  Klinge/Unterarm (Klinge nie durch die Unterarm-Linie); h = **beidhändiger
   Spalt-Hieb**: über die rechte Schulter laden, kurz halten, mit Ausfallschritt senkrecht bis zum Boden, `slam` = Aufschlag → `onSlam`/`onDust`):
   je `T`, Trefferfenster `act`, Ausdauer `cost`, Reichweite `range`, Winkel `arc`, Ausfallschritt `lunge`, Schlüsselhaltungen
   `K(t, {h, b, el, tw, hip, ln, cr, sh, th, la, lf, e})`: **h = Lage der Hand** (m ab der rechten Schulter, Körperachsen x links/y oben/z vorn),
@@ -50,7 +56,8 @@
   `slerp3`, gleichmäßiges Winkeltempo), Stillstand nur bei Umkehr, 'out' am Schlüssel oder 'in' am nächsten; Rumpf führt
   (`twLead`/`twMid` = Drehung 45/22 ms voraus → Peitsche: Hüfte, dann Schultern, dann Arm), Ausholen bremst ab, Schlag beschleunigt, linker Arm schwingt gegen, Kopf bleibt beim Gegner; Schwungspur `Trail` (dezent). In `player.js`: Zustand
   `attack` (`startAttack` merkt die Haltung beim Start in `atk.from` – der neue Schlag blendet aus ihr heraus, bei Kombos direkt aus dem
-  Nachschwingen ins Ausholen, ohne Umweg über die Grundhaltung; Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
+  Nachschwingen ins Ausholen, ohne Umweg über die Grundhaltung; auch Knie, Gewicht, Hüfte und die Tiefe des Ausfallschritts `dy` werden
+  übernommen (`wasAtk` gilt auch mit `prevAtk`, weil update() vorher kurz auf 'idle' schaltet); Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
   nach 3 s Ruhe zurück in den Stock; Kartenwurf steckt sie sofort weg), Treffer über `targets`/`onHit`, `hitStop` (0,05 / schwer 0,1 s; main.js
   verlangsamt dann kurz), `onSwing` (Schwung-Geräusch). **Degen ist immer gezogen** (nur beim Kartenwurf kurz im Stock). Schaden: `damage(n, dir)` → `hurt`
   (0,42 s, danach 0,5 s unverwundbar `iframe`) oder `dead`; `revive`. Ohne Ziel dreht ein Schlag zum nächsten Gegner vorn.
@@ -118,7 +125,8 @@
 - `src/kollision.js` – `colliders`, `block`, `blockRot` (gedreht), `resolve`, `blockers`.
 - **Erstes Gebiet = Schlauch** (`world.js`): Start und Rastpunkt am Spieltisch im Süden (`REST`), die Aschenallee nach Norden, Querstraße
   und Ruinenfeld verbarrikadiert (`barricades`: Zäune, Wracks, Schutt, Sandsäcke + Kollision), ein Hund kurz hinter dem Start, ein Rudel bei z −30,
-  am Nordende das **Nebeltor** `GATE` zwischen zwei Häusern (rostiger Träger mit Ketten), dahinter der **Ascheplatz** `ARENA` (≈ 38 × 37 m,
+  am Nordende das **Nebeltor** `GATE` (Hunde kommen nie darüber: Sperrlinie `FENCE` in hund.js, `fence()` nach jeder Bewegung und nach dem
+  Auseinanderschieben; ist der Magier dahinter, verlieren sie ihn und trotten zurück) zwischen zwei Häusern (rostiger Träger mit Ketten), dahinter der **Ascheplatz** `ARENA` (≈ 38 × 37 m,
   Häuser ringsum, Pflaster, weicher Aschekreis, Feuertonnen in den Ecken, Schutt/Wracks am Rand – Mitte frei) (`arena`).
 - `src/nebel.js` – `FogGate`: drei Shader-Lagen wabernder Nebel (fbm, weiche Ränder, am Boden dichter) + Licht; `touches(p)` → main.js lässt
   den Magier langsam hindurchgehen (`passT`, Steuerung ruht), danach `seal()` (Wand von innen, Kollision) und `boss.start()`; wer hindurchrollt,
@@ -137,7 +145,8 @@
   `POISE_MAX` → stagger. Treffer: Kapsel-Körper (`axisPoint`, `hitTest` für Karten, `radius` für den Degen, `pos` = nächster Körperpunkt für
   Zielerfassung), schiebt den Magier aus dem Körper, bleibt in der Arena. `strike` trifft nur, wenn `player.damage` greift (Rolle weicht aus).
   Haltungen über den Halter (`y`, Neigung) + Knochen (`rotW`: Kopf/Hals schauen zum Magier, Kiefer, Beine einknicken `fold`, Pranke);
-  Beinknick-Werte `LP` gemessen (Pfoten bleiben am Boden). Glut steigt vom Rücken (`embers`), Licht `glow`. `onSlam` → Staub, Rütteln.
+  Beinknick-Werte `LP` gemessen (Pfoten bleiben am Boden). Die Glättung `sm` übernimmt nie NaN (früher fehlte beim ersten Betreten der Kopf,
+  weil die Atem-Uhr `it` im ersten Bild noch fehlte). Glut steigt vom Rücken (`embers`), Licht `glow`. `onSlam` → Staub, Rütteln.
   Bossleiste unten (`#bossBar`, helle Schadensanzeige `lag` läuft nach), Sieg: `#victory` „FEIND GEFÄLLT“. Kamera beim Erfassen weiter weg
   (`camDist`/`camPitch` in camera.js). Tod des Spielers → Boss `reset()`, Nebel offen.
 - **Heiltränke** (player.js): 3 pro Leben (`POTIONS`), Y / H / Handy 🧪 (`inp.heal`) → Zustand `heal` (`HEAL_T` 1,35 s, heilt `HEAL_HP` 45 bei

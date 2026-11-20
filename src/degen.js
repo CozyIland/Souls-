@@ -79,32 +79,48 @@ const EL0 = [-0.75, -0.65, 0.1];                     // Ellbogen locker nach au�
 const LA0 = [0.28, -1, 0.06], LF0 = [0.08, -1, 0.32]; // linker Arm locker
 const K = (t, o = {}) => ({ t, e: 'io', ...o });
 const R0 = (t, e = 'io', o = {}) => K(t, { h: 'R', b: READY.blade, el: EL0, e, ...o });
-// linker Arm: Gegenschwung-Haltungen
-const L_OUT = { la: [0.5, -0.6, 0.6], lf: [0.25, -0.2, 1] }, L_MID = { la: [0.45, -0.75, 0.35], lf: [0.3, -0.55, 0.75] }, L_BACK = { la: [0.32, -0.9, -0.35], lf: [0.15, -0.9, -0.4] };
+// linker Arm in der leichten Kombo (der schwere Schlag ist beidhändig)
+const LA_FWD = { la: [0.45, -0.62, 0.64], lf: [0.0, 0.12, 1] };   // linke Hand zeigt zum Gegner (misst den Abstand)
+const LA_IN = { la: [0.45, -0.85, -0.25], lf: [-0.35, -0.35, 0.87] }; // zieht beim Schlag an die Hüfte zurück
+const LA_MID = { la: [0.42, -0.8, 0.3], lf: [0.25, -0.5, 0.8] };
+const LA_FENCE = { la: [0.55, -0.45, -0.7], lf: [0.3, -0.35, -0.88] }; // Ausfall: linker Arm nach hinten gestreckt
 export const ATTACKS = {
-  // leichte Kombo: waagerecht rechts→links, Rückhand schräg links→rechts nach oben, Stoß nach vorn
-  l1: { T: 0.6, act: [0.19, 0.29], cost: 14, dmg: 12, poise: 11, range: 2.0, arc: 1.3, lunge: 0.3, drop: 0.06, next: 'l2', heavy: false, keys: [
+  // Leichte Kombo wie ein echter Säbelfechter – jeder Schlag mit vollständiger Bewegung: Gewicht zurück und ausholen (Hüfte und
+  // Schultern spannen sich), dann Hüfte → Schultern → Arm → Handgelenk, Schritt nach vorn (die Hand trifft vor dem Fuß), die Klinge
+  // schwingt durch und bremst aus, der hintere Fuß wird nachgezogen, zurück in die Grundhaltung. Linke Hand: beim Ausholen zum Gegner,
+  // beim Schlag an die Hüfte zurück (Gegenzug). Die Klinge läuft nie durch die Unterarm-Linie (sonst kippt die Faust).
+  // l1: schräger Hieb von oben rechts nach unten links (über die rechte Schulter geladen, Klinge kommt über oben herein)
+  // l2: Rückhand schräg von unten links nach oben rechts (beginnt dort, wo l1 endet)
+  // l3: Ausfall mit Stoß (Abschluss): zurückziehen, tief nach vorn fallen, Arm gestreckt, linker Arm nach hinten wie beim Fechten
+  l1: { T: 0.82, act: [0.31, 0.4], cost: 14, dmg: 12, poise: 11, range: 2.05, arc: 1.2, lunge: 0.34, drop: 0.07, next: 'l2', heavy: false, keys: [
     R0(0),
-    K(0.15, { h: [-0.3, 0.05, 0.0], b: [-0.45, 0.22, -0.87], el: [-0.4, -0.9, -0.2], tw: -0.6, hip: -0.22, ln: -0.04, sh: -0.03, ...L_OUT, e: 'out' }),
-    K(0.205, { h: [-0.3, -0.02, 0.28], b: [-0.95, 0.05, 0.25], el: [-0.6, -0.8, -0.1], tw: -0.3, hip: -0.08, ln: 0.04, ...L_MID, e: 'in' }),
-    K(0.245, { h: [-0.12, -0.08, 0.45], b: [0.5, -0.05, 0.86], el: [-0.7, -0.7, 0], tw: 0.1, hip: 0.12, ln: 0.12, sh: 0.03, ...L_BACK }),
-    K(0.29, { h: [0.08, -0.1, 0.42], b: [0.97, -0.1, 0.2], el: [-0.5, -0.85, 0.1], tw: 0.42, hip: 0.25, ln: 0.15, sh: 0.03, ...L_BACK }),
-    K(0.38, { h: [0.24, -0.15, 0.27], b: [0.65, -0.15, -0.74], el: [-0.2, -0.9, 0.3], tw: 0.62, hip: 0.3, ln: 0.1, ...L_BACK, e: 'out' }),
-    R0(0.6)] },
-  l2: { T: 0.6, act: [0.17, 0.28], cost: 14, dmg: 12, poise: 11, range: 2.0, arc: 1.3, lunge: 0.3, drop: 0.06, next: 'l3', heavy: false, keys: [
+    K(0.09, { h: [-0.2, -0.12, 0.22], b: [-0.35, 0.55, 0.75], el: [-0.85, -0.45, 0.1], tw: -0.2, hip: -0.08, sh: -0.02, ...LA_FWD }),
+    K(0.21, { h: [-0.24, 0.2, 0.02], b: [-0.25, 0.45, -0.86], el: [-0.85, 0.35, -0.3], tw: -0.6, hip: -0.24, ln: -0.06, sh: -0.05, cr: 0.04, ...LA_FWD, e: 'out' }),
+    K(0.29, { h: [-0.2, 0.17, 0.25], b: [-0.45, 0.88, 0.15], el: [-0.9, 0.1, -0.1], tw: -0.25, hip: 0.05, ln: 0.06, cr: 0.05, ...LA_MID }),
+    K(0.318, { h: [-0.12, 0.1, 0.38], b: [0.35, 0.72, 0.6], el: [-0.85, -0.3, -0.1], tw: 0.02, hip: 0.18, ln: 0.12, sh: 0.03, cr: 0.065, ...LA_IN }),
+    K(0.345, { h: [-0.02, -0.02, 0.46], b: [0.62, -0.32, 0.72], el: [-0.75, -0.6, 0], tw: 0.25, hip: 0.28, ln: 0.2, sh: 0.06, cr: 0.08, ...LA_IN }),
+    K(0.4, { h: [0.16, -0.25, 0.38], b: [0.62, -0.68, 0.1], el: [-0.5, -0.85, 0.15], tw: 0.5, hip: 0.36, ln: 0.27, sh: 0.07, cr: 0.09, ...LA_IN }),
+    K(0.5, { h: [0.22, -0.36, 0.25], b: [0.5, -0.7, -0.45], el: [-0.3, -0.9, 0.25], tw: 0.62, hip: 0.4, ln: 0.26, sh: 0.06, cr: 0.08, ...LA_IN, e: 'out' }),
+    K(0.65, { h: [-0.06, -0.22, 0.3], b: [0.2, 0.05, 1], el: [-0.7, -0.7, 0.1], tw: 0.2, hip: 0.12, ln: 0.08, sh: 0.02, cr: 0.03, ...LA_MID }),
+    R0(0.82)] },
+  l2: { T: 0.78, act: [0.27, 0.36], cost: 14, dmg: 12, poise: 11, range: 2.05, arc: 1.2, lunge: 0.3, drop: 0.06, next: 'l3', heavy: false, keys: [
     R0(0),
-    K(0.14, { h: [0.24, -0.22, 0.26], b: [0.6, -0.45, -0.66], el: [-0.3, -0.9, 0.3], tw: 0.5, hip: 0.22, ln: 0.04, ...L_BACK, e: 'out' }),
-    K(0.195, { h: [0.08, -0.15, 0.42], b: [0.8, -0.5, 0.33], el: [-0.5, -0.85, 0.1], tw: 0.28, hip: 0.1, ln: 0.06, ...L_MID, e: 'in' }),
-    K(0.24, { h: [-0.14, -0.02, 0.45], b: [-0.45, 0.4, 0.8], el: [-0.75, -0.6, 0], tw: -0.08, hip: -0.08, ln: 0.1, sh: 0.03, ...L_OUT }),
-    K(0.285, { h: [-0.3, 0.12, 0.3], b: [-0.88, 0.45, 0.15], el: [-0.8, -0.4, -0.2], tw: -0.42, hip: -0.2, ln: 0.06, sh: 0.03, ...L_OUT }),
-    K(0.37, { h: [-0.34, 0.2, 0.1], b: [-0.5, 0.62, -0.6], el: [-0.8, -0.3, -0.3], tw: -0.55, hip: -0.24, ln: 0.02, ...L_OUT, e: 'out' }),
-    R0(0.6)] },
-  l3: { T: 0.74, act: [0.26, 0.35], cost: 16, dmg: 18, poise: 16, range: 2.4, arc: 0.6, lunge: 0.5, drop: 0.15, next: null, heavy: false, keys: [
+    K(0.17, { h: [0.16, -0.32, 0.2], b: [0.5, -0.5, -0.7], el: [-0.2, -0.95, 0.25], tw: 0.55, hip: 0.3, ln: 0.14, sh: -0.02, cr: 0.06, ...LA_FWD, e: 'out' }),
+    K(0.25, { h: [0.06, -0.26, 0.36], b: [0.75, -0.62, 0.2], el: [-0.45, -0.85, 0.25], tw: 0.3, hip: 0.05, ln: 0.12, cr: 0.07, ...LA_MID }),
+    K(0.305, { h: [-0.1, -0.02, 0.46], b: [-0.5, 0.42, 0.76], el: [-0.8, -0.55, 0], tw: -0.15, hip: -0.22, ln: 0.14, sh: 0.06, cr: 0.07, ...LA_IN }),
+    K(0.37, { h: [-0.25, 0.16, 0.33], b: [-0.7, 0.68, -0.2], el: [-0.85, -0.2, -0.3], tw: -0.48, hip: -0.32, ln: 0.06, sh: 0.05, cr: 0.06, ...LA_IN }),
+    K(0.46, { h: [-0.3, 0.24, 0.16], b: [-0.45, 0.6, -0.66], el: [-0.85, 0.1, -0.4], tw: -0.58, hip: -0.36, ln: 0.02, sh: 0.04, cr: 0.05, ...LA_IN, e: 'out' }),
+    K(0.62, { h: [-0.18, -0.12, 0.3], b: [0, 0.3, 0.95], el: [-0.75, -0.6, 0.1], tw: -0.2, hip: -0.12, ln: 0.04, cr: 0.03, ...LA_MID }),
+    R0(0.78)] },
+  l3: { T: 1.0, act: [0.36, 0.46], cost: 16, dmg: 18, poise: 16, range: 2.5, arc: 0.6, lunge: 0.66, drop: 0.12, next: null, heavy: false, keys: [
     R0(0),
-    K(0.2, { h: [-0.08, -0.24, 0.04], b: [0.06, 0.1, 1], el: [-0.5, -0.5, -0.7], tw: -0.5, hip: -0.25, ln: -0.1, sh: -0.06, cr: 0.03, la: [0.5, -0.3, 0.85], lf: [0.3, 0.2, 1], e: 'out' }),
-    K(0.265, { h: [0.06, -0.14, 0.52], b: [0.04, 0.02, 1], el: [-0.85, -0.5, 0], tw: 0.38, hip: 0.25, ln: 0.3, sh: 0.05, la: [0.45, -0.7, -0.6], lf: [0.3, -0.5, -0.8], e: 'in' }),
-    K(0.42, { h: [0.06, -0.15, 0.51], b: [0.04, 0.0, 1], el: [-0.85, -0.5, 0], tw: 0.38, hip: 0.25, ln: 0.28, sh: 0.05, la: [0.45, -0.7, -0.6], lf: [0.3, -0.5, -0.8], e: 'lin' }),
-    R0(0.74)] },
+    K(0.16, { h: [-0.18, -0.2, 0.18], b: [0.05, 0.12, 1], el: [-0.7, -0.6, -0.3], tw: -0.3, hip: -0.15, sh: -0.04, cr: 0.04, ...LA_FWD }),
+    K(0.285, { h: [-0.12, -0.14, -0.04], b: [0.06, 0.06, 1], el: [-0.55, -0.45, -0.7], tw: -0.6, hip: -0.38, ln: -0.06, sh: -0.08, cr: 0.08, la: [0.45, -0.5, 0.74], lf: [0.05, 0.22, 1], e: 'out' }),
+    K(0.35, { h: [0.0, -0.07, 0.4], b: [0.04, 0.0, 1], el: [-0.85, -0.5, -0.1], tw: 0.15, hip: 0.05, ln: 0.18, sh: 0.05, cr: 0.1, ...LA_MID, e: 'lin' }),
+    K(0.4, { h: [0.05, -0.06, 0.48], b: [0.03, -0.03, 1], el: [-0.9, -0.4, 0], tw: 0.5, hip: 0.3, ln: 0.3, sh: 0.1, cr: 0.13, ...LA_FENCE }),
+    K(0.56, { h: [0.05, -0.08, 0.47], b: [0.03, -0.05, 1], el: [-0.9, -0.4, 0], tw: 0.48, hip: 0.3, ln: 0.28, sh: 0.1, cr: 0.13, ...LA_FENCE, e: 'lin' }),
+    K(0.76, { h: [-0.1, -0.2, 0.32], b: [0.1, 0.2, 1], el: [-0.75, -0.6, 0.1], tw: 0.15, hip: 0.1, ln: 0.1, sh: 0.03, cr: 0.06, ...LA_MID }),
+    R0(1.0)] },
   // schwer: beidhändig über die rechte Schulter laden (Körper spannt nach hinten, Gewicht zurück, kurzes Halten),
   // dann mit Ausfallschritt senkrecht hindurch bis zum Boden (slam = Aufschlag), schwer wieder aufrichten
   h: { T: 1.15, act: [0.53, 0.63], slam: 0.6, cost: 26, dmg: 32, poise: 30, range: 2.3, arc: 0.9, lunge: 0.5, drop: 0.05, next: null, heavy: true, keys: [

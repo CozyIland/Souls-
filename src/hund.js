@@ -11,6 +11,9 @@ import { resolve } from './kollision.js';
 import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 
 const HP = 60;
+// Sperrlinie vor dem Nebeltor (main.js setzt z): Hunde kommen nie in den Bossraum – auch nicht im Sprung oder Sprint.
+// Ist der Magier hinter dem Nebel, verlieren sie ihn aus den Augen und trotten zurück.
+export const FENCE = { z: -Infinity };
 const SEE = 13;                       // Entdecken (m) – wer dich einmal gesehen hat, bleibt an dir dran
 const RUN_V = 4.4, WALK_V = 1.2, PACE_V = 1.5;
 const LEAP_RANGE = 2.8, LEAP_V = 9.5;
@@ -201,6 +204,8 @@ class Dog {
 
   /** Spieler tot: zurück zum Streunen */
   calm() { this.st = 'idle'; this.t = 0; this.alert = 0; this.aggro = false; }
+  /** nie über die Sperrlinie vor dem Nebeltor */
+  fence() { if (this.p.z < FENCE.z) { this.p.z = FENCE.z; if (this.v.y < 0) this.v.y = 0; } }
 
   /** Knochen per Code: Kopf schaut zum Magier, Tatzenschlag, Pfoten im Sprung nach vorn */
   bones(dt) {
@@ -323,7 +328,7 @@ class Dog {
     this.poiseT += dt; if (this.poiseT > POISE_WAIT) this.poise = Math.max(0, this.poise - POISE_REGEN * dt);
     const dx = pl.pos.x - this.p.x, dz = pl.pos.z - this.p.z, d = Math.hypot(dx, dz);
     const toP = Math.atan2(dx, dz);
-    const plOk = pl.state !== 'dead';
+    const plOk = pl.state !== 'dead' && pl.pos.z > FENCE.z - 0.75; // hinter dem Nebel = außer Reichweite
     this.lookYaw = angDiff(this.yaw, toP); this.lookD = d;
     let want = null, spd = 0, turn = 8;
     const free = attackers < 2;
@@ -423,7 +428,7 @@ class Dog {
         if (this.deadT > 25 && d > 18) this.reset(); // kommt irgendwann wieder (zum Üben)
         break;
     }
-    if (!plOk && this.aggro && this.st !== 'dead' && this.st !== 'hurt' && this.st !== 'down') this.calm();
+    if (!plOk && this.aggro && this.st !== 'dead' && this.st !== 'hurt' && this.st !== 'down' && this.st !== 'leap') this.calm();
     // Bewegen: Lenkung mit Drehtempo statt Hinschnappen
     const prevYaw = this.yaw, sp0 = Math.hypot(this.v.x, this.v.y), loco = !!LOCO[this.st];
     const diff = want !== null && this.st !== 'leap' ? angDiff(this.yaw, want) : 0;
@@ -455,6 +460,7 @@ class Dog {
     this.fwdV0 = fwdV;
     this.p.x += this.v.x * dt; this.p.z += this.v.y * dt;
     resolve(this.p, RADIUS);
+    this.fence();
     this.pos.set(this.p.x, 0.55, this.p.z);
     this.animate(dt);
   }
@@ -606,6 +612,7 @@ export function updateDogs(dt, pl) {
       if (el < 0.95 && el > 1e-4) { const k = (0.95 - el) / el * 0.5 * Math.min(1, dt * 14); e.p.x += ex * k; e.p.z += ez * k; } // weich auseinander
     }
   }
+  for (const d of dogs) { resolve(d.p, RADIUS); d.fence(); } // Schieben darf niemanden durch Wände oder den Nebel drücken
 }
 
 export function resetDogs() { for (const d of dogs) d.reset(); }

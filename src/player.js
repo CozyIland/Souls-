@@ -472,12 +472,12 @@ export class Player {
       this.rig.LeftFoot.getWorldPosition(pre.L); this.rig.RightFoot.getWorldPosition(pre.R);
     }
     // Haltung im Moment des Starts merken: der neue Schlag fließt aus ihr heraus (Kombo: direkt aus dem Nachschwingen ins Ausholen)
-    const P0 = this.pose, wasAtk = this.state === 'attack';
+    const P0 = this.pose, wasAtk = this.state === 'attack' || !!prevAtk; // Kombo: update() setzt den Zustand vorher kurz auf 'idle'
     const from = { arm: P0.arm.slice(), fore: P0.fore.slice(), blade: this.bladeB ? this.bladeB.toArray() : P0.blade.slice(),
       la: wasAtk && P0.la ? P0.la.slice() : null, lf: wasAtk && P0.lf ? P0.lf.slice() : null,
       tw: P0.tw || 0, ln: P0.ln || 0, twLead: P0.twLead || 0, twMid: P0.twMid || 0, w: this.lastW || 0, wl: wasAtk ? this.lastW || 0 : 0,
       hip: wasAtk ? P0.hip || 0 : 0, cr: wasAtk ? P0.cr || 0 : 0, sh: wasAtk ? P0.sh || 0 : 0, th: wasAtk ? P0.th || 0 : 0,
-      T: wasAtk ? Math.min(0.16, A.keys[1].t * 0.9) : 0.1 };
+      dy: wasAtk ? this.lastDy || 0 : 0, T: wasAtk ? Math.min(0.16, A.keys[1].t * 0.9) : 0.1 };
     this.state = 'attack'; this.t = 0;
     let face = null;
     if (lockTarget) face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
@@ -591,7 +591,10 @@ export class Player {
     const at = this.state === 'attack' ? this.atk : null;
     if (at) {
       const A = at.a; ({ s1, s2 } = stepK(A, at.t));
-      y -= (A.drop || 0) * Math.sin(Math.min(1, s1) * Math.PI / 2) * (1 - s2) + this.pose.cr * aW;
+      let dy = (A.drop || 0) * Math.sin(Math.min(1, s1) * Math.PI / 2) * (1 - s2);
+      if (at.from && at.t < at.from.T) dy = lerp(at.from.dy || 0, dy, aB); // Kombo: aus der Tiefe des vorigen Ausfallschritts heraus
+      this.lastDy = dy;
+      y -= dy + this.pose.cr * aW;
     }
     let hurtK = 0;
     if (this.state === 'hurt') { hurtK = Math.sin(clamp(this.t / 0.42, 0, 1) * Math.PI); rx = -0.18 * hurtK; }
@@ -850,6 +853,12 @@ export class Player {
       if (!this.fistX) this.fistX = new THREE.Vector3(1, 0, 0);
       const fx = vP.copy(this.fistX).addScaledVector(this.bladeD, -this.fistX.dot(this.bladeD)).normalize();
       X.normalize().lerp(fx, 1 - smooth(xl / 0.45)).normalize();
+      // Faust dreht sich höchstens so schnell um den Griff, wie ein Handgelenk kann – kommt die Klinge der Unterarm-Linie
+      // sehr nahe, kippt die Richtung sonst in einem Bild um (und der ganze Degen springt seitlich)
+      if (dt > 0 && fx.lengthSq() > 0.5) {
+        const th = Math.atan2(vT.crossVectors(fx, X).dot(this.bladeD), fx.dot(X)), mx = 18 * dt;
+        if (Math.abs(th) > mx) X.copy(fx).applyAxisAngle(this.bladeD, Math.sign(th) * mx);
+      }
       this.fistX.copy(X);
       const Y = vE.crossVectors(this.bladeD, X);
       mT.makeBasis(X, Y, this.bladeD);
