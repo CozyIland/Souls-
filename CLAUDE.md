@@ -77,7 +77,12 @@
   zurück), Sprintbiss aus 4–7 m (`charge`, `CHARGE` 26, beißt im Vorbeirennen). Danach `after`: Blick auf dich, dann sofort
   nachsetzen, 1–2 Schritte rückwärts (`back`, Clip läuft rückwärts) oder lauern. Höchstens zwei greifen gleichzeitig an (`attackers`).
   Knochen per Code (`bones`, `rotW`, Rücksetzen über `userData.base` – Mixer schreibt nur Änderungen): Kopf/Hals schauen zu dir,
-  Tatze; Kurvenlage aus `yawRate`. **Galopp** ab ~2,6 m/s per Code (`gw`, `gph`, `GALLOP_LEN`): Lauf-Clip wird ausgeblendet,
+  Tatze; Kurvenlage aus `yawRate`. **Lenkung** (Abschnitt „Bewegen“ in `update`): kein Hinschnappen mehr – Drehtempo `w` mit Grenze
+  (`TURN_STAND` 5,2 rad/s im Stand … `TURN_RUN` 2,3 im Galopp, × Zustands-`turn`/9) und Dreh-Beschleunigung `TURN_ACC`, bremst rechtzeitig
+  vor der Zielrichtung ab; große Richtungswechsel bremsen das Tempo (Bogen statt Drehen auf der Stelle); Fortbewegungs-Zustände `LOCO`
+  ändern das Tempo `sv` nur mit `ACC_UP`/`ACC_DOWN`. Beim Drehen auf der Stelle treten die Beine (`gsp` = Tempo oder Drehtempo × 0,32),
+  ohne Ziel schaut der Kopf schon in die neue Richtung (`turnD`), Brust/Hals biegen sich in die Kurve, Hüfte gegen (`tb`), Gewicht vor beim
+  Antreten/zurück beim Bremsen (`accL`), Kopf nickt beim Gehen (`nod`). Sprungweite nach Abstand (`leapD`). Hunde schieben sich weich auseinander. **Galopp** ab ~2,6 m/s per Code (`gw`, `gph`, `GALLOP_LEN`): Lauf-Clip wird ausgeblendet,
   Beine schwingen als Rotationsgalopp (Hinterbeine fast zusammen, Vorderbeine halbe Phase später, beim Vorschwingen angewinkelt),
   Rücken beugt/streckt sich, Kopf hält dagegen, Schwanz weht; Schweben/Schaukeln am Halter. Ruhe: schnüffeln, Schwanz wedeln;
   Lauern: schweres Atmen. Alle per Code bewegten Knochen stehen in `ctl` (werden vor dem Mixer zurückgesetzt).

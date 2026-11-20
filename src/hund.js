@@ -23,6 +23,11 @@ const CHARGE_V = 7.5;
 // (schwerer Schlag: umgeworfen). Sonst zuckt er nur kurz und macht weiter – auch mitten im Angriff.
 const POISE_MAX = 40, POISE_REGEN = 18, POISE_WAIT = 2.2;
 const RADIUS = 0.42;
+// Lenkung: Drehtempo begrenzt (im Stand dreht er auf der Stelle, im Galopp nur in weiten Bögen), Drehung beschleunigt
+// und bremst weich (TURN_ACC); große Richtungswechsel bremsen ab, Tempo ändert sich mit begrenzter Beschleunigung.
+const TURN_STAND = 5.2, TURN_RUN = 2.3, TURN_ACC = 26;
+const ACC_UP = 6.5, ACC_DOWN = 9;
+const LOCO = { idle: 1, growl: 1, chase: 1, circle: 1, after: 1, back: 1, rec: 1 };
 const DOWN_T = 1.5; // so lange liegt ein umgeworfener Hund
 const smooth01 = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 // Meshy-Hund (models/hund.glb): nur der Clip „dog_walk“ (0,67 s); schaut nach +Z, Füße bei y −0,67, ~1,3 m hoch
@@ -33,7 +38,7 @@ const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1
 let DOG_GLTF = null;
 
 export const dogs = [];
-const qH = new THREE.Quaternion(), vX = new THREE.Vector3(), qR = new THREE.Quaternion(), qP = new THREE.Quaternion();
+const qH = new THREE.Quaternion(), vX = new THREE.Vector3(), vUp = new THREE.Vector3(), qR = new THREE.Quaternion(), qP = new THREE.Quaternion();
 /** Knochen um eine Achse in Weltrichtung drehen */
 function rotW(bone, axisW, ang) {
   if (!bone || Math.abs(ang) < 1e-4) return;
@@ -153,6 +158,7 @@ class Dog {
     this.wander = null; this.bit = false; this.deadT = 0; this.alert = 0; this.aggro = false; this.pooled = false;
     this.poise = 0; this.poiseT = 0; this.flinch = 0; this.paceT = 0; this.paceSide = Math.random() < 0.5 ? 1 : -1; this.snapCool = 1;
     this.sm = null; // geglättete Körperhaltung
+    this.w = 0; this.sv = 0; this.turnD = 0; this.tb = 0; this.accL = 0; this.yawRate = 0;
     this.m.root.visible = true; this.m.root.rotation.set(0, this.yaw, 0);
     this.m.root.traverse((o) => { if (!o.isMesh) return; if (o.userData.isOutline) o.visible = true; else if (o.material.transparent) { o.material.transparent = false; o.material.opacity = 1; } });
     this.pos.set(this.p.x, 0.55, this.p.z);
@@ -188,10 +194,19 @@ class Dog {
     M.holder.getWorldQuaternion(qH);
     const ax = (x, y, z) => vX.set(x, y, z).applyQuaternion(qH);
     // Blick: Kopf und Hals drehen zum Magier (nur wenn er ihn im Visier hat)
-    const look = this.aggro && !this.dead && this.st !== 'down' ? 1 : 0;
-    this.lk = (this.lk || 0) + ((clamp(this.lookYaw || 0, -1.1, 1.1) * look) - (this.lk || 0)) * damp(8, dt);
+    const alive = !this.dead && this.st !== 'down', look = this.aggro && alive ? 1 : 0;
+    // ohne Ziel schaut der Kopf beim Wenden schon in die neue Richtung (der Körper folgt)
+    const lt = look ? clamp(this.lookYaw || 0, -1.1, 1.1) : alive ? clamp(this.turnD || 0, -1, 1) * 0.55 : 0;
+    this.lk = (this.lk || 0) + (lt - (this.lk || 0)) * damp(8, dt);
     if (B.neck1) rotW(B.neck1, ax(0, 1, 0), this.lk * 0.45);
     if (B.head) rotW(B.head, ax(0, 1, 0), this.lk * 0.4);
+    // in die Kurve biegen: Brust und Hals führen, der Rücken folgt (aus dem Drehtempo)
+    this.tb += ((alive ? clamp((this.yawRate || 0) * 0.085, -0.3, 0.3) : 0) - this.tb) * damp(9, dt);
+    if (Math.abs(this.tb) > 1e-3) {
+      const up = vUp.copy(ax(0, 1, 0));
+      if (B.spine2) rotW(B.spine2, up, this.tb * 0.45); if (B.chest) rotW(B.chest, up, this.tb * 0.45);
+      if (B.neck1) rotW(B.neck1, up, this.tb * 0.6); if (B.hips) rotW(B.hips, up, -this.tb * 0.25);
+    }
     const X = () => ax(1, 0, 0), Y = () => ax(0, 1, 0);
     const swing = (b, ang) => { if (b) rotW(b, X(), -ang); };   // + = Bein nach vorn
     // Galopp (Rotationsgalopp): Hinterbeine fast zusammen, Vorderbeine eine halbe Phase später; Rücken beugt und streckt sich
@@ -222,6 +237,7 @@ class Dog {
       if (B.neck1) rotW(B.neck1, X(), 0.55 * sn); if (B.head) rotW(B.head, X(), 0.25 * sn + Math.sin(this.t * 14) * 0.03 * sn);
     }
     if ((this.st === 'circle' || this.st === 'after' || this.st === 'back') && B.chest) rotW(B.chest, X(), Math.sin(this.t * 6.5) * 0.04);
+    if (this.nod && B.neck1) rotW(B.neck1, X(), this.nod);
     // tot: Beine knicken locker ein, Rücken leicht gekrümmt, Kopf und Schwanz sinken auf den Boden, ein letztes Zucken
     if (this.dead) {
       // Er liegt auf der Seite (deadSide 1 = links unten): untere Beine liegen locker gestreckt auf dem Boden,
@@ -339,11 +355,11 @@ class Dog {
         want = toP; turn = 14;
         if (this.t > T_WIND) {
           if (this.feint) { this.go('back'); this.backT = 0.5; this.feint = false; }    // Täuschung
-          else { this.go('leap'); this.leapA = this.yaw; }
+          else { this.go('leap'); this.leapA = this.yaw; this.leapD = clamp(d - 0.75, 1.3, 3.2); } // Sprungweite nach Abstand
         }
         break;
       case 'leap': // Sprung mit Biss
-        spd = LEAP_V * (1 - this.t / T_LEAP * 0.5);
+        spd = (this.leapD || LEAP_V * T_LEAP * 0.75) / (T_LEAP * 0.7) * (1 - this.t / T_LEAP * 0.5);
         this.yaw = this.leapA;
         this.strike(pl, 0.55, 0.75, BITE);
         if (this.t > T_LEAP) this.go('rec');
@@ -390,12 +406,35 @@ class Dog {
         break;
     }
     if (!plOk && this.aggro && this.st !== 'dead' && this.st !== 'hurt' && this.st !== 'down') this.calm();
-    // Bewegen
-    const prevYaw = this.yaw;
-    if (want !== null && this.st !== 'leap') this.yaw += angDiff(this.yaw, want) * damp(turn, dt);
+    // Bewegen: Lenkung mit Drehtempo statt Hinschnappen
+    const prevYaw = this.yaw, sp0 = Math.hypot(this.v.x, this.v.y), loco = !!LOCO[this.st];
+    const diff = want !== null && this.st !== 'leap' ? angDiff(this.yaw, want) : 0;
+    this.turnD = diff;
+    if (this.st === 'leap' || this.st === 'dead' || this.st === 'down') this.w = 0;
+    else {
+      const gain = clamp(turn / 9, 0.3, 2.2);
+      const wMax = lerp(TURN_STAND, TURN_RUN, clamp((sp0 - 1) / 3, 0, 1)) * Math.min(1.7, gain);
+      const acc = TURN_ACC * Math.max(0.8, gain);
+      // Ziel-Drehtempo: proportional zur Abweichung, aber nie schneller, als er bis zum Ziel wieder abbremsen kann
+      const wT = Math.sign(diff) * Math.min(wMax, Math.abs(diff) * 6 * gain, Math.sqrt(2 * acc * Math.abs(diff)) * 0.92);
+      this.w += clamp(wT - this.w, -acc * dt, acc * dt);
+    }
+    this.yaw += this.w * dt;
     this.yawRate = dt > 0 ? angDiff(prevYaw, this.yaw) / dt : 0;
-    if (this.st === 'hurt' || this.st === 'dead' || this.st === 'down' || (this.flinch > 0 && spd === 0)) this.v.multiplyScalar(Math.exp(-6 * dt));
-    else { const k = damp(this.st === 'leap' || this.st === 'charge' ? 30 : 8, dt); this.v.x = lerp(this.v.x, Math.sin(this.yaw) * spd, k); this.v.y = lerp(this.v.y, Math.cos(this.yaw) * spd, k); }
+    if (this.st === 'hurt' || this.st === 'dead' || this.st === 'down' || (this.flinch > 0 && spd === 0)) { this.v.multiplyScalar(Math.exp(-6 * dt)); this.sv = this.v.x * Math.sin(this.yaw) + this.v.y * Math.cos(this.yaw); this.w *= Math.exp(-8 * dt); }
+    else {
+      // große Richtungswechsel: erst abbremsen, im Bogen drehen, dann wieder antreten
+      let spT = spd;
+      if (loco && spd > 0) spT *= 1 - 0.72 * smooth01((Math.abs(diff) - 0.35) / 1.1);
+      if (loco) { const a = Math.abs(spT) > Math.abs(this.sv) ? ACC_UP * (spT > 3 ? 1.4 : 1) : ACC_DOWN; this.sv += clamp(spT - this.sv, -a * dt, a * dt); }
+      else this.sv = spT;
+      const k = damp(this.st === 'leap' || this.st === 'charge' ? 30 : loco ? 9 : 12, dt); // etwas Nachrutschen in schnellen Kurven
+      this.v.x = lerp(this.v.x, Math.sin(this.yaw) * this.sv, k); this.v.y = lerp(this.v.y, Math.cos(this.yaw) * this.sv, k);
+    }
+    // Gewicht beim Antreten nach vorn, beim Bremsen nach hinten
+    const fwdV = this.v.x * Math.sin(this.yaw) + this.v.y * Math.cos(this.yaw);
+    if (dt > 0) { const ac = (fwdV - (this.fwdV0 ?? fwdV)) / dt; this.accL += (clamp(ac * 0.018, -0.12, 0.1) - this.accL) * damp(6, dt); }
+    this.fwdV0 = fwdV;
     this.p.x += this.v.x * dt; this.p.z += this.v.y * dt;
     resolve(this.p, RADIUS);
     this.pos.set(this.p.x, 0.55, this.p.z);
@@ -404,6 +443,8 @@ class Dog {
 
   animate(dt) {
     const m = this.m, sp = Math.hypot(this.v.x, this.v.y);
+    // Beine treten auch, wenn er sich auf der Stelle dreht (sonst dreht er sich wie ein Brett)
+    const gsp = Math.max(sp, Math.abs(this.yawRate || 0) * 0.32);
     m.root.position.set(this.p.x, 0, this.p.z);
     m.root.rotation.y = this.yaw;
     this.phase += dt * (3 + sp * 2.6);
@@ -443,8 +484,8 @@ class Dog {
         roll = -sd * (fall * 1.52 - bounce); by = lerp(0.56, 0.4, buck) - fall * (0.15 - D.by); pitch = 0.12 * buck * (1 - fall);
         headX = 0.2; jaw = 0.25; legAmp = 0; tailX = -0.1; break; }
     }
-    // in die Kurve legen (je schneller, desto mehr)
-    if (!this.dead && this.st !== 'down') roll += clamp(-(this.yawRate || 0) * sp * 0.045, -0.3, 0.3);
+    // in die Kurve legen (je schneller, desto mehr), Gewicht vor beim Antreten, zurück beim Bremsen
+    if (!this.dead && this.st !== 'down') { roll += clamp(-(this.yawRate || 0) * sp * 0.045, -0.3, 0.3); pitch += this.accL || 0; }
     // Haltung weich nachführen (keine Sprünge zwischen den Zuständen) – Sprung und Treffer schneller
     const S = this.sm || (this.sm = { by, pitch, roll, yawOff, headX });
     const k = damp({ leap: 16, wind: 14, snap: 18, swipe: 16, charge: 14, hurt: 22, down: 11, dead: 40 }[this.st] || 8, dt);
@@ -474,7 +515,7 @@ class Dog {
       M.holder.position.y = DOG_C + (by - 0.56) * 0.9;
       M.holder.rotation.set(pitch + headX * 0.15, yawOff, roll);
       // Gewicht weich nachführen (sonst flackert es zwischen Stehen und Laufen)
-      let wt = clamp((sp - 0.15) / 0.5, 0, 1), tt;
+      let wt = clamp((gsp - 0.15) / 0.5, 0, 1), tt;
       if (this.st === 'leap') { wt = 1; this.gp = 0.55; tt = 0.55; }
       else if (this.st === 'down') { wt = 1; this.gp = (this.gp + dt * 2.6) % 1; tt = this.gp; } // Beine zappeln
       else if (this.st === 'wind') { wt = 0.8; this.gp += (0.55 - this.gp) * damp(8, dt); tt = this.gp; } // Beine gehen in die Sprunghaltung
@@ -482,7 +523,7 @@ class Dog {
         // Schrittlänge wächst mit dem Tempo (beim Rennen weitere Sprünge statt Trippeln)
         const cyc = DOG_STRIDE * DOG_S * (1 + clamp((sp - 1.5) / 2.5, 0, 1) * 0.7);
         const fwd = this.v.x * Math.sin(this.yaw) + this.v.y * Math.cos(this.yaw); // rückwärts gehen = Clip rückwärts
-        this.gp = (this.gp + (fwd < -0.1 ? -1 : 1) * dt * sp / cyc + 1) % 1; tt = this.gp;
+        this.gp = (this.gp + (fwd < -0.1 ? -1 : 1) * dt * gsp / cyc + 1) % 1; tt = this.gp;
       }
       if (this.dead) wt = 0;
       this.aw = lerp(this.aw || 0, wt, damp(this.st === 'leap' ? 20 : 7, dt));
@@ -496,8 +537,9 @@ class Dog {
         M.holder.rotation.x += (Math.sin(a + 1.4) * 0.09 + 0.05) * this.gw;     // Schaukeln vor/zurück
       }
       // Gehen: Kopf nickt mit den Schritten, Körper wiegt leicht
-      const walkK = this.aw * (1 - this.gw) * clamp(sp / 1.2, 0, 1);
+      const walkK = this.aw * (1 - this.gw) * clamp(gsp / 1.2, 0, 1);
       M.holder.rotation.z += Math.sin(this.gp * TAU) * 0.035 * walkK;
+      this.nod = Math.sin(this.gp * TAU * 2 + 0.6) * 0.045 * walkK;          // Kopf nickt mit jedem Schritt
       // Knochen, die der Code zusätzlich bewegt, vor dem Mixer zurücksetzen (er schreibt nur bei Änderungen)
       for (const b of M.ctl) b.quaternion.copy(b.userData.base);
       if (M.act) { M.act.time = tt * M.dur; M.act.setEffectiveWeight(this.aw * (1 - (this.gw || 0))); M.mixer.update(0); }
@@ -528,7 +570,7 @@ export function updateDogs(dt, pl) {
     for (const e of dogs) {
       if (e === d || e.dead) continue;
       const ex = e.p.x - d.p.x, ez = e.p.z - d.p.z, el = Math.hypot(ex, ez);
-      if (el < 0.95 && el > 1e-4) { const k = (0.95 - el) / el * 0.5; e.p.x += ex * k; e.p.z += ez * k; }
+      if (el < 0.95 && el > 1e-4) { const k = (0.95 - el) / el * 0.5 * Math.min(1, dt * 14); e.p.x += ex * k; e.p.z += ez * k; } // weich auseinander
     }
   }
 }
