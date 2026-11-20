@@ -155,9 +155,24 @@
 - **Menü** (`src/menue.js`, Klasse `Menue`, im `#pause`-Overlay): Reiter Charakter · Inventar · Steuerung · Test (`#tabs`, `.page`),
   Controller: LB/RB bzw. Q/E Seite (`inp.tab`), Steuerkreuz/Stick/Pfeile auswählen (`inp.nav`/`navX`, Klasse `padFocus`), A/Enter bestätigen,
   B/Esc/Start zu. Charakter: Stufe, Seelen, nächste Kosten, Werte mit Beschreibung, abgeleitete Zahlen (Leben, Ausdauer, Degen leicht/schwer,
-  Karte, Rolle). Inventar: Stockdegen, Spielkarten, Heiltrank, Seelen. **Test**: Stufe −/+ bzw. 1/20 (`setLevel`, Punkte reihum), jeder Wert
+  Karte, Rolle). Inventar: siehe `inventar.js` (ohne WebGL einfache Liste `renderInvList`). **Test**: Stufe −/+ bzw. 1/20 (`setLevel`, Punkte reihum), jeder Wert
   −/+ (`bump`), **Unverwundbar** an/aus (`werte.god` → `player.god`, `invulnerable` ist dann immer wahr, Hinweis `#godTag` unter der
   Lebensleiste, wird mitgespeichert), Seelen +100/+1000/0, Sprünge zum Stein / vors Nebeltor / in die Arena, alles zurücksetzen. Start/Esc öffnet „Charakter“.
+- **3D-Inventar** (`src/inventar.js`, Klasse `Inventar`, von `Menue.renderInv` einmal angelegt, gezeichnet über `menue.frame(dt, inp)` nur solange
+  der Reiter offen ist; eigener `WebGLRenderer` auf `.invCv`): Sechseck-Bild `bilder/inventar.jpg` (Konzept, rostiger Rahmen, Kristall, 7 Fassungen)
+  als Fläche mit Shader `HFS` – Kristall (Maske aus Sättigung/Farbton) schillert (`hueRot`), Adern flackern, Lichtstreifen wandert, Lichtwelle
+  beim Ausrüsten (`uPulse`), goldenes Leuchten um die gewählte Fassung (`uFoc`), Rand per Helligkeit freigestellt. Fassungen `SOCK` (Pixel im
+  Bild), Gegenstände `SLOT_ITEM` (oben Stockdegen, rechts unten Heiltrank, links unten Seelen; Bilder `iconTex`, Zahlen `.sq`), Knöpfe `.sock`
+  liegen über den Fassungen (`placeSockets`, folgen der Neigung) → Menü-Fokus/Controller wie überall. **Mitte = ausgerüstete Karte** in 3D
+  (`KARTEN`: `herzass` → `models/herzass.glb`, Meshy, mit gltfpack auf 12 % vereinfacht + `KHR_mesh_quantization`; eigene Rückseite
+  `backTex`, weil das Modell hinten die Vorderseite gespiegelt zeigt; Glutschein `halo`). Gruppen `root` (Lage, rückt bei der Wahl vor) →
+  `anim` (Abläufe `an`: rise = aus dem Kristall wirbeln, sink, flip = Vorschau tauschen, shake) → `spin` (Schweben, Wiegen, alle ~10 s einmal
+  herum, Ziehen mit Maus/Finger bzw. rechter Stick `dragA`, rastet vorn ein). Funken `Funken` (Glut von den Kartenrändern, Lichtsplitter
+  `burst`, Kristallstaub). Mitte antippen/A → `openChoice` (Kartenwahl `.kwahl`, gefundene + `UNBEKANNT` verborgene „?“ – Vorschau dreht sich
+  mit), wählen → `choose` (speichert `werte.karte`, `onEquip` → `wurf.karte` in karten.js: geworfene Karten zeigen das Ass), B schließt erst
+  die Wahl. `werte.karte`/`werte.karten` in stufe.js gespeichert. Klänge `sfx.karte`/`huschen`/`ui`/`nein`. Kartenmodelle liest `karteLaden(id)`
+  schon 1,5 s nach dem Start im Hintergrund (main.js); lädt es noch, zeigt die Mitte die Rückseite (`models.back`) und dreht sich dann um.
+  Neue Karte: Eintrag in `KARTEN` (+ GLB in `models/`, `mini` fürs Auswahl-Kärtchen, CSS `.kmini.<id>`), finden = `werte.karten` ergänzen.
 - `src/world.js` – Straßen der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.
   **Alle festen Teile werden am Ende nach Material zusammengefasst** (`mergeStatic`, behält Vertex-Farben; `userData.noMerge` = auslassen).
@@ -175,7 +190,8 @@
 - `src/texturen.js` – alle Canvas-Texturen (dazu `fbm`-Rauschen, `normalTex` Höhe→Relief, Asphalt-/Gehweg-Relief) (Asphalt, Gehweg, Fassaden-Atlas `FACADES`, Rost, Holz, Unkraut, Efeu, Schilder, Himmel, Skyline).
 - `src/toon.js` – Anime-Look: `toon(farbe)` (3 harte Lichtstufen), `outline(mesh)` (Umriss als vergrößerte Rückseite),
   `part(geo, farbe, linie)`, `skinOutline(skinnedMesh)` (Umriss für Figuren mit Skelett). Geometrien zentriert lassen.
-- `src/modelle.js` – `ladeModell(loader, url, …)`: in der Offline-Datei kommen alle `models/*.glb` eingebettet (Base64).
+- `src/modelle.js` – `ladeModell(loader, url, …)`: in der Offline-Datei kommen alle `models/*.glb` eingebettet (Base64);
+  Bilder aus `bilder/` über `bildUrl(url)` (in der Offline-Datei als data-URL in `BILDER`).
 - `tools/einzeldatei.mjs` – Offline-Datei `Aschenblatt.html`; `tools/glb_klein.py quelle ziel Name` – Meshy-Texturen verkleinern
   (Farbe 2048, sonst wird das Gesicht matschig). Original-GLBs liegen in `models/quelle/`.
 

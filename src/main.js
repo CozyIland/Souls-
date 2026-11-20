@@ -4,12 +4,13 @@ import { setupInput, poll, inp } from './input.js';
 import { buildWorld, updateWorld, targets, blockers, REST, GATE, ARENA, STONE } from './world.js';
 import { Werte, SOULS } from './stufe.js';
 import { Menue } from './menue.js';
+import { karteLaden } from './inventar.js';
 import { FogGate } from './nebel.js';
 import { Boss, BOSS_HP } from './boss.js';
 import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
 import { makeComposer } from './bildfilter.js';
-import { setupCards, throwCard, updateCards, hitFx, dust, cardMods } from './karten.js';
+import { setupCards, throwCard, updateCards, hitFx, dust, cardMods, wurf } from './karten.js';
 import { spawnDogs, updateDogs, resetDogs, DOG_HP } from './hund.js';
 import { rumble } from './input.js';
 import { setupBlood, updateBlood, spray } from './blut.js';
@@ -56,7 +57,7 @@ let passT = -1, victoryT = -1;
 // ---------- Stufen-System: Seelen sammeln, am Seelenstein aufsteigen ----------
 const werte = new Werte();
 const $ = (id) => document.getElementById(id);
-function applyStats() { const m = werte.mods(); player.applyStats(m); cardMods.dmg = m.card; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
+function applyStats() { const m = werte.mods(); player.applyStats(m); cardMods.dmg = m.card; wurf.karte = werte.karte; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
 applyStats(); player.hp = player.maxHp; player.st = player.maxSt;
 let soulShow = werte.souls;
 function gainSouls(n) {
@@ -69,6 +70,7 @@ const menue = new Menue({ werte, player, apply: applyStats, onLevel: () => sfx.h
   const at = w === 'stone' ? [STONE.x + 0.4, STONE.z - 2.2] : w === 'gate' ? [(GATE.x0 + GATE.x1) / 2, GATE.z + 5] : [(GATE.x0 + GATE.x1) / 2, GATE.z - 4];
   player.pos.set(at[0], 0, at[1]); player.yaw = Math.PI; player.vel.set(0, 0); cam.yaw = 0; cam.lock = null; passT = -1; setState('play');
 } });
+setTimeout(() => karteLaden(werte.karte).catch(() => {}), 1500); // Kartenmodell fürs Inventar im Hintergrund vorbereiten
 function openMenu(tab, atStone) { setState('pause'); menue.open(tab, atStone); }
 /** am Seelenstein rasten: Leben, Ausdauer und Tränke voll, Hunde kommen zurück – dann aufsteigen */
 function useStone() {
@@ -203,6 +205,7 @@ function frame(now) {
     player.update(dt, { x: 0, z: 0 }, {}, null);
   } else if (state === 'pause') {
     if (menue.update(inp) === 'close') setState('play');
+    else menue.frame(dt, inp);
   } else {
     if (inp.pause) { openMenu('char', false); }
     // Seelenstein: in der Nähe Hinweis zeigen, A / Enter / Knopf benutzt ihn

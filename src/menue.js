@@ -1,6 +1,7 @@
 // Menü (Start bzw. Esc, am Seelenstein): Reiter Charakter · Inventar · Steuerung · Test.
 // Ganz mit dem Controller bedienbar: LB/RB Seite, Steuerkreuz/Stick auswählen, A bestätigen, B zurück. Maus/Touch: antippen.
 import { STATS, MAX_LV, BASE, cost } from './stufe.js';
+import { Inventar } from './inventar.js';
 
 const TABS = ['char', 'inv', 'ctrl', 'test'];
 const $ = (id) => document.getElementById(id);
@@ -13,7 +14,11 @@ export class Menue {
     for (const b of $('tabs').querySelectorAll('.tab')) b.onclick = () => this.setTab(b.dataset.tab);
   }
   open(tab = 'char', atStone = false) { this.atStone = atStone; this.focus = 0; this.setTab(tab); }
-  setTab(t) { this.tab = t; this.focus = 0; this.render(); }
+  setTab(t) { if (this.inv && this.inv.choosing && t !== 'inv') this.inv.closeChoice(true); this.tab = t; this.focus = 0; this.render(); }
+  /** Knopf direkt auswählen (Maus darüber, Inventar wechselt die Auswahl) */
+  focusEl(b) { const i = this.items().indexOf(b); if (i >= 0) { this.focus = i; this.markFocus(); } }
+  /** jedes Bild, solange das Menü offen ist: 3D-Inventar zeichnen */
+  frame(dt, inp) { if (this.tab === 'inv' && this.inv) this.inv.update(dt, inp); }
 
   /** auswählbare Knöpfe der aktuellen Seite (+ „Weiter“) */
   items() { return [...$('page-' + this.tab).querySelectorAll('.sbtn:not(:disabled)'), $('resumeBtn')]; }
@@ -21,9 +26,11 @@ export class Menue {
     const it = this.items(); this.focus = Math.max(0, Math.min(it.length - 1, this.focus));
     for (const b of document.querySelectorAll('#pause .padFocus')) b.classList.remove('padFocus');
     if (it[this.focus]) { it[this.focus].classList.add('padFocus'); it[this.focus].scrollIntoView({ block: 'nearest' }); }
+    if (this.tab === 'inv' && this.inv) this.inv.onFocus(it[this.focus]);
   }
   /** jedes Bild im Menü: gibt 'close' zurück, wenn es zugehen soll */
   update(inp) {
+    if (inp.back && this.tab === 'inv' && this.inv && this.inv.choosing) { this.inv.closeChoice(); return; } // B: erst die Kartenwahl zu
     if (inp.back || inp.pause) return 'close';
     if (inp.tab) { const i = (TABS.indexOf(this.tab) + inp.tab + TABS.length) % TABS.length; this.setTab(TABS[i]); return; }
     const step = inp.nav || inp.navX;
@@ -34,6 +41,7 @@ export class Menue {
   render() {
     for (const b of $('tabs').querySelectorAll('.tab')) b.classList.toggle('on', b.dataset.tab === this.tab);
     for (const t of TABS) $('page-' + t).classList.toggle('on', t === this.tab);
+    $('page-inv').parentElement.classList.toggle('wide', this.tab === 'inv'); // Inventar bekommt mehr Platz
     if (this.tab === 'char') this.renderChar();
     if (this.tab === 'inv') this.renderInv();
     if (this.tab === 'test') this.renderTest();
@@ -63,7 +71,15 @@ export class Menue {
     };
   }
 
+  /** Inventar: 3D-Sechseck mit der Karte in der Mitte (inventar.js) – ohne WebGL die einfache Liste */
   renderInv() {
+    if (this.inv === undefined) {
+      try { this.inv = new Inventar($('page-inv'), { werte: this.o.werte, player: this.o.player, focusEl: (b) => this.focusEl(b), onEquip: () => this.o.apply() }); }
+      catch (e) { console.warn('3D-Inventar nicht möglich:', e); this.inv = null; }
+    }
+    if (this.inv) this.inv.refresh(); else this.renderInvList();
+  }
+  renderInvList() {
     const w = this.o.werte, m = w.mods(), p = this.o.player;
     const it = (icon, name, desc, qty, eq) => `<div class="item"><div class="ii">${icon}</div><div><div class="in">${name}${eq ? ' <span class="eq">AUSGERÜSTET</span>' : ''}</div><div class="id">${desc}</div></div><div class="iq">${qty}</div></div>`;
     $('page-inv').innerHTML = `

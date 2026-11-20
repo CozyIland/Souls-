@@ -1,6 +1,11 @@
-// Modelle laden. In der Offline-Datei füllt tools/einzeldatei.mjs die Liste unten mit den
-// Modellen aus models/ (Base64) – dann wird ohne Ladeanfrage gelesen (manche Vorschauen sperren das).
+// Modelle und Bilder laden. In der Offline-Datei füllt tools/einzeldatei.mjs die Listen unten mit den
+// Modellen aus models/ (Base64) und den Bildern aus bilder/ (data-URL) – dann wird ohne Ladeanfrage gelesen
+// (manche Vorschauen sperren das).
 export const EINGEBETTET = {};
+export const BILDER = {};
+
+/** Adresse eines Bilds aus bilder/: eingebettet (Offline-Datei) oder die normale Datei */
+export function bildUrl(url) { return BILDER[url] || url; }
 
 export function ladeModell(loader, url, onLoad, onError) {
   const b64 = EINGEBETTET[url];

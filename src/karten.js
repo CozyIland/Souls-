@@ -30,7 +30,10 @@ export function cardMesh(suit) {
 
 const SUITS = ['♠', '♥', '♦', '♣'];
 let suitI = 0;
-export function nextSuit() { return SUITS[suitI++ % 4]; }
+/** ausgerüstete Karte (Inventar): ihre Zeichen trägt jede geworfene Karte */
+export const wurf = { karte: null };
+const FACE = { herzass: 'A♥' };
+export function nextSuit() { return FACE[wurf.karte] || SUITS[suitI++ % 4]; }
 
 /** Karte losschicken: from = Startpunkt, dir = Richtung (Länge egal), target = erfasstes Ziel oder null */
 export function throwCard(from, dir, target, suit) {

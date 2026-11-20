@@ -100,6 +100,19 @@ export const sfx = {
     const c = ok(); if (!c) return; const t = c.currentTime;
     for (const [f, d] of [[392, 0], [523, 0.08], [659, 0.16]]) tone(c, t + d, 0.9, 'sine', f, f * 1.01, 0.12, 0.05);
   },
+  /** Karte erscheint aus dem Kristall: Rauschen steigt auf, Glöckchen, tiefer Schlag */
+  karte() {
+    const c = ok(); if (!c) return; const t = c.currentTime;
+    noise(c, t, 0.75, 'bandpass', 300, 2800, 1.2, 0.16, 0.3);
+    for (const [f, d] of [[523, 0.62], [784, 0.69], [1047, 0.76], [1568, 0.84]]) tone(c, t + d, 1.3, 'sine', f, f * 1.003, 0.08, 0.005);
+    tone(c, t + 0.6, 0.55, 'sine', 120, 52, 0.28, 0.01);
+  },
+  /** leises Wischen (Karte taucht auf / dreht sich) */
+  huschen(v = 1) { const c = ok(); if (!c) return; noise(c, c.currentTime, 0.32, 'bandpass', 500, 1900, 1.4, 0.06 * v, 0.1); },
+  /** leiser Klick im Menü (a = öffnen) */
+  ui(a) { const c = ok(); if (!c) return; const t = c.currentTime; tone(c, t, 0.05, 'triangle', a ? 900 : 1500, a ? 1300 : 1200, 0.035, 0.002); },
+  /** gesperrt: dumpfes Brummen */
+  nein() { const c = ok(); if (!c) return; const t = c.currentTime; tone(c, t, 0.16, 'square', 150, 120, 0.05, 0.005); tone(c, t + 0.13, 0.2, 'square', 115, 90, 0.05, 0.005); },
   /** Biss: Schnappen */
   bite() {
     const c = ok(); if (!c) return; const t = c.currentTime;

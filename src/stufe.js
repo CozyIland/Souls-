@@ -1,7 +1,7 @@
 // Stufen-System wie in Souls-Spielen: Gegner geben Seelen, am Seelenstein steigt man mit Seelen eine Stufe auf und
 // erhöht dabei einen Wert um 1. Stufe 1 … 20. Kosten: 50 → 100 → 200, danach je +50 % (gerundet auf 10).
 // Werte: Ausdauer (Leben + Ausdauer), Stärke (Degen, vor allem schwer), Trickreich (leichte Schläge, Rolle), Magie (Karten).
-// Der Stand wird im Browser gespeichert (falls erlaubt).
+// Dazu: ausgerüstete Karte (karte) und gefundene Karten (karten). Der Stand wird im Browser gespeichert (falls erlaubt).
 
 export const MAX_LV = 20;
 export const BASE = 10;                       // Startwert jedes Werts
@@ -25,7 +25,7 @@ export function cost(lv) {
 const KEY = 'aschenblatt-stufe';
 export class Werte {
   constructor() { this.reset(); this.load(); }
-  reset() { this.souls = 0; this.s = { aus: BASE, str: BASE, tri: BASE, mag: BASE }; this.god = false; }
+  reset() { this.souls = 0; this.s = { aus: BASE, str: BASE, tri: BASE, mag: BASE }; this.god = false; this.karte = 'herzass'; this.karten = ['herzass']; }
   /** Stufe = 1 + alle verteilten Punkte */
   get lv() { return 1 + STATS.reduce((n, x) => n + this.s[x.k] - BASE, 0); }
   get next() { return cost(this.lv + 1); }
@@ -59,11 +59,13 @@ export class Werte {
       card: 1 + 0.08 * m, cardCost: Math.max(0.55, 1 - 0.025 * m),
     };
   }
-  save() { try { localStorage.setItem(KEY, JSON.stringify({ souls: this.souls, s: this.s, god: this.god })); } catch (e) { /* kein Speicher – egal */ } }
+  save() { try { localStorage.setItem(KEY, JSON.stringify({ souls: this.souls, s: this.s, god: this.god, karte: this.karte, karten: this.karten })); } catch (e) { /* kein Speicher – egal */ } }
   load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (d && d.s) { this.souls = d.souls | 0; for (const x of STATS) this.s[x.k] = Math.max(BASE, d.s[x.k] | 0); this.god = !!d.god; }
+      if (d && Array.isArray(d.karten)) this.karten = [...new Set(['herzass', ...d.karten.filter((k) => typeof k === 'string')])];
+      if (d && typeof d.karte === 'string' && this.karten.includes(d.karte)) this.karte = d.karte;
     } catch (e) { /* kaputter oder fehlender Speicher – neu anfangen */ }
   }
 }

@@ -60,7 +60,7 @@ und setze Texte und Sprechblasen per Code darüber (dann kann man Texte jederzei
 | 2 | **Kampf-Prototyp** (begonnen: Kartenwurf aus dem Mantel ✅, Stockdegen-Kombo + schwerer Schlag ✅) | Kartenwurf (3 Arten), Nahkampf-Kombo, Treffer, Heilen; ein Übungsgegner | Entscheidung Nahkampf-Waffe(n) |
 | 3 | **Erste Gegner** (begonnen: streunende Hunde mit KI, Biss, Tod & Wiederaufstehen am Spieltisch ✅) | Hunde (Rudel) + Plünderer mit eigener KI, Rastpunkt, Tod & Jetons | Gegner-Modelle (oder ich baue Platzhalter) |
 | 4 | **Erstes Gebiet** (begonnen: Schlauch vom Spieltisch durch die Aschenallee bis zum Nebeltor ✅) | Kleine Ruinenstadt (3–4 Straßen, Abkürzung zum Rastpunkt), Gegenstände finden | Stimmungsbilder der Stadt (optional) |
-| 5 | **Karte & Inventar** (begonnen: Stufen-System mit Seelen, Seelenstein, Charakterseite, Inventar, Testmodus ✅) | Stadtkarte mit Nebel, Inventar, Schnellplätze, Deck ausrüsten | – |
+| 5 | **Karte & Inventar** (begonnen: Stufen-System mit Seelen, Seelenstein, Charakterseite, Testmodus ✅, 3D-Inventar im Sechseck mit Herz-Ass und Kartenwahl ✅) | Stadtkarte mit Nebel, Inventar, Schnellplätze, Deck ausrüsten | – |
 | 6 ✅ | **Erster Boss** (erledigt: Garm, der Aschenhund – Riesenhund, 7 Angriffe, 2 Phasen, Nebeltor, Bossleiste, Heiltränke) | z. B. Rudelmutter mit 2 Phasen, Nebeltor, Boss-Leiste | ✔ Modell bekommen |
 | 7 | **Manga-Sequenzen** | Abspieler + Intro und Boss-Sequenz | Manga-Bilder |
 | 8 | **Feinschliff** | Musik/Geräusche, Hauptmenü, Speichern, Einstellungen, Leistung | – |
@@ -84,3 +84,6 @@ Danach: weitere Gebiete, mehr Karten-Farben/Joker, Bankhalter, Meister.
 - Welcher **erste Boss**?
 - Manga-Sequenzen **schwarz-weiß** (klassisch Manga) oder **farbig**?
 - Kamera: freie Kamera mit rechtem Stick + Zielerfassung auf R3 (wie Dark Souls) – einverstanden?
+- Was bewirkt eine **ausgerüstete Karte**? Bisher: geworfene Karten tragen ihr Zeichen (Herz-Ass). Ideen: Herz = Treffer heilen ein wenig,
+  Pik = mehr Schaden, Karo = Funken/Brand, Kreuz = Haltungsschaden. Welche Karten kommen als Nächstes, und wo findet man sie?
+- Was kommt in die drei **leeren Fassungen** des Inventars (Schlüssel, Notizen, Ringe …)?
