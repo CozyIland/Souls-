@@ -27,6 +27,8 @@ const DOWN_T = 1.5; // so lange liegt ein umgeworfener Hund
 const smooth01 = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 // Meshy-Hund (models/hund.glb): nur der Clip „dog_walk“ (0,67 s); schaut nach +Z, Füße bei y −0,67, ~1,3 m hoch
 const GALLOP_LEN = 1.9; // Meter pro Galoppsprung
+// Leichenhaltung: Beine zum Boden kippen (f/r = vorn/hinten, b/t = unten/oben), Rücken, Hals, Kopf, Schwanz, Anheben
+const D = { fb: 0.4, ft: 0.7, rb: 0.15, rt: 0.6, sp: 0.15, nk: 0.15, hd: 0.1, t2: 0.3, t3: 0.1, by: 0.02 };
 const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.3, DOG_C = 0.42;
 let DOG_GLTF = null;
 
@@ -222,16 +224,22 @@ class Dog {
     if ((this.st === 'circle' || this.st === 'after' || this.st === 'back') && B.chest) rotW(B.chest, X(), Math.sin(this.t * 6.5) * 0.04);
     // tot: Beine knicken locker ein, Rücken leicht gekrümmt, Kopf und Schwanz sinken auf den Boden, ein letztes Zucken
     if (this.dead) {
-      const T = this.deadT, dd = smooth01(T / 0.35), lie = smooth01((T - 0.3) / 0.4), sd = this.deadSide || 1, Z = () => ax(0, 0, 1);
-      swing(B.frontUprL, (0.35 + 0.15 * lie) * dd); swing(B.frontLwrL, 0.95 * dd);
-      swing(B.frontUprR, (0.2 + 0.35 * lie) * dd); swing(B.frontLwrR, 0.7 * dd);
-      swing(B.rearLegL_01, 0.55 * dd); swing(B.rearLwrL, -0.8 * dd); swing(B.rearHorselinkL, 0.6 * dd);
-      swing(B.rearLegR_01, (0.3 + 0.3 * lie) * dd); swing(B.rearLwrR, -0.55 * dd); swing(B.rearHorselinkR, 0.4 * dd);
-      const tw = T > 1.0 && T < 1.35 ? Math.sin((T - 1.0) * 40) * 0.12 * (1.35 - T) / 0.35 : 0;   // letztes Zucken
-      swing(B.rearLegR_01, tw);
-      if (B.spine1) rotW(B.spine1, Y(), 0.18 * sd * lie); if (B.chest) rotW(B.chest, Y(), 0.12 * sd * lie);
-      if (B.neck1) rotW(B.neck1, Z(), -sd * 0.38 * lie); if (B.head) rotW(B.head, Z(), -sd * 0.2 * lie);
-      if (B.tail2) rotW(B.tail2, Z(), -sd * 0.45 * lie); if (B.tail3) rotW(B.tail3, Z(), -sd * 0.3 * lie);
+      // Er liegt auf der Seite (deadSide 1 = links unten): untere Beine liegen locker gestreckt auf dem Boden,
+      // die oberen fallen der Schwere nach auf sie herab (Drehung um die Körperlängsachse Richtung Boden).
+      const T = this.deadT, dd = smooth01(T / 0.35), lie = smooth01((T - 0.3) / 0.45), sd = this.deadSide || 1, Z = () => ax(0, 0, 1);
+      const top = sd > 0 ? 'R' : 'L', bot = sd > 0 ? 'L' : 'R';
+      const drop = (b, a) => { if (b) rotW(b, Z(), sd * a); };          // + = Richtung Boden
+      swing(B['frontUpr' + bot], (0.4 + 0.15 * lie) * dd); swing(B['frontLwr' + bot], 0.45 * dd); drop(B['frontUpr' + bot], -D.fb * lie);
+      swing(B['frontUpr' + top], (0.25 + 0.2 * lie) * dd); swing(B['frontLwr' + top], 0.95 * dd); drop(B['frontUpr' + top], D.ft * lie);
+      swing(B['rearLeg' + bot + '_01'], 0.4 * dd); swing(B['rearLwr' + bot], -0.55 * dd); swing(B['rearHorselink' + bot], 0.45 * dd); drop(B['rearLeg' + bot + '_01'], -D.rb * lie);
+      swing(B['rearLeg' + top + '_01'], (0.35 + 0.25 * lie) * dd); swing(B['rearLwr' + top], -0.85 * dd); swing(B['rearHorselink' + top], 0.65 * dd);
+      drop(B['rearLeg' + top + '_01'], D.rt * lie);
+      const tw = T > 1.0 && T < 1.35 ? Math.sin((T - 1.0) * 40) * 0.07 * (1.35 - T) / 0.35 : 0;   // letztes Zucken
+      swing(B['rearLwr' + top], tw);
+      // Rücken leicht rund (bleibt flach auf dem Boden), Kopf liegt auf, Schwanz sinkt auf den Boden
+      if (B.spine1) rotW(B.spine1, X(), D.sp * lie); if (B.chest) rotW(B.chest, X(), D.sp * 0.6 * lie);
+      if (B.neck1) rotW(B.neck1, Y(), -sd * D.nk * lie); if (B.head) rotW(B.head, Y(), -sd * D.hd * lie);
+      if (B.tail2) rotW(B.tail2, Z(), sd * D.t2 * lie); if (B.tail3) rotW(B.tail3, Z(), sd * D.t3 * lie); if (B.tail4) rotW(B.tail4, Z(), sd * D.t3 * 0.6 * lie); // Schwanz hängt (Körper-unten) → zum Boden kippen
     }
     // Tatzenschlag (rechte Vorderpfote): hoch und nach außen, dann quer nach innen-unten
     if (this.st === 'swipe' && B.frontUprR) {
@@ -432,7 +440,7 @@ class Dog {
         const T = this.deadT, sd = this.deadSide || 1;
         const buck = smooth01(T / 0.28), f = clamp((T - 0.18) / 0.36, 0, 1), fall = f * f;          // Fallen beschleunigt
         const bounce = Math.sin(clamp((T - 0.54) / 0.3, 0, 1) * Math.PI) * 0.12 * (1 - smooth01((T - 0.54) / 0.4));
-        roll = -sd * (fall * 1.52 - bounce); by = lerp(0.56, 0.4, buck) - fall * 0.15; pitch = 0.12 * buck * (1 - fall);
+        roll = -sd * (fall * 1.52 - bounce); by = lerp(0.56, 0.4, buck) - fall * (0.15 - D.by); pitch = 0.12 * buck * (1 - fall);
         headX = 0.2; jaw = 0.25; legAmp = 0; tailX = -0.1; break; }
     }
     // in die Kurve legen (je schneller, desto mehr)

@@ -88,6 +88,9 @@ function palmTo(fore, hand, wantW, k) {
  * Ist der Punkt zu weit weg, rutscht er waagerecht zur Hüfte (Bein ganz gestreckt).
  */
 const vH = new THREE.Vector3(), vK = new THREE.Vector3(), vF = new THREE.Vector3(), vT = new THREE.Vector3(), vP = new THREE.Vector3();
+const qInv = new THREE.Quaternion(), vS = new THREE.Vector3();
+/** Richtung a → b mischen (b = 0..1), Ergebnis in a */
+function mixDir(a, from, b) { for (let i = 0; i < 3; i++) a[i] = from[i] + (a[i] - from[i]) * b; const l = Math.hypot(a[0], a[1], a[2]) || 1; a[0] /= l; a[1] /= l; a[2] /= l; }
 function legIK(up, low, foot, target, w) {
   if (w <= 0.001) return;
   up.updateWorldMatrix(true, true);
@@ -399,6 +402,12 @@ export class Player {
       pre = { L: new THREE.Vector3(), R: new THREE.Vector3() };
       this.rig.LeftFoot.getWorldPosition(pre.L); this.rig.RightFoot.getWorldPosition(pre.R);
     }
+    // Haltung im Moment des Starts merken: der neue Schlag fließt aus ihr heraus (Kombo: direkt aus dem Nachschwingen ins Ausholen)
+    const P0 = this.pose, wasAtk = this.state === 'attack';
+    const from = { arm: P0.arm.slice(), fore: P0.fore.slice(), blade: this.bladeB ? this.bladeB.toArray() : P0.blade.slice(),
+      la: wasAtk && P0.la ? P0.la.slice() : null, lf: wasAtk && P0.lf ? P0.lf.slice() : null,
+      tw: P0.tw || 0, ln: P0.ln || 0, twLead: P0.twLead || 0, twMid: P0.twMid || 0, w: this.lastW || 0, wl: wasAtk ? this.lastW || 0 : 0,
+      T: wasAtk ? Math.min(0.16, A.keys[1].t * 0.9) : 0.1 };
     this.state = 'attack'; this.t = 0;
     let face = null;
     if (lockTarget) face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
@@ -411,7 +420,7 @@ export class Player {
         if (d < best && Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) < 1.7) { best = d; face = Math.atan2(dx, dz); }
       }
     }
-    this.atk = { k, a: A, t: 0, hit: new Set(), queued: null, face, pre };
+    this.atk = { k, a: A, t: 0, hit: new Set(), queued: null, face, pre, from };
     this.st -= A.cost; this.stDelay = 0.8; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
     this.drawn = true;
     this.comboNext = null; this.comboT = 0;
@@ -568,26 +577,36 @@ export class Player {
     let bladeOn = false;
     if (this.state === 'attack' || (this.drawn && this.state !== 'throw')) {
       const P = this.pose;
-      let w;
-      if (this.state === 'attack') { attackPose(this.atk.a, this.atk.t, P); w = smooth(this.atk.t / 0.06); }
+      let w, wl = 1;
+      if (this.state === 'attack') {
+        attackPose(this.atk.a, this.atk.t, P); w = smooth(this.atk.t / 0.06);
+        const F = this.atk.from;
+        if (F && this.atk.t < F.T) { // aus der Haltung beim Start heraus überblenden (kein Umweg über die Grundhaltung)
+          const b = smooth(this.atk.t / F.T);
+          mixDir(P.arm, F.arm, b); mixDir(P.fore, F.fore, b); mixDir(P.blade, F.blade, b);
+          if (F.la) { mixDir(P.la, F.la, b); mixDir(P.lf, F.lf, b); }
+          P.tw = lerp(F.tw, P.tw, b); P.ln = lerp(F.ln, P.ln, b); P.twLead = lerp(F.twLead, P.twLead, b); P.twMid = lerp(F.twMid, P.twMid, b);
+          w = lerp(F.w, 1, b); wl = lerp(F.wl, 1, b);
+        }
+      }
       else {
         // Stehen: Bereitschaftshaltung. Gehen/Rennen: der Arm schwingt natürlich aus der Lauf-Animation (gegengleich zum
         // rechten Bein), die Klinge liegt fest in der Hand und folgt dem Unterarm (wird nach dem Glätten gesetzt, Abschnitt 4).
         const mw = this.walkW;
         this.runPose = lerp(this.runPose || 0, this.running ? 1 : 0, damp(6, dt));
-        this.carry = { ik: 1 - mw, wk: mw * (1 - this.runPose), rk: mw * this.runPose };
+        this.carry = { ik: 1 - mw, wk: mw, rk: 0 }; // Rennen hält die Waffe wie beim Gehen (der Arm schwingt nur schneller)
         const br = Math.sin(t * 1.8) * 0.03, I = READY_POSE;
         P.arm = I.arm.slice(); P.fore = I.fore.slice(); P.blade = [I.blade[0], I.blade[1] + br, I.blade[2]];
         if (this.flourish > 0) P.arm[1] += 0.3 * Math.sin(Math.PI * (1 - this.flourish / FLOURISH_T));
-        P.tw = 0; P.ln = 0; w = (1 - tuck) * this.carry.ik;
+        P.tw = 0; P.ln = 0; P.twLead = 0; P.twMid = 0; w = (1 - tuck) * this.carry.ik;
         // beim Gehen den Ellbogen leicht beugen (wer etwas trägt, lässt den Arm nicht ganz hängen)
-        aim(R.RightForeArm, R.RightHand, bodyDir(-0.1, -0.8, 0.5, vB), (1 - tuck) * this.carry.wk * 0.45);
-        // beim Rennen den Degenarm seitlich halten, nur wenig schwingen – sonst fährt die Klinge durch den Körper
-        const rsw = Math.sin(this.phase * TAU);
-        aim(R.RightArm, R.RightForeArm, bodyDir(-0.42, -0.88, 0.05 + 0.22 * rsw, vB), (1 - tuck) * this.carry.rk * 0.75);
-        aim(R.RightForeArm, R.RightHand, bodyDir(-0.25, -0.7, 0.45 + 0.2 * rsw, vB), (1 - tuck) * this.carry.rk * 0.6);
+        aim(R.RightForeArm, R.RightHand, bodyDir(-0.1, -0.8, 0.5, vB), (1 - tuck) * this.carry.wk * 0.45 * (1 - this.runPose));
+        // beim Rennen etwas vom Körper weg halten, damit Klinge und Arm frei schwingen
+        aim(R.RightArm, R.RightForeArm, bodyDir(-0.38, -0.9, 0.12 + 0.3 * Math.sin(this.phase * TAU), vB), (1 - tuck) * mw * this.runPose * 0.5);
       }
-      bend(R.Spine, AY, P.tw * 0.25 * w); bend(R.Spine1, AY, P.tw * 0.4 * w); bend(R.Spine2, AY, P.tw * 0.4 * w);
+      // Peitsche: Hüfte/untere Wirbelsäule drehen zuerst, Schultern folgen
+      const twL = P.twLead ?? P.tw, twM = P.twMid ?? P.tw;
+      bend(R.Spine, AY, twL * 0.25 * w); bend(R.Spine1, AY, twM * 0.4 * w); bend(R.Spine2, AY, P.tw * 0.4 * w);
       bend(R.Spine1, AX, P.ln * 0.5 * w); bend(R.Spine2, AX, P.ln * 0.4 * w);
       aim(R.RightArm, R.RightForeArm, bodyDir(P.arm[0], P.arm[1], P.arm[2], vB), w);
       // Faustgriff: der Griff liegt quer in der Hand → Unterarm etwa senkrecht zur Klinge
@@ -597,13 +616,14 @@ export class Player {
       aim(R.RightForeArm, R.RightHand, fo, w);
       if (this.state === 'attack') {
         // linker Arm hält das Gleichgewicht (schwingt gegen die Klinge), Kopf bleibt beim Gegner
-        aim(R.LeftArm, R.LeftForeArm, bodyDir(P.la[0], P.la[1], P.la[2], vB), w);
-        aim(R.LeftForeArm, R.LeftHand, bodyDir(P.lf[0], P.lf[1], P.lf[2], vB), w);
+        aim(R.LeftArm, R.LeftForeArm, bodyDir(P.la[0], P.la[1], P.la[2], vB), wl);
+        aim(R.LeftForeArm, R.LeftHand, bodyDir(P.lf[0], P.lf[1], P.lf[2], vB), wl);
         bend(R.Neck, AY, -P.tw * 0.55 * w); bend(R.Head, AY, -P.tw * 0.25 * w);
         bend(R.Neck, AX, -P.ln * 0.4 * w);
       }
-      bladeOn = true;
+      bladeOn = true; this.lastW = w;
     }
+    if (!bladeOn) this.lastW = 0;
     // Hüfte und Knie leicht gebeugt beim Stehen (wirkt kampfbereit)
     if (still > 0.01) {
       bend(R.Hips, AX, 0); // Hüfte bleibt
@@ -615,7 +635,7 @@ export class Player {
     //     Das glättet alle Übergänge (Laufen ↔ Schlag ↔ Kombo ↔ Treffer), ohne die Bewegung träge zu machen.
     //     Vor der Bein-IK, damit die Füße beim Ausfallschritt trotzdem genau stehen.
     if (!this.smQ || this.smQ.length !== bones.length) this.smQ = bones.map((b) => b.quaternion.clone());
-    const kq = dt > 0 ? damp(rolling ? 45 : this.state === 'attack' ? 26 : 18, dt) : 1;
+    const kq = dt > 0 ? damp(rolling ? 45 : this.state === 'attack' ? 22 : 18, dt) : 1;
     for (let i = 0; i < bones.length; i++) { this.smQ[i].slerp(bones[i].quaternion, kq); bones[i].quaternion.copy(this.smQ[i]); }
     this.model.updateMatrixWorld(true);
 
@@ -695,6 +715,10 @@ export class Player {
           this.bladeD.applyAxisAngle(vA, -TAU * e);
         }
       }
+      // Klinge läuft wie die Knochen weich nach (im Körper-Raum) – keine Sprünge bei Übergängen
+      qInv.copy(qBody).invert(); vS.copy(this.bladeD).applyQuaternion(qInv);
+      if (!this.bladeB || dt <= 0 || !this.bladeWas) this.bladeB = vS.clone(); else this.bladeB.lerp(vS, kq).normalize();
+      this.bladeD.copy(this.bladeB).applyQuaternion(qBody);
       const X = vD.copy(vA).addScaledVector(this.bladeD, -vA.dot(this.bladeD)).normalize();
       const Y = vE.crossVectors(this.bladeD, X);
       mT.makeBasis(X, Y, this.bladeD);
@@ -704,6 +728,7 @@ export class Player {
       this.sword.position.copy(this.sheath.position).addScaledVector(sd, -0.07);
       this.sword.quaternion.copy(this.sheath.quaternion);
     }
+    this.bladeWas = bladeOn;
     // Schwungspur
     // (at = laufender Angriff, oben gesetzt)
     const trailOn = this.state === 'attack' && at.t > at.a.act[0] - 0.05 && at.t < at.a.act[1] + 0.05;

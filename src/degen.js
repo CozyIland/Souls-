@@ -106,12 +106,6 @@ export const ATTACKS = {
 export const READY_POSE = READY;
 
 const sm = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
-const EASE = {
-  io: sm,
-  in: (x) => { const c = Math.min(1, Math.max(0, x)); return c * c; },
-  out: (x) => { const c = Math.min(1, Math.max(0, x)); return 1 - (1 - c) * (1 - c); },
-  lin: (x) => Math.min(1, Math.max(0, x)),
-};
 /** Richtungen auf dem Kugelbogen überblenden (die Klinge fliegt im Bogen, nicht quer durch den Körper) */
 function slerp3(a, b, u, out) {
   const la = Math.hypot(a[0], a[1], a[2]) || 1, lb = Math.hypot(b[0], b[1], b[2]) || 1;
@@ -122,15 +116,57 @@ function slerp3(a, b, u, out) {
   out[0] = ax * k0 + bx * k1; out[1] = ay * k0 + by * k1; out[2] = az * k0 + bz * k1;
   return out;
 }
-/** Haltung eines Angriffs zur Zeit t (Richtungen, Drehung, linker Arm) */
-export function attackPose(atk, t, out) {
-  const k = atk.keys;
+/**
+ * Haltung eines Angriffs zur Zeit t – fließend durch alle Schlüsselhaltungen:
+ * Richtungen laufen auf dem Kugelbogen (gleichmäßiges Winkeltempo), das Tempo selbst ist über die Schlüssel hinweg stetig
+ * (kein Ruck): Wo die Bewegung umkehrt (Ausholen → Schlag) oder ein Schlüssel 'out' hat, kommt sie kurz zum Stillstand;
+ * dazwischen fließt sie mit dem mittleren Tempo der Nachbarabschnitte weiter. 'in' = vom vorigen Schlüssel aus dem Stand.
+ */
+const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+const angB = (a, b) => Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
+// Bewegungsrichtung von a nach b, gesehen am Punkt p (Tangente auf der Kugel)
+const tang = (p, q) => { const d = q[0] * p[0] + q[1] * p[1] + q[2] * p[2]; return nrm([q[0] - d * p[0], q[1] - d * p[1], q[2] - d * p[2]]); };
+const val = (key, field, def) => key[field] ?? def;
+/** Tempo (Winkel bzw. Wert pro Sekunde) am Schlüssel j; 0 an den Enden, bei Umkehr und bei 'out'/'in' */
+function speedAt(k, j, field, def, dir) {
+  if (j <= 0 || j >= k.length - 1 || k[j].e === 'out' || k[j + 1].e === 'in') return 0;
+  const A = val(k[j - 1], field, def), B = val(k[j], field, def), C = val(k[j + 1], field, def);
+  const d0 = k[j].t - k[j - 1].t, d1 = k[j + 1].t - k[j].t;
+  if (!dir) { const s0 = (B - A) / d0, s1 = (C - B) / d1; return s0 * s1 <= 0 ? 0 : (Math.abs(s0) < Math.abs(s1) ? s0 : s1) * 0.5 + (s0 + s1) * 0.25; }
+  const a = nrm(A), b = nrm(B), c = nrm(C), w0 = angB(a, b), w1 = angB(b, c);
+  if (w0 < 1e-3 || w1 < 1e-3) return 0;
+  const tin = tang(b, a), tout = tang(b, c), turn = -(tin[0] * tout[0] + tin[1] * tout[1] + tin[2] * tout[2]); // 1 = geradeaus weiter
+  return Math.max(0, turn) * 0.5 * (w0 / d0 + w1 / d1);
+}
+/** Fortschritt 0..1 im Abschnitt mit stetigem Tempo (kubisch, Start-/Endsteigung m0/m1) */
+function prog(u, m0, m1) {
+  const u2 = u * u, u3 = u2 * u;
+  return Math.min(1, Math.max(0, (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) + (u3 - u2) * m1));
+}
+const H0 = [0, 0, 0];
+function sample(k, t, field, out, def) {
   let i = 0; while (i < k.length - 2 && t > k[i + 1].t) i++;
-  const a = k[i], b = k[i + 1], u = (EASE[b.e] || sm)((t - a.t) / (b.t - a.t));
-  slerp3(a.arm, b.arm, u, out.arm); slerp3(a.fore, b.fore, u, out.fore); slerp3(a.blade, b.blade, u, out.blade);
-  out.tw = a.tw + (b.tw - a.tw) * u; out.ln = a.ln + (b.ln - a.ln) * u;
+  const a = k[i], b = k[i + 1], d = b.t - a.t, u = Math.min(1, Math.max(0, (t - a.t) / d));
+  if (out) {
+    const D = def || H0, A = nrm(val(a, field, D)), B = nrm(val(b, field, D)), w = angB(A, B);
+    if (w < 1e-3) { out[0] = A[0]; out[1] = A[1]; out[2] = A[2]; return out; }
+    const m0 = Math.min(2.5, speedAt(k, i, field, D, true) * d / w), m1 = Math.min(2.5, speedAt(k, i + 1, field, D, true) * d / w);
+    return slerp3(A, B, prog(u, m0, m1), out);
+  }
+  const A = val(a, field, 0), B = val(b, field, 0), dv = B - A;
+  if (Math.abs(dv) < 1e-5) return A;
+  const m0 = Math.min(2.5, Math.max(0, speedAt(k, i, field, 0, false) * d / dv)), m1 = Math.min(2.5, Math.max(0, speedAt(k, i + 1, field, 0, false) * d / dv));
+  return A + dv * prog(u, m0, m1);
+}
+/** Haltung eines Angriffs zur Zeit t (Richtungen, Drehung, linker Arm); twLead/twMid = Hüfte/Rumpf eilen voraus (Peitsche) */
+export function attackPose(atk, t, out) {
+  const k = atk.keys, T = Math.min(atk.T, Math.max(0, t));
+  sample(k, T, 'arm', out.arm); sample(k, T, 'fore', out.fore); sample(k, T, 'blade', out.blade);
   out.la = out.la || [0, 0, 0]; out.lf = out.lf || [0, 0, 0];
-  slerp3(a.la || LA0, b.la || LA0, u, out.la); slerp3(a.lf || LF0, b.lf || LF0, u, out.lf);
+  sample(k, T, 'la', out.la, LA0); sample(k, T, 'lf', out.lf, LF0);
+  out.tw = sample(k, T, 'tw'); out.ln = sample(k, T, 'ln');
+  // Rumpf führt: untere Wirbelsäule ist der Haltung ein Stück voraus
+  out.twLead = sample(k, Math.min(atk.T, T + 0.045), 'tw'); out.twMid = sample(k, Math.min(atk.T, T + 0.022), 'tw');
   out.w = sm(t / 0.06) * (1 - sm((t - (atk.T - 0.1)) / 0.1));
   return out;
 }

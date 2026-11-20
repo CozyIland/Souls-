@@ -42,9 +42,11 @@
   verkleinert; das Handgelenk der Faust `FIST_WRIST` sitzt am Hand-Knochen, Klingen-Raum X = Unterarm-Richtung ⟂ Klinge), Angriffe `ATTACKS` (l1 waagerecht, l2 schräg zurück, l3 Stoß = leichte Kombo; h = schwerer Überkopf-Schlag):
   je `T`, Trefferfenster `act`, Ausdauer `cost`, Reichweite `range`, Winkel `arc`, Ausfallschritt `lunge`, Schlüsselhaltungen
   (Oberarm, Unterarm, Klinge, Schulterdrehung, Vorbeugen, Kurve `e` 'out'/'in'/'lin'/'io', linker Arm `la`/`lf`) über `attackPose`
-  – Richtungen werden auf dem Kugelbogen überblendet (`slerp3`, Klinge fliegt im Bogen; Schlüssel höchstens ~90° auseinander),
-  Ausholen bremst ab, Schlag beschleunigt, linker Arm schwingt gegen, Kopf bleibt beim Gegner; Schwungspur `Trail` (dezent). In `player.js`: Zustand
-  `attack` (`startAttack`, Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
+  – **fließende Kurve** (`sample`/`speedAt`/`prog`): Richtungen laufen auf dem Kugelbogen (`slerp3`, gleichmäßiges Winkeltempo),
+  das Tempo ist über die Schlüssel hinweg stetig (Stillstand nur bei Umkehr, 'out' am Schlüssel oder 'in' am nächsten), Rumpf führt
+  (`twLead`/`twMid` = Drehung 45/22 ms voraus → Peitsche: Hüfte, dann Schultern, dann Arm), Ausholen bremst ab, Schlag beschleunigt, linker Arm schwingt gegen, Kopf bleibt beim Gegner; Schwungspur `Trail` (dezent). In `player.js`: Zustand
+  `attack` (`startAttack` merkt die Haltung beim Start in `atk.from` – der neue Schlag blendet aus ihr heraus, bei Kombos direkt aus dem
+  Nachschwingen ins Ausholen, ohne Umweg über die Grundhaltung; Kombo vormerken ab Trefferfenster, Rolle/Karte bricht nach dem Fenster ab), `drawn` (Klinge gezogen,
   nach 3 s Ruhe zurück in den Stock; Kartenwurf steckt sie sofort weg), Treffer über `targets`/`onHit`, `hitStop` (0,05 / schwer 0,1 s; main.js
   verlangsamt dann kurz), `onSwing` (Schwung-Geräusch). **Degen ist immer gezogen** (nur beim Kartenwurf kurz im Stock). Schaden: `damage(n, dir)` → `hurt`
   (0,42 s, danach 0,5 s unverwundbar `iframe`) oder `dead`; `revive`. Ohne Ziel dreht ein Schlag zum nächsten Gegner vorn.
@@ -56,9 +58,9 @@
   `rollSide`) → aus der Hocke aufstehen (`rec`), Staub `onDust` beim Abrollen und Aufkommen. Kurvenlage `bank` aus `yawRate`,
   Gewicht vor/zurück beim Anlaufen/Bremsen `accLean`.
   **Degen in Bewegung** (`carry` = Anteile Stehen/Gehen/Rennen): im Stehen Bereitschaftshaltung; beim Gehen/Rennen schwingt der Arm
-  aus der Lauf-Animation, die Klinge liegt fest in der Faust und folgt dem Unterarm (Abschnitt 4, nach dem Glätten: Gehen schräg
-  vorn-unten, Rennen `runPose` nach hinten; fester Handgelenk-Winkel `WRIST_WALK`/`WRIST_RUN` zum Unterarm; beim Rennen wird
-  der Degenarm seitlich gehalten und schwingt wenig, die Klinge zeigt nach hinten-außen, damit sie nicht durch den Körper fährt). **Kombo fließend**: vorgemerkter Schlag startet schon im Nachschwingen (`act[1]` + 0,11 s,
+  aus der Lauf-Animation, die Klinge liegt fest in der Faust und folgt dem Unterarm (Abschnitt 4, nach dem Glätten: schräg nach vorn,
+  fester Handgelenk-Winkel `WRIST_WALK` zum Unterarm; **Rennen hält sie genauso wie Gehen**, der Arm schwingt nur schneller und etwas
+  vom Körper weg). Die Klinge selbst wird wie die Knochen weich nachgeführt (`bladeB` im Körper-Raum, gleiche Rate `kq`) – kein Sprung bei Übergängen. **Kombo fließend**: vorgemerkter Schlag startet schon im Nachschwingen (`act[1]` + 0,11 s,
   schwer + 0,2 s), Laufen bricht spätes Nachschwingen ab; Füße stellen nach (`atk.pre`, IK). Treffer: `cam.punch` (Blickwinkel-Ruck). **Ruhe**: Gewicht verlagern, tiefer atmen, ab und zu umschauen (`lookA`),
   Kunststück `flourish` (Klinge wirbelt einmal um die Hand, `FLOURISH_T`). Scheide pendelt beim Gehen. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
 - `src/karten.js` – fliegende Karten (`throwCard`, `updateCards`): drehen sich flach, Leuchtspur, lenken leicht zum Ziel,
@@ -83,7 +85,8 @@
   sonst kurzes Zucken `flinch` und der Angriff läuft weiter; Haltungsschaden je Angriff `ATTACKS[k].poise`, Karte 5.
   Körperhaltung wird weich nachgeführt (`sm`) · hurt (zuckt weg von der Trefferrichtung `hx`/`hz`, Kopf reißt zurück) · down (schwerer
   Schlag wirft ihn auf die Seite, Beine zappeln, nach `DOWN_T` 1,5 s rappelt er sich auf) · dead (Beine knicken ein, kippt wie ein Sack auf die Seite, federt
-  nach, Beine locker angewinkelt, Kopf/Schwanz am Boden, letztes Zucken, Blutlache `pool`; bleibt als Leiche liegen, kommt nach 25 s
+  nach; untere Beine liegen gestreckt auf, die oberen fallen um die Längsachse auf sie herab, Schwanz sinkt zum Boden – Werte in `D`,
+  gemessen an den Modell-Ecken: nichts schwebt, kaum etwas steckt im Boden; Rücken leicht rund, letztes Zucken, Blutlache `pool`; bleibt als Leiche liegen, kommt nach 25 s
   wieder, wenn man weit weg ist). 60 Leben; Treffer über `onHit(dmg, dir, heavy)` – Ziele mit `onHit` sind Gegner (`targets` enthält
   Puppen und Hunde, `dead` wird überall übersprungen). Lebensleisten `.ebar`, roter Rand `#hurtFx`, Tod: `#death` „GESTORBEN“,
   nach 4 s am Spieltisch (`REST`) wieder aufstehen (`player.revive`), Hunde zurück.
