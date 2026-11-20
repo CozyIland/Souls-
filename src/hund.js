@@ -31,14 +31,16 @@ const LOCO = { idle: 1, growl: 1, chase: 1, circle: 1, after: 1, back: 1, rec: 1
 const DOWN_T = 1.5; // so lange liegt ein umgeworfener Hund
 const smooth01 = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 // Meshy-Hund (models/hund.glb): nur der Clip „dog_walk“ (0,67 s); schaut nach +Z, Füße bei y −0,67, ~1,3 m hoch
-const GALLOP_LEN = 1.9; // Meter pro Galoppsprung
+// Galopp: Schwungweite der Beine (ar hinten, af vorn – vorn schwingt die Brust mit), Meter pro Sprung (len, wächst bei hohem Tempo
+// um grow), Rücken beugen/strecken (flex), Schaukeln (rock). Abgestimmt nach Messung: aufgesetzte Pfoten stehen still (kein Laufband).
+const GT = { ar: 0.56, af: 0.37, len: 2.2, grow: 0.25, flex: 0.16, rock: 0.09, fph: 1.6 };
 // Leichenhaltung: Beine zum Boden kippen (f/r = vorn/hinten, b/t = unten/oben), Rücken, Hals, Kopf, Schwanz, Anheben
 const D = { fb: 0.4, ft: 0.7, rb: 0.15, rt: 0.6, sp: 0.15, nk: 0.15, hd: 0.1, t2: 0.3, t3: 0.1, by: 0.02 };
 const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.3, DOG_C = 0.42;
 let DOG_GLTF = null;
 
 export const dogs = [];
-const qH = new THREE.Quaternion(), vX = new THREE.Vector3(), vUp = new THREE.Vector3(), qR = new THREE.Quaternion(), qP = new THREE.Quaternion();
+const qH = new THREE.Quaternion(), vX = new THREE.Vector3(), vUp = new THREE.Vector3(), vA2 = new THREE.Vector2(), qR = new THREE.Quaternion(), qP = new THREE.Quaternion();
 /** Knochen um eine Achse in Weltrichtung drehen */
 function rotW(bone, axisW, ang) {
   if (!bone || Math.abs(ang) < 1e-4) return;
@@ -219,11 +221,12 @@ class Dog {
         swing(lo, fold * Math.max(0, cs) * g);                              // beim Vorschwingen anwinkeln
         if (hl) swing(hl, -fold * 0.6 * Math.max(0, cs) * g);
       };
-      leg(B.rearLegL_01, B.rearLwrL, B.rearHorselinkL, 0, 0.75, -0.9);
-      leg(B.rearLegR_01, B.rearLwrR, B.rearHorselinkR, 0.09, 0.75, -0.9);
-      leg(B.frontUprL, B.frontLwrL, B.frontHorselinkL, 0.48, 0.8, 1.1);
-      leg(B.frontUprR, B.frontLwrR, B.frontHorselinkR, 0.57, 0.8, 1.1);
-      const flex = Math.sin(a + 1.6) * 0.16 * g;                          // Rücken rund ↔ gestreckt
+      const ks = this.gk || 1;
+      leg(B.rearLegL_01, B.rearLwrL, B.rearHorselinkL, 0, GT.ar * ks, -0.9);
+      leg(B.rearLegR_01, B.rearLwrR, B.rearHorselinkR, 0.09, GT.ar * ks, -0.9);
+      leg(B.frontUprL, B.frontLwrL, B.frontHorselinkL, 0.48, GT.af * ks, 1.1);
+      leg(B.frontUprR, B.frontLwrR, B.frontHorselinkR, 0.57, GT.af * ks, 1.1);
+      const flex = Math.sin(a + GT.fph) * GT.flex * g;                          // Rücken rund ↔ gestreckt
       if (B.spine1) rotW(B.spine1, X(), flex); if (B.chest) rotW(B.chest, X(), flex * 0.8);
       if (B.neck1) rotW(B.neck1, X(), -Math.sin(a + 0.4) * 0.14 * g);       // Kopf hält dagegen
       if (B.tail2) rotW(B.tail2, X(), (0.35 + Math.sin(a) * 0.25) * g);   // Schwanz weht nach hinten
@@ -442,7 +445,13 @@ class Dog {
   }
 
   animate(dt) {
-    const m = this.m, sp = Math.hypot(this.v.x, this.v.y);
+    const m = this.m;
+    // Beine richten sich nach der wirklich zurückgelegten Strecke (hängt er an einer Wand oder an dir, laufen sie nicht ins Leere)
+    if (!this.pPrev) this.pPrev = this.p.clone();
+    const mx = this.p.x - this.pPrev.x, mz = this.p.z - this.pPrev.z; this.pPrev.copy(this.p);
+    if (!this.va) this.va = new THREE.Vector2();
+    if (dt > 0 && Math.hypot(mx, mz) < 1) this.va.lerp(vA2.set(mx / dt, mz / dt), damp(14, dt)); else this.va.set(this.v.x, this.v.y);
+    const sp = Math.hypot(this.va.x, this.va.y);
     // Beine treten auch, wenn er sich auf der Stelle dreht (sonst dreht er sich wie ein Brett)
     const gsp = Math.max(sp, Math.abs(this.yawRate || 0) * 0.32);
     m.root.position.set(this.p.x, 0, this.p.z);
@@ -516,25 +525,29 @@ class Dog {
       M.holder.rotation.set(pitch + headX * 0.15, yawOff, roll);
       // Gewicht weich nachführen (sonst flackert es zwischen Stehen und Laufen)
       let wt = clamp((gsp - 0.15) / 0.5, 0, 1), tt;
+      // Galopp-Anteil schon hier (für den gemeinsamen Schritt-Takt)
+      const gal = !this.dead && this.st !== 'leap' && this.st !== 'down' ? smooth01((sp - 2.4) / 1.4) : 0;
+      this.gw = lerp(this.gw || 0, gal, damp(6, dt));
+      this.gk = 1 + GT.grow * clamp((sp - 4.4) / 3, 0, 1);
+      // Schrittlänge: Gehen wächst etwas mit dem Tempo, Galopp hat eigene Sprunglänge. Im Übergang laufen beide im selben Takt
+      // (gemischte Schrittlänge) – so passt die gemischte Beinbewegung zur Strecke.
+      const cyc = DOG_STRIDE * DOG_S * (1 + clamp((sp - 1.5) / 2.5, 0, 1) * 0.5);
+      const Le = (1 - this.gw) * cyc + this.gw * GT.len * this.gk;
       if (this.st === 'leap') { wt = 1; this.gp = 0.55; tt = 0.55; }
       else if (this.st === 'down') { wt = 1; this.gp = (this.gp + dt * 2.6) % 1; tt = this.gp; } // Beine zappeln
       else if (this.st === 'wind') { wt = 0.8; this.gp += (0.55 - this.gp) * damp(8, dt); tt = this.gp; } // Beine gehen in die Sprunghaltung
       else {
-        // Schrittlänge wächst mit dem Tempo (beim Rennen weitere Sprünge statt Trippeln)
-        const cyc = DOG_STRIDE * DOG_S * (1 + clamp((sp - 1.5) / 2.5, 0, 1) * 0.7);
-        const fwd = this.v.x * Math.sin(this.yaw) + this.v.y * Math.cos(this.yaw); // rückwärts gehen = Clip rückwärts
-        this.gp = (this.gp + (fwd < -0.1 ? -1 : 1) * dt * gsp / cyc + 1) % 1; tt = this.gp;
+        const fwd = this.va.x * Math.sin(this.yaw) + this.va.y * Math.cos(this.yaw); // rückwärts gehen = Clip rückwärts
+        this.gp = (this.gp + (fwd < -0.1 ? -1 : 1) * dt * gsp / Le + 1) % 1; tt = this.gp;
       }
       if (this.dead) wt = 0;
       this.aw = lerp(this.aw || 0, wt, damp(this.st === 'leap' ? 20 : 7, dt));
       // Galopp: ab ~2,6 m/s übernimmt eine Galopp-Bewegung per Code (der Lauf-Clip ist nur ein Gehen)
-      const gal = !this.dead && this.st !== 'leap' && this.st !== 'down' ? smooth01((sp - 2.4) / 1.4) : 0;
-      this.gw = lerp(this.gw || 0, gal, damp(6, dt));
       if (this.gw > 0.01) {
-        this.gph = ((this.gph || 0) + dt * sp / GALLOP_LEN) % 1;
+        this.gph = ((this.gph || 0) + dt * sp / Le) % 1;
         const a = this.gph * TAU;
         M.holder.position.y += (Math.sin(a + 0.6) * 0.035) * this.gw;            // Schwebephase
-        M.holder.rotation.x += (Math.sin(a + 1.4) * 0.09 + 0.05) * this.gw;     // Schaukeln vor/zurück
+        M.holder.rotation.x += (Math.sin(a + 1.4) * GT.rock + 0.05) * this.gw;     // Schaukeln vor/zurück
       }
       // Gehen: Kopf nickt mit den Schritten, Körper wiegt leicht
       const walkK = this.aw * (1 - this.gw) * clamp(gsp / 1.2, 0, 1);

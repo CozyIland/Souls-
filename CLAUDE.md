@@ -82,7 +82,11 @@
   vor der Zielrichtung ab; große Richtungswechsel bremsen das Tempo (Bogen statt Drehen auf der Stelle); Fortbewegungs-Zustände `LOCO`
   ändern das Tempo `sv` nur mit `ACC_UP`/`ACC_DOWN`. Beim Drehen auf der Stelle treten die Beine (`gsp` = Tempo oder Drehtempo × 0,32),
   ohne Ziel schaut der Kopf schon in die neue Richtung (`turnD`), Brust/Hals biegen sich in die Kurve, Hüfte gegen (`tb`), Gewicht vor beim
-  Antreten/zurück beim Bremsen (`accL`), Kopf nickt beim Gehen (`nod`). Sprungweite nach Abstand (`leapD`). Hunde schieben sich weich auseinander. **Galopp** ab ~2,6 m/s per Code (`gw`, `gph`, `GALLOP_LEN`): Lauf-Clip wird ausgeblendet,
+  Antreten/zurück beim Bremsen (`accL`), Kopf nickt beim Gehen (`nod`). Sprungweite nach Abstand (`leapD`). Hunde schieben sich weich auseinander. **Schritt passt zur Strecke**: Beine laufen nach der wirklich zurückgelegten
+  Strecke (`va` aus der Positionsänderung – an Wand/Spieler hängend treten sie nicht ins Leere); Gehen: Schritt `DOG_STRIDE`·`DOG_S`, wächst bis
+  +50 %; Galopp: Sprunglänge `GT.len` 2,2 m (+`GT.grow` bei hohem Tempo), Schwungweite `GT.ar`/`GT.af` so abgestimmt, dass aufgesetzte
+  Pfoten stillstehen (gemessen: Rutschen 2–4 % des Tempos statt 80 %); im Übergang laufen Clip und Galopp im selben Takt (gemischte
+  Schrittlänge `Le`). **Galopp** ab ~2,6 m/s per Code (`gw`, `gph`, `GT`): Lauf-Clip wird ausgeblendet,
   Beine schwingen als Rotationsgalopp (Hinterbeine fast zusammen, Vorderbeine halbe Phase später, beim Vorschwingen angewinkelt),
   Rücken beugt/streckt sich, Kopf hält dagegen, Schwanz weht; Schweben/Schaukeln am Halter. Ruhe: schnüffeln, Schwanz wedeln;
   Lauern: schweres Atmen. Alle per Code bewegten Knochen stehen in `ctl` (werden vor dem Mixer zurückgesetzt).
