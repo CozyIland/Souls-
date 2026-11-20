@@ -35,7 +35,7 @@ cam.blockers = blockers;
 setupCards(scene, targets);
 player.onThrow = (from, dir, suit) => throwCard(from, dir, cam.lock, suit);
 player.targets = targets;
-player.onHit = (tg, dir, heavy, dmg, poise) => { hitFx(tg, dir, heavy, dmg, poise); cam.shake(heavy ? 0.07 : 0.035); };
+player.onHit = (tg, dir, heavy, dmg, poise) => { hitFx(tg, dir, heavy, dmg, poise); cam.shake(heavy ? 0.07 : 0.035); cam.punch(heavy ? 3.5 : 1.5); };
 player.onSwing = (heavy) => sfx.swing(heavy);
 player.onDust = (p, n) => dust(p, n);
 setupBlood(scene);

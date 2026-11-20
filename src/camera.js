@@ -21,6 +21,8 @@ export class OrbitCam {
 
   /** Kurz wackeln (Stärke in Metern) */
   shake(a) { this.shakeA = Math.max(this.shakeA, a); }
+  /** kurzer Ruck nach innen (Blickwinkel enger) – macht schwere Treffer wuchtiger */
+  punch(deg) { this.kick = Math.max(this.kick || 0, deg); }
 
   /** Vorwärts auf dem Boden (von der Kamera weg) */
   forward() { return { x: -Math.sin(this.yaw), z: -Math.cos(this.yaw) }; }
@@ -86,6 +88,10 @@ export class OrbitCam {
     this.cam.position.copy(this.focus).addScaledVector(dir, this.dist);
     if (this.cam.position.y < 0.3) this.cam.position.y = 0.3;
     this.cam.lookAt(look);
+    if (this.baseFov == null) this.baseFov = this.cam.fov;
+    this.kick = (this.kick || 0) * Math.exp(-9 * dt);
+    const fov = this.baseFov - this.kick;
+    if (Math.abs(this.cam.fov - fov) > 0.01) { this.cam.fov = fov; this.cam.updateProjectionMatrix(); }
     if (this.shakeA > 0.001) {
       this.shakeT += dt * 60;
       const a = this.shakeA, t = this.shakeT;

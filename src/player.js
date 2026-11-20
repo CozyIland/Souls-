@@ -279,10 +279,14 @@ export class Player {
       if ((light || heavy) && this.atk.t > A.act[0]) this.atk.queued = heavy ? 'h' : (A.next || 'l1');
       if (roll && this.atk.t > A.act[1] + 0.04) { this.state = 'idle'; this.atk = null; }
       else if (thr && this.atk.t > A.act[1]) { this.state = 'idle'; this.atk = null; }
-      else if (this.atk.t >= A.T - (this.atk.queued ? 0.1 : 0)) {
-        const q = this.atk.queued; this.state = 'idle'; this.atk = null;
+      // Kombo fließend: der nächste Schlag beginnt schon aus dem Nachschwingen heraus (nicht erst zurück in die Grundhaltung)
+      // Laufen bricht das späte Nachschwingen ab
+      else if ((this.atk.queued && this.atk.t >= A.act[1] + (A.heavy ? 0.2 : 0.11))
+        || this.atk.t >= A.T
+        || (!this.atk.queued && this.atk.t > A.act[1] + 0.2 && Math.hypot(mv.x, mv.z) > 0.5)) {
+        const q = this.atk.queued, prevAtk = this.atk; this.state = 'idle'; this.atk = null;
         // Kombo: vorgemerkter Schlag folgt sofort; sonst kurzes Fenster für den nächsten Kombo-Schlag
-        if (q && this.st > 0 && !this.exhausted) { this.startAttack(q, mv, lockTarget); light = heavy = false; }
+        if (q && this.st > 0 && !this.exhausted) { this.startAttack(q, mv, lockTarget, prevAtk); light = heavy = false; }
         else { this.comboNext = A.next; this.comboT = 0.35; }
       }
     }
@@ -386,8 +390,14 @@ export class Player {
     if (this.rig) this.animateRig(dt); else this.animateSimple(dt);
   }
 
-  startAttack(k, mv, lockTarget) {
+  startAttack(k, mv, lockTarget, prevAtk) {
     const A = ATTACKS[k];
+    // Kombo aus einem laufenden Ausfallschritt: wo die Füße gerade stehen, merken (sonst springen sie)
+    let pre = null;
+    if (prevAtk && prevAtk.L0 && this.rig) {
+      pre = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+      this.rig.LeftFoot.getWorldPosition(pre.L); this.rig.RightFoot.getWorldPosition(pre.R);
+    }
     this.state = 'attack'; this.t = 0;
     let face = null;
     if (lockTarget) face = Math.atan2(lockTarget.x - this.pos.x, lockTarget.z - this.pos.z);
@@ -400,7 +410,7 @@ export class Player {
         if (d < best && Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) < 1.7) { best = d; face = Math.atan2(dx, dz); }
       }
     }
-    this.atk = { k, a: A, t: 0, hit: new Set(), queued: null, face };
+    this.atk = { k, a: A, t: 0, hit: new Set(), queued: null, face, pre };
     this.st -= A.cost; this.stDelay = 0.8; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
     this.drawn = true;
     this.comboNext = null; this.comboT = 0;
@@ -560,18 +570,17 @@ export class Player {
       let w;
       if (this.state === 'attack') { attackPose(this.atk.a, this.atk.t, P); w = smooth(this.atk.t / 0.06); }
       else {
-        // Degen beim Stehen, Gehen und Rennen: schwingt im Schritt mit, beim Rennen tief nach hinten
-        const sw = Math.sin(this.phase * TAU), mw = this.walkW;
+        // Stehen: Bereitschaftshaltung. Gehen/Rennen: der Arm schwingt natürlich aus der Lauf-Animation (gegengleich zum
+        // rechten Bein), die Klinge liegt fest in der Hand und folgt dem Unterarm (wird nach dem Glätten gesetzt, Abschnitt 4).
+        const mw = this.walkW;
         this.runPose = lerp(this.runPose || 0, this.running ? 1 : 0, damp(6, dt));
-        const rk = this.runPose * mw, wk = mw * (1 - this.runPose), ik = 1 - mw, br = Math.sin(t * 1.8) * 0.03;
-        const mix = (i, wv, rv) => i * ik + wv * wk + rv * rk;
-        const I = READY_POSE;
-        P.arm = [mix(I.arm[0], -0.32, -0.22), mix(I.arm[1], -0.95, -0.9), mix(I.arm[2], 0.08 + 0.3 * sw, -0.35 + 0.4 * sw)];
-        P.fore = [mix(I.fore[0], -0.15, -0.05), mix(I.fore[1], -0.4, -0.75), mix(I.fore[2], 1, -0.3 + 0.4 * sw)];
-        P.blade = [mix(I.blade[0], 0.12, -0.05), mix(I.blade[1] + br, -0.42 + 0.12 * sw, -0.55), mix(I.blade[2], 1, -0.85)];
-        // Kunststück im Stehen: Klinge einmal um die Hand wirbeln
+        this.carry = { ik: 1 - mw, wk: mw * (1 - this.runPose), rk: mw * this.runPose };
+        const br = Math.sin(t * 1.8) * 0.03, I = READY_POSE;
+        P.arm = I.arm.slice(); P.fore = I.fore.slice(); P.blade = [I.blade[0], I.blade[1] + br, I.blade[2]];
         if (this.flourish > 0) P.arm[1] += 0.3 * Math.sin(Math.PI * (1 - this.flourish / FLOURISH_T));
-        P.tw = 0; P.ln = 0; w = 1 - tuck;
+        P.tw = 0; P.ln = 0; w = (1 - tuck) * this.carry.ik;
+        // beim Gehen den Ellbogen leicht beugen (wer etwas trägt, lässt den Arm nicht ganz hängen)
+        aim(R.RightForeArm, R.RightHand, bodyDir(-0.1, -0.8, 0.5, vB), (1 - tuck) * this.carry.wk * 0.45);
       }
       bend(R.Spine, AY, P.tw * 0.25 * w); bend(R.Spine1, AY, P.tw * 0.4 * w); bend(R.Spine2, AY, P.tw * 0.4 * w);
       bend(R.Spine1, AX, P.ln * 0.5 * w); bend(R.Spine2, AX, P.ln * 0.4 * w);
@@ -581,10 +590,6 @@ export class Player {
       const fo = bodyDir(P.fore[0], P.fore[1], P.fore[2], vB);
       fo.addScaledVector(this.bladeD, -0.8 * fo.dot(this.bladeD)).normalize();
       aim(R.RightForeArm, R.RightHand, fo, w);
-      if (this.flourish > 0 && this.state !== 'attack') {
-        const u = 1 - this.flourish / FLOURISH_T, e = u * u * (3 - 2 * u);
-        this.bladeD.applyAxisAngle(fo, -TAU * e);
-      }
       if (this.state === 'attack') {
         // linker Arm hält das Gleichgewicht (schwingt gegen die Klinge), Kopf bleibt beim Gegner
         aim(R.LeftArm, R.LeftForeArm, bodyDir(P.la[0], P.la[1], P.la[2], vB), w);
@@ -610,14 +615,22 @@ export class Player {
     this.model.updateMatrixWorld(true);
 
     // Füße beim Angriff fest auf dem Boden: rechter Fuß tritt vor, linker bleibt stehen und kommt danach nach
-    if (at && at.t >= at.a.act[0] - 0.1) {
+    if (at && at.pre && at.t < at.a.act[0] - 0.1) {
+      // Kombo: die Füße stehen noch vom letzten Ausfallschritt – kurzer Nachstell-Schritt in die Grundstellung
+      R.LeftFoot.getWorldPosition(vC); R.RightFoot.getWorldPosition(vD);
+      const g = smooth(at.t / Math.max(0.05, at.a.act[0] - 0.1));
+      const tL = at.pre.L.clone().lerp(vC, g); tL.y += Math.sin(g * Math.PI) * 0.08;
+      const tR = at.pre.R.clone().lerp(vD, g);
+      legIK(R.RightUpLeg, R.RightLeg, R.RightFoot, tR, 1);
+      legIK(R.LeftUpLeg, R.LeftLeg, R.LeftFoot, tL, 1);
+    } else if (at && at.t >= at.a.act[0] - 0.1) {
       R.LeftFoot.getWorldPosition(vC); R.RightFoot.getWorldPosition(vD); // natürliche Lage in diesem Bild
       if (!at.L0) { at.L0 = vC.clone(); at.R0 = vD.clone(); at.fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
       const A = at.a;
       const tR = vE.copy(at.R0).addScaledVector(at.fwd, A.lunge * (1 + STEP_X) * s1); tR.y += Math.sin(s1 * Math.PI) * 0.13;
       tR.lerp(vD, s2);
       const tL = vC.clone().copy(at.L0).lerp(vC, s2); tL.y += Math.sin(s2 * Math.PI) * 0.1;
-      const w = smooth((at.t - (A.act[0] - 0.1)) / 0.05) * (1 - smooth((at.t - (A.T - 0.05)) / 0.05));
+      const w = (at.pre ? 1 : smooth((at.t - (A.act[0] - 0.1)) / 0.05)) * (1 - smooth((at.t - (A.T - 0.05)) / 0.05));
       legIK(R.RightUpLeg, R.RightLeg, R.RightFoot, tR, w);
       legIK(R.LeftUpLeg, R.LeftLeg, R.LeftFoot, tL, w);
     }
@@ -659,6 +672,17 @@ export class Player {
     if (bladeOn) {
       R.RightForeArm.getWorldPosition(vC); R.RightHand.getWorldPosition(vB);
       vA.subVectors(vB, vC).normalize();                                     // Unterarm-Richtung
+      if (this.state !== 'attack' && this.carry) {
+        // Tragen: Klinge sitzt fest in der Faust – beim Gehen schräg nach vorn unten, beim Rennen nach hinten unten
+        const { ik, wk, rk } = this.carry, F = bodyDir(0, 0, 1, vF), U = vT.set(0, 1, 0);
+        const bw = vH.copy(vA).addScaledVector(F, 1.0).addScaledVector(U, -0.05).normalize();
+        const br2 = vK.copy(vA).addScaledVector(F, -1.15).addScaledVector(U, 0.25).normalize();
+        this.bladeD.multiplyScalar(ik).addScaledVector(bw, wk).addScaledVector(br2, rk).normalize();
+        if (this.flourish > 0) { // Kunststück: Klinge einmal um die Hand wirbeln
+          const u = 1 - this.flourish / FLOURISH_T, e = u * u * (3 - 2 * u);
+          this.bladeD.applyAxisAngle(vA, -TAU * e);
+        }
+      }
       const X = vD.copy(vA).addScaledVector(this.bladeD, -vA.dot(this.bladeD)).normalize();
       const Y = vE.crossVectors(this.bladeD, X);
       mT.makeBasis(X, Y, this.bladeD);

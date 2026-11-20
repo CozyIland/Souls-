@@ -55,8 +55,10 @@
   **Rolle** (`ROLL_T` 0,66): abtauchen (Hände voraus) → über die Schulter rollen (Rollachse geneigt, `pivot.rotation.order` 'ZXY',
   `rollSide`) → aus der Hocke aufstehen (`rec`), Staub `onDust` beim Abrollen und Aufkommen. Kurvenlage `bank` aus `yawRate`,
   Gewicht vor/zurück beim Anlaufen/Bremsen `accLean`.
-  **Degen in Bewegung**: Bereitschaftshaltung mischt Stehen (atmet mit), Gehen (Klinge schräg nach vorn unten, schwingt im Schritt)
-  und Rennen (`runPose`: Klinge tief nach hinten). **Ruhe**: Gewicht verlagern, tiefer atmen, ab und zu umschauen (`lookA`),
+  **Degen in Bewegung** (`carry` = Anteile Stehen/Gehen/Rennen): im Stehen Bereitschaftshaltung; beim Gehen/Rennen schwingt der Arm
+  aus der Lauf-Animation, die Klinge liegt fest in der Faust und folgt dem Unterarm (Abschnitt 4, nach dem Glätten: Gehen schräg
+  vorn-unten, Rennen `runPose` nach hinten). **Kombo fließend**: vorgemerkter Schlag startet schon im Nachschwingen (`act[1]` + 0,11 s,
+  schwer + 0,2 s), Laufen bricht spätes Nachschwingen ab; Füße stellen nach (`atk.pre`, IK). Treffer: `cam.punch` (Blickwinkel-Ruck). **Ruhe**: Gewicht verlagern, tiefer atmen, ab und zu umschauen (`lookA`),
   Kunststück `flourish` (Klinge wirbelt einmal um die Hand, `FLOURISH_T`). Scheide pendelt beim Gehen. Eingabe `inp.light`/`inp.heavy`: RB/RT, Links-/Rechtsklick oder E/R, Handy `#tAtk` (tippen/halten).
 - `src/karten.js` – fliegende Karten (`throwCard`, `updateCards`): drehen sich flach, Leuchtspur, lenken leicht zum Ziel,
   bleiben in Puppen (wackeln, `hitT`) und Wänden stecken, Funken, Rütteln. Bilder in `src/kartenbild.js`.
