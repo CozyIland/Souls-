@@ -25,6 +25,8 @@
   </div>
   <div id="bossBar"><div class="bname" id="bossName"></div><div class="bbar"><i id="bossLag"></i><i id="bossHp"></i></div></div>
   <div id="victory"><span>FEIND GEFÄLLT</span></div>
+  <div id="souls"><span class="sicon"></span><b id="soulN">0</b><i id="soulGain"></i></div>
+  <div id="prompt"></div>
   <div id="hurtFx"></div>
   <div id="lockMark"></div>
   <div id="hint"></div>
@@ -35,6 +37,7 @@
     <button id="tAtk" class="tbtn">⚔<small>halten: schwer</small></button>
     <button id="tCard" class="tbtn">🃏<small>Karte</small></button>
     <button id="tHeal" class="tbtn">🧪<small>Heilen</small></button>
+    <button id="tUse" class="tbtn">🪨<small>Seelenstein</small></button>
     <button id="tLock" class="tbtn">◎<small>Ziel</small></button>
     <button id="tPause" class="tbtn mini">❚❚</button>
   </div>
@@ -50,9 +53,14 @@
 
 <div id="death"><span>GESTORBEN</span></div>
 
-<div class="overlay" id="pause"><div class="panel">
-  <h2>PAUSE</h2>
-  <div class="rule"></div>
+<div class="overlay" id="pause"><div class="panel menu">
+  <div class="tabs" id="tabs">
+    <button class="tab" data-tab="char">Charakter</button><button class="tab" data-tab="inv">Inventar</button>
+    <button class="tab" data-tab="ctrl">Steuerung</button><button class="tab" data-tab="test">Test</button>
+  </div>
+  <div class="page" id="page-char"></div>
+  <div class="page" id="page-inv"></div>
+  <div class="page" id="page-ctrl">
   <div class="controls" id="ctrlPad">
     <b>Linker Stick</b><span>Laufen</span>
     <b>Rechter Stick</b><span>Kamera drehen</span>
@@ -64,7 +72,8 @@
     <b>B halten</b><span>Rennen</span>
     <b>R3 (rechten Stick drücken)</b><span>Ziel erfassen / lösen</span>
     <b>Rechter Stick (erfasst)</b><span>Ziel wechseln</span>
-    <b>Start</b><span>Pause</span>
+    <b>A</b><span>Seelenstein benutzen</span>
+    <b>Start</b><span>Menü (Charakter, Inventar …)</span>
   </div>
   <div class="controls" id="ctrlTouch">
     <b>Linke Seite</b><span>Daumen auflegen und ziehen: Laufen</span>
@@ -77,7 +86,8 @@
     <b>⟲ halten</b><span>Rennen</span>
     <b>◎</b><span>Ziel erfassen / lösen</span>
     <b>Rechts schnell zur Seite wischen</b><span>Ziel wechseln (erfasst)</span>
-    <b>❚❚</b><span>Pause</span>
+    <b>🪨</b><span>Seelenstein benutzen (erscheint am Stein)</span>
+    <b>❚❚</b><span>Menü (Charakter, Inventar …)</span>
   </div>
   <div class="controls" id="ctrlKeys">
     <b>WASD</b><span>Laufen</span>
@@ -89,10 +99,14 @@
     <b>Leertaste</b><span>Ausweichrolle</span>
     <b>Shift halten</b><span>Rennen</span>
     <b>Q / Mausrad-Klick</b><span>Ziel erfassen / lösen</span>
-    <b>Esc</b><span>Pause</span>
+    <b>Enter / G</b><span>Seelenstein benutzen</span>
+    <b>Esc</b><span>Menü (Charakter, Inventar …)</span>
   </div>
+  </div>
+  <div class="page" id="page-test"></div>
   <div class="rule"></div>
   <button class="btn" id="resumeBtn">Weiter</button>
+  <p class="small navhint" id="navHint">LB / RB: Seite wechseln · Steuerkreuz: auswählen · A: bestätigen · B: zurück</p>
 </div></div>
 
 <script type="module" src="src/main.js"></script>

@@ -160,6 +160,8 @@ export class Player {
     this.onThrow = null;              // (Startpunkt, Richtung) → Karte losschicken
     this.queued = false;
     this.potions = POTIONS; this.maxPotions = POTIONS; this.onHeal = null;
+    // Werte aus dem Stufen-System (stufe.js): Schaden, Ausdauerkosten – setzt main.js über applyStats
+    this.mods = { light: 1, heavy: 1, poise: 1, roll: 1, atkCost: 1, cardCost: 1 };
     this.t = 0; this.walk = 0; this.moveK = 0; this.time = 0;
     this.rollDir = new THREE.Vector2(0, 1);
     this.root = new THREE.Group();
@@ -183,6 +185,13 @@ export class Player {
     else { this.state = 'hurt'; this.t = 0; this.iframe = 0.5; }
     if (this.onDamage) this.onDamage(n, this.hp <= 0);
     return true;
+  }
+  /** Werte aus dem Stufen-System übernehmen (mehr Leben/Ausdauer kommen sofort dazu) */
+  applyStats(m) {
+    const dh = m.maxHp - this.maxHp, ds = m.maxSt - this.maxSt;
+    this.maxHp = m.maxHp; this.maxSt = m.maxSt;
+    this.hp = Math.max(1, Math.min(this.maxHp, this.hp + Math.max(0, dh))); this.st = Math.min(this.maxSt, this.st + Math.max(0, ds));
+    this.mods = m;
   }
   /** am Rastpunkt wieder aufstehen */
   revive(x, z, yaw) {
@@ -368,13 +377,13 @@ export class Player {
     if (this.state === 'idle' && thr && this.st > 0 && !this.exhausted) {
       this.state = 'throw'; this.t = 0; this.released = false; this.queued = false; this.suit = nextSuit();
       this.drawn = false; // Klinge zurück in den Stock, die rechte Hand braucht er für die Karte
-      this.st -= THROW_COST; this.stDelay = 0.7; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
+      this.st -= THROW_COST * this.mods.cardCost; this.stDelay = 0.7; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
       roll = false;
     }
     if (this.state === 'idle') {
       if (roll && this.st > 0 && !this.exhausted) {
         this.state = 'roll'; this.t = 0; this.rollDust = 0; this.rollSide = Math.random() < 0.5 ? 1 : -1;
-        this.st -= ROLL_COST; this.stDelay = 0.6; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
+        this.st -= ROLL_COST * this.mods.roll; this.stDelay = 0.6; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
         if (ml > 0.2) this.rollDir.set(mv.x / ml, mv.z / ml);
         else this.rollDir.set(-Math.sin(this.yaw), -Math.cos(this.yaw)); // ohne Richtung: nach hinten
       }
@@ -416,7 +425,7 @@ export class Player {
         if (Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) > A.arc && d > 0.6) continue;
         at.hit.add(tg);
         this.hitStop = A.heavy ? 0.1 : 0.05;
-        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy, A.dmg, A.poise);
+        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy, Math.round(A.dmg * (A.heavy ? this.mods.heavy : this.mods.light)), A.poise * this.mods.poise);
       }
       this.running = false;
     } else if (this.state === 'roll') {
@@ -482,7 +491,7 @@ export class Player {
       }
     }
     this.atk = { k, a: A, t: 0, hit: new Set(), queued: null, face, pre, from };
-    this.st -= A.cost; this.stDelay = 0.8; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
+    this.st -= A.cost * this.mods.atkCost; this.stDelay = 0.8; if (this.st <= 0) { this.st = 0; this.exhausted = true; }
     this.drawn = true;
     this.comboNext = null; this.comboT = 0;
   }

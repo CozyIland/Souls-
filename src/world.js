@@ -18,6 +18,7 @@ export const targets = P.targets;
 export const GATE = { x0: -3, x1: 4, z: -60.5, h: 5.6 };        // Nebeltor zwischen zwei Häusern
 export const ARENA = { x0: -19.2, x1: 19.2, z0: -100.2, z1: -63.6 }; // freie Kampffläche des Bosses
 export const REST = { x: 5.6, z: 48.2, yaw: Math.PI };          // Spieltisch: Start und Wiederaufstehen
+export const STONE = { x: -2.6, z: 44.2 };                       // Seelenstein: aufsteigen und rasten
 
 const R = seeded(7);
 const rr = (a, b) => a + R() * (b - a);
@@ -188,6 +189,23 @@ function ashCloud(scene) {
   ash.userData.embers = embers;
 }
 
+// ---------- Seelenstein: ein schiefer, alter Stein mit glimmenden Runen (hier steigt man auf und rastet) ----------
+function soulStone(scene, x, z) {
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = 0.5; scene.add(g);
+  const geo = new THREE.CylinderGeometry(0.42, 0.62, 2.1, 7, 4); // unregelmäßig gemacht: Ecken verschoben
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) { const yy = p.getY(i), k = 1 + 0.12 * Math.sin(p.getX(i) * 7 + yy * 3) + 0.08 * Math.cos(p.getZ(i) * 9); p.setX(i, p.getX(i) * k * 1.15); p.setZ(i, p.getZ(i) * k * 0.7); if (yy > 1.0) p.setY(i, yy + 0.12 * Math.sin(p.getX(i) * 11)); }
+  geo.computeVertexNormals();
+  const st = new THREE.Mesh(geo, toon(0x3e3a37)); st.position.y = 1.0; st.rotation.z = 0.06; st.castShadow = true; st.receiveShadow = true; g.add(st);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.2, 0.22, 9), toon(0x34302c)); base.position.y = 0.1; base.receiveShadow = true; g.add(base);
+  // Runen: kleine leuchtende Zeichen auf der Vorderseite
+  const rune = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.75, 0.3), toneMapped: false });
+  const marks = [[0, 1.55, 0.12, 0.05], [-0.12, 1.32, 0.05, 0.16], [0.12, 1.3, 0.05, 0.14], [0, 1.08, 0.18, 0.05], [-0.06, 0.86, 0.05, 0.16], [0.08, 0.66, 0.14, 0.05]];
+  for (const [rx, ry, w, h] of marks) { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), rune); m.position.set(rx, ry, 0.43); g.add(m); }
+  const light = new THREE.PointLight(0xff8a3a, 1.6, 4.5, 2); light.position.set(0, 1.2, 0.75); g.add(light);
+  block(x, z, 1.4, 1.4);
+}
+
 // ---------- Schlauch: Seitenstraßen und Ruinenfeld dicht ----------
 function barricades(scene) {
   // Querstraße an der Kreuzung (beide Seiten): Zaun, Autowracks, Schutt, Sandsäcke – man sieht noch dahinter
@@ -317,6 +335,7 @@ export function buildWorld(scene, renderer) {
   P.fireBarrel(scene, -28, 5);
   P.fireBarrel(scene, 5.5, -8.5); P.fireBarrel(scene, -6, 30); P.fireBarrel(scene, -15, -28); P.fireBarrel(scene, -8.4, 7.6);
   P.cardTable(scene, 8.6, 50); P.fireBarrel(scene, 8.7, 46.4);   // Spieltisch am Südende: Start und Rastpunkt
+  soulStone(scene, STONE.x, STONE.z);
 
   // Schutt, Pfützen, Papier, Gullydeckel
   for (let i = 0; i < 14; i++) K.rubbleHeap(scene, rr(-6, 6), rr(-50, 50), rr(0.35, 0.8), false);

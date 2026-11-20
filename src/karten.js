@@ -10,6 +10,7 @@ import { sfx } from './ton.js';
 
 const SPEED = 24, LIFE = 0.9, STICK = 2.5;
 const CARD_DMG = 8;
+export const cardMods = { dmg: 1 }; // Magie (stufe.js) macht Karten stärker
 const flying = [], stuck = [], sparks = [];
 let scene = null, targets = [];
 
@@ -119,7 +120,7 @@ export function updateCards(dt) {
     c.trail.forEach((s, j) => { const h = c.hist[Math.min(c.hist.length - 1, j * 2)]; s.position.copy(h); s.material.opacity = 0.6 * (1 - j / c.trail.length); });
     if (hit) {
       if (!hit.onHit) burst(c.m.position, 0xffd27a, 10);
-      if (hit.onHit) { const dd = c.vel.clone().setY(0).normalize(); spray(c.m.position, dd, 6); sfx.hit(false); hit.onHit(CARD_DMG, dd, false, 5); }
+      if (hit.onHit) { const dd = c.vel.clone().setY(0).normalize(); spray(c.m.position, dd, 6); sfx.hit(false); hit.onHit(Math.round(CARD_DMG * cardMods.dmg), dd, false, 5); }
       else { hit.hitT = 0.6; hit.hitDir = c.vel.clone().normalize(); }
       rumble(0.2, 0.5, 90);
       flying.splice(i, 1); stick(c, hit.node);

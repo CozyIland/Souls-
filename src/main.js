@@ -1,13 +1,15 @@
 // Aschenblatt – Einstieg: Welt, Figur, Kamera, Menüs und Spielschleife.
 import * as THREE from 'three';
 import { setupInput, poll, inp } from './input.js';
-import { buildWorld, updateWorld, targets, blockers, REST, GATE, ARENA } from './world.js';
+import { buildWorld, updateWorld, targets, blockers, REST, GATE, ARENA, STONE } from './world.js';
+import { Werte, SOULS } from './stufe.js';
+import { Menue } from './menue.js';
 import { FogGate } from './nebel.js';
 import { Boss, BOSS_HP } from './boss.js';
 import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
 import { makeComposer } from './bildfilter.js';
-import { setupCards, throwCard, updateCards, hitFx, dust } from './karten.js';
+import { setupCards, throwCard, updateCards, hitFx, dust, cardMods } from './karten.js';
 import { spawnDogs, updateDogs, resetDogs, DOG_HP } from './hund.js';
 import { rumble } from './input.js';
 import { setupBlood, updateBlood, spray } from './blut.js';
@@ -51,6 +53,27 @@ const fog = new FogGate(scene, GATE);
 const boss = new Boss(scene, { x: 0, z: -89, yaw: 0 }, ARENA);
 targets.push(boss);
 let passT = -1, victoryT = -1;
+// ---------- Stufen-System: Seelen sammeln, am Seelenstein aufsteigen ----------
+const werte = new Werte();
+function applyStats() { const m = werte.mods(); player.applyStats(m); cardMods.dmg = m.card; }
+applyStats(); player.hp = player.maxHp; player.st = player.maxSt;
+let soulShow = werte.souls;
+function gainSouls(n) {
+  werte.addSouls(n);
+  const g = $('soulGain'); g.textContent = '+' + n; g.classList.remove('on'); void g.offsetWidth; g.classList.add('on');
+}
+for (const d of dogs) d.onDeath = () => gainSouls(SOULS.hund);
+boss.onDeath = () => gainSouls(SOULS.boss);
+const menue = new Menue({ werte, player, apply: applyStats, onLevel: () => sfx.heal(), reset: () => {}, jump: (w) => {
+  const at = w === 'stone' ? [STONE.x + 0.4, STONE.z - 2.2] : w === 'gate' ? [(GATE.x0 + GATE.x1) / 2, GATE.z + 5] : [(GATE.x0 + GATE.x1) / 2, GATE.z - 4];
+  player.pos.set(at[0], 0, at[1]); player.yaw = Math.PI; player.vel.set(0, 0); cam.yaw = 0; cam.lock = null; passT = -1; setState('play');
+} });
+function openMenu(tab, atStone) { setState('pause'); menue.open(tab, atStone); }
+/** am Seelenstein rasten: Leben, Ausdauer und Tränke voll, Hunde kommen zurück – dann aufsteigen */
+function useStone() {
+  player.hp = player.maxHp; player.st = player.maxSt; player.potions = player.maxPotions; player.exhausted = false;
+  resetDogs(); sfx.heal(); openMenu('char', true);
+}
 boss.onSlam = (x, z, k, howl) => { // Aufschlag: Staub, Rütteln (je näher, desto stärker)
   const near = Math.max(0, 1 - Math.hypot(player.pos.x - x, player.pos.z - z) / 16);
   if (!howl) { for (let i = 0; i < 3; i++) dust(new THREE.Vector3(x + (Math.random() - 0.5) * 3, 0, z + (Math.random() - 0.5) * 3), 10); sfx.boom(); }
@@ -103,8 +126,8 @@ function setState(s) {
   $('title').classList.toggle('show', s === 'title');
   $('pause').classList.toggle('show', s === 'pause');
   $('hud').classList.toggle('on', s !== 'title');
+  document.body.classList.toggle('menuOpen', s === 'pause');
   if (s !== 'play' && document.pointerLockElement) document.exitPointerLock();
-  if (s === 'pause') $('resumeBtn').classList.add('padFocus');
 }
 $('resumeBtn').onclick = () => setState('play');
 $('title').addEventListener('click', () => setState('play'));
@@ -118,6 +141,8 @@ function hud(dt) {
   hpBar.style.width = (100 * player.hp / player.maxHp) + '%';
   stBar.style.width = (100 * player.st / player.maxSt) + '%';
   stBar.parentElement.classList.toggle('empty', player.exhausted);
+  soulShow += (werte.souls - soulShow) * Math.min(1, dt * 6); if (Math.abs(werte.souls - soulShow) < 0.5) soulShow = werte.souls;
+  $('soulN').textContent = Math.round(soulShow);
   $('potN').textContent = player.potions; $('potions').classList.toggle('empty', player.potions <= 0);
   // Bossleiste: erscheint mit dem Kampf, helle Schadensanzeige läuft nach
   const bb = $('bossBar'), bOn = boss.active && (!boss.dead || boss.deadT < 2.5);
@@ -177,9 +202,15 @@ function frame(now) {
     camera.lookAt(0, 2.5, 0);
     player.update(dt, { x: 0, z: 0 }, {}, null);
   } else if (state === 'pause') {
-    if (inp.pause || inp.back || inp.confirm) setState('play');
+    if (menue.update(inp) === 'close') setState('play');
   } else {
-    if (inp.pause) { setState('pause'); }
+    if (inp.pause) { openMenu('char', false); }
+    // Seelenstein: in der Nähe Hinweis zeigen, A / Enter / Knopf benutzt ihn
+    const nearStone = deathT < 0 && passT < 0 && Math.hypot(player.pos.x - STONE.x, player.pos.z - STONE.z) < 2.4 && (player.state === 'idle');
+    $('prompt').style.display = nearStone ? 'block' : 'none';
+    if (nearStone) $('prompt').innerHTML = `<b>${inp.touch ? '🪨' : inp.pad ? 'A' : 'Enter'}</b>Seelenstein · rasten und aufsteigen`;
+    $('tUse').classList.toggle('on', nearStone);
+    if (nearStone && inp.use) useStone();
     if (inp.lock && passT < 0) cam.toggleLock(player, targets);
     if (inp.flick) cam.switchTarget(player, targets, inp.flick);
     const f = cam.forward();

@@ -139,6 +139,20 @@
 - **Heiltränke** (player.js): 3 pro Leben (`POTIONS`), Y / H / Handy 🧪 (`inp.heal`) → Zustand `heal` (`HEAL_T` 1,35 s, heilt `HEAL_HP` 45 bei
   `HEAL_AT`): linke Hand holt das Fläschchen (`flask`, Glut-Essenz) vom Gürtel zum Mund (`armIK`), Kopf in den Nacken; langsam gehen geht,
   angreifen/rollen nicht; leer → Kopfschütteln. Auffüllen nach Tod (`revive`) und nach dem Sieg. Anzeige `#potions`, Funken `onHeal` (main.js).
+- **Stufen-System** (`src/stufe.js`, Klasse `Werte`): Seelen `souls` (Hund 10, Boss 1500 – `SOULS`, über `onDeath` von Hund/Boss →
+  `gainSouls` in main.js, „+n“ am Zähler `#souls`), Stufe 1 … `MAX_LV` 20 = 1 + verteilte Punkte, Kosten `cost(lv)`: 50 → 100 → 200, danach
+  je +50 % (auf 10 gerundet; Stufe 20 ≈ 131.000). Werte (Start je `BASE` 10): **Ausdauer** (+6 Leben, +5 Ausdauer je Punkt), **Stärke**
+  (Degen, vor allem schwer; Haltungsschaden), **Trickreich** (leichte Schläge, Rolle und Schläge kosten weniger Ausdauer), **Magie**
+  (Kartenschaden `cardMods` in karten.js, Karte kostet weniger). `mods()` → `player.applyStats` (Leben/Ausdauer, `player.mods` für Schaden und
+  Kosten). Speichert in `localStorage` (`aschenblatt-stufe`, mit try/catch). Seelen bleiben beim Tod erhalten.
+- **Seelenstein** (`world.js` `soulStone`, Lage `STONE` am Start): schiefer Stein mit glimmenden Runen + Licht. In der Nähe Hinweis `#prompt`
+  („A / Enter / 🪨“, Handy-Knopf `#tUse`), `inp.use` (A, Enter/G) → `useStone`: Leben/Ausdauer/Tränke voll, Hunde zurück, Menü „Charakter“
+  mit +1-Knöpfen je Wert (`levelUp`).
+- **Menü** (`src/menue.js`, Klasse `Menue`, im `#pause`-Overlay): Reiter Charakter · Inventar · Steuerung · Test (`#tabs`, `.page`),
+  Controller: LB/RB bzw. Q/E Seite (`inp.tab`), Steuerkreuz/Stick/Pfeile auswählen (`inp.nav`/`navX`, Klasse `padFocus`), A/Enter bestätigen,
+  B/Esc/Start zu. Charakter: Stufe, Seelen, nächste Kosten, Werte mit Beschreibung, abgeleitete Zahlen (Leben, Ausdauer, Degen leicht/schwer,
+  Karte, Rolle). Inventar: Stockdegen, Spielkarten, Heiltrank, Seelen. **Test**: Stufe −/+ bzw. 1/20 (`setLevel`, Punkte reihum), jeder Wert
+  −/+ (`bump`), Seelen +100/+1000/0, Sprünge zum Stein / vors Nebeltor / in die Arena, alles zurücksetzen. Start/Esc öffnet „Charakter“.
 - `src/world.js` – Straßen der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.
   **Alle festen Teile werden am Ende nach Material zusammengefasst** (`mergeStatic`, behält Vertex-Farben; `userData.noMerge` = auslassen).

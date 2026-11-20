@@ -141,7 +141,7 @@ export class Boss {
     if (this.dead || this.st === 'sleep') return;
     this.hp = Math.max(0, this.hp - dmg);
     this.flinch = heavy ? 0.35 : 0.22; this.hitDir = dir.clone(); this.lagHold = 0.7;
-    if (this.hp <= 0) { this.dead = true; this.go('dead'); this.deadSide = Math.random() < 0.5 ? 1 : -1; sfx.roar(true); return; }
+    if (this.hp <= 0) { this.dead = true; this.go('dead'); this.deadSide = Math.random() < 0.5 ? 1 : -1; sfx.roar(true); if (this.onDeath) this.onDeath(this); return; }
     if (!this.phase2 && this.hp <= BOSS_HP * 0.5 && this.st !== 'stagger') { this.phase2 = true; this.go('howl'); sfx.roar(false); return; }
     this.poise += poiseDmg != null ? poiseDmg : (heavy ? 30 : dmg); this.poiseT = 0;
     if (this.poise >= POISE_MAX && this.st !== 'leap' && this.st !== 'howl') { this.poise = 0; this.go('stagger'); sfx.yelp(true); }

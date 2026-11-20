@@ -186,7 +186,7 @@ class Dog {
     const rel = angDiff(this.yaw, Math.atan2(dir.x, dir.z));
     this.hx = Math.sin(rel); this.hz = Math.cos(rel);
     sfx.yelp(heavy || this.hp <= 0);
-    if (this.hp <= 0) { this.hp = 0; this.dead = true; this.st = 'dead'; this.t = 0; this.deadSide = this.hx >= 0 ? 1 : -1; this.v.set(dir.x * 5, dir.z * 5); return; }
+    if (this.hp <= 0) { this.hp = 0; this.dead = true; this.st = 'dead'; this.t = 0; this.deadSide = this.hx >= 0 ? 1 : -1; this.v.set(dir.x * 5, dir.z * 5); if (this.onDeath) this.onDeath(this); return; }
     // Haltung: erst wenn die Leiste voll ist, wird er zurückgestoßen bzw. umgeworfen
     this.poise += poiseDmg != null ? poiseDmg : (heavy ? 28 : dmg); this.poiseT = 0;
     if (this.poise >= POISE_MAX) {
