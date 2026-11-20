@@ -83,10 +83,11 @@
   ändern das Tempo `sv` nur mit `ACC_UP`/`ACC_DOWN`. Beim Drehen auf der Stelle treten die Beine (`gsp` = Tempo oder Drehtempo × 0,32),
   ohne Ziel schaut der Kopf schon in die neue Richtung (`turnD`), Brust/Hals biegen sich in die Kurve, Hüfte gegen (`tb`), Gewicht vor beim
   Antreten/zurück beim Bremsen (`accL`), Kopf nickt beim Gehen (`nod`). Sprungweite nach Abstand (`leapD`). Hunde schieben sich weich auseinander. **Schritt passt zur Strecke**: Beine laufen nach der wirklich zurückgelegten
-  Strecke (`va` aus der Positionsänderung – an Wand/Spieler hängend treten sie nicht ins Leere); Gehen: Schritt `DOG_STRIDE`·`DOG_S`, wächst bis
-  +50 %; Galopp: Sprunglänge `GT.len` 2,2 m (+`GT.grow` bei hohem Tempo), Schwungweite `GT.ar`/`GT.af` so abgestimmt, dass aufgesetzte
-  Pfoten stillstehen (gemessen: Rutschen 2–4 % des Tempos statt 80 %); im Übergang laufen Clip und Galopp im selben Takt (gemischte
-  Schrittlänge `Le`). **Galopp** ab ~2,6 m/s per Code (`gw`, `gph`, `GT`): Lauf-Clip wird ausgeblendet,
+  Strecke (`va` aus der Positionsänderung – an Wand/Spieler hängend treten sie nicht ins Leere). **Gangarten** in EINEM Takt: Gehen (Clip,
+  Schritt `DOG_STRIDE`·`DOG_S`·`WALK.k`, wächst um `WALK.grow`) → ab `TROT.from` 1,75 m/s **Trab** per Code (diagonale Paare, `gw`) → ab
+  `GALO.from` 2,8 m/s gleiten Beinphasen (`off`), Schwungweite und Anwinkeln stufenlos zum Galopp (`gm`); Schwungweite je Meter Schritt
+  (`kr`/`kf`) so abgestimmt, dass aufgesetzte Pfoten stillstehen (gemessen 3–6 % Rutschen bei allen Tempi 1,2–7,5 m/s); der Code-Gang ist
+  am Clip ausgerichtet (`RL0` = Standmitte linkes Hinterbein im Clip, beim Laden gemessen), gemischte Schrittlänge `Le`. **Galopp** per Code (`gph`, `GT`): Lauf-Clip ist ausgeblendet,
   Beine schwingen als Rotationsgalopp (Hinterbeine fast zusammen, Vorderbeine halbe Phase später, beim Vorschwingen angewinkelt),
   Rücken beugt/streckt sich, Kopf hält dagegen, Schwanz weht; Schweben/Schaukeln am Halter. Ruhe: schnüffeln, Schwanz wedeln;
   Lauern: schweres Atmen. Alle per Code bewegten Knochen stehen in `ctl` (werden vor dem Mixer zurückgesetzt).

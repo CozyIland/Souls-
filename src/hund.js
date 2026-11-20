@@ -31,9 +31,16 @@ const LOCO = { idle: 1, growl: 1, chase: 1, circle: 1, after: 1, back: 1, rec: 1
 const DOWN_T = 1.5; // so lange liegt ein umgeworfener Hund
 const smooth01 = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 // Meshy-Hund (models/hund.glb): nur der Clip „dog_walk“ (0,67 s); schaut nach +Z, Füße bei y −0,67, ~1,3 m hoch
-// Galopp: Schwungweite der Beine (ar hinten, af vorn – vorn schwingt die Brust mit), Meter pro Sprung (len, wächst bei hohem Tempo
-// um grow), Rücken beugen/strecken (flex), Schaukeln (rock). Abgestimmt nach Messung: aufgesetzte Pfoten stehen still (kein Laufband).
-const GT = { ar: 0.56, af: 0.37, len: 2.2, grow: 0.25, flex: 0.16, rock: 0.09, fph: 1.6 };
+// Galopp: Meter pro Sprung (len, wächst bei hohem Tempo um grow), Rücken beugen/strecken (flex), Schaukeln (rock).
+// Alle Schrittlängen/Schwungweiten nach Messung abgestimmt: aufgesetzte Pfoten stehen still (Rutschen 3–6 % des Tempos).
+const GT = { len: 2.2, grow: 0.1, flex: 0.16, rock: 0.09, fph: 1.6 };
+// Gangarten: Gehen (Clip) → Trab (Code, diagonale Beinpaare) → Galopp (Code). Alles läuft in EINEM Takt; der Code-Gang ist am Clip
+// ausgerichtet (linkes Hinterbein setzt gleichzeitig auf), vom Trab zum Galopp verschieben sich die Beinphasen stufenlos.
+// Beinphasen [hinten L, hinten R, vorn L, vorn R]; Schwungweite je Meter Schrittlänge (kr hinten, kf vorn) → aufgesetzte Pfoten stehen still.
+const TROT = { off: [0, 0.5, 0.5, 0], kr: 0.255, kf: 0.295, foldR: -0.6, foldF: 0.8, len: 1.0, lenK: 0.3, from: 1.75, span: 0.6 };
+const GALO = { off: [0, 0.09, 0.48, -0.43], kr: 0.288, kf: 0.168, foldR: -0.9, foldF: 1.1, from: 2.8, span: 1.1 };
+const WALK = { k: 1.15, grow: 0.25 }; // Schrittlänge des Geh-Clips (× DOG_STRIDE·DOG_S) und Zuwachs mit dem Tempo
+let RL0 = 0.5; // Phase im Clip, in der das linke Hinterbein mitten im Bodenkontakt ist (beim Laden gemessen)
 // Leichenhaltung: Beine zum Boden kippen (f/r = vorn/hinten, b/t = unten/oben), Rücken, Hals, Kopf, Schwanz, Anheben
 const D = { fb: 0.4, ft: 0.7, rb: 0.15, rt: 0.6, sp: 0.15, nk: 0.15, hd: 0.1, t2: 0.3, t3: 0.1, by: 0.02 };
 const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.3, DOG_C = 0.42;
@@ -152,6 +159,12 @@ class Dog {
       'rearHorselinkR', 'rearHorselinkL', 'frontHorselinkR', 'frontHorselinkL', 'spine1', 'spine2', 'chest', 'hips', 'tail2', 'tail3', 'tail4'].map((n) => B[n]).filter(Boolean);
     for (const b of ctl) b.userData.base = b.quaternion.clone();
     this.mm = { model, holder, mixer, act, dur: clip ? clip.duration : 1, mats, B, ctl };
+    if (act && B.rearFootL && !Dog.rlDone) { // einmal: wann steht das linke Hinterbein am tiefsten (Mitte der Standphase)?
+      Dog.rlDone = true; const V = new THREE.Vector3(); let best = 9;
+      act.setEffectiveWeight(1);
+      for (let i = 0; i < 60; i++) { act.time = i / 60 * clip.duration; mixer.update(0); model.updateMatrixWorld(true); B.rearFootL.getWorldPosition(V); if (V.y < best) { best = V.y; RL0 = i / 60; } }
+      for (const b of ctl) b.quaternion.copy(b.userData.base);
+    }
   }
   reset() {
     this.p.copy(this.home); this.yaw = this.homeYaw;
@@ -211,8 +224,9 @@ class Dog {
     }
     const X = () => ax(1, 0, 0), Y = () => ax(0, 1, 0);
     const swing = (b, ang) => { if (b) rotW(b, X(), -ang); };   // + = Bein nach vorn
-    // Galopp (Rotationsgalopp): Hinterbeine fast zusammen, Vorderbeine eine halbe Phase später; Rücken beugt und streckt sich
-    const g = this.gw || 0;
+    // Trab (diagonale Paare) ↔ Galopp (Rotationsgalopp: Hinterbeine fast zusammen, Vorderbeine eine halbe Phase später);
+    // Phasen, Schwungweite und Anwinkeln gleiten stufenlos von einer Gangart zur nächsten. Rücken beugt sich nur im Galopp.
+    const g = this.gw || 0, gm = this.gm || 0;
     if (g > 0.01) {
       const a = (this.gph || 0) * TAU;
       const leg = (up, lo, hl, off, amp, fold) => {
@@ -221,15 +235,16 @@ class Dog {
         swing(lo, fold * Math.max(0, cs) * g);                              // beim Vorschwingen anwinkeln
         if (hl) swing(hl, -fold * 0.6 * Math.max(0, cs) * g);
       };
-      const ks = this.gk || 1;
-      leg(B.rearLegL_01, B.rearLwrL, B.rearHorselinkL, 0, GT.ar * ks, -0.9);
-      leg(B.rearLegR_01, B.rearLwrR, B.rearHorselinkR, 0.09, GT.ar * ks, -0.9);
-      leg(B.frontUprL, B.frontLwrL, B.frontHorselinkL, 0.48, GT.af * ks, 1.1);
-      leg(B.frontUprR, B.frontLwrR, B.frontHorselinkR, 0.57, GT.af * ks, 1.1);
-      const flex = Math.sin(a + GT.fph) * GT.flex * g;                          // Rücken rund ↔ gestreckt
+      const L = this.Lc || GT.len, kr = L * lerp(TROT.kr, GALO.kr, gm), kf = L * lerp(TROT.kf, GALO.kf, gm);
+      const fr = lerp(TROT.foldR, GALO.foldR, gm), ff = lerp(TROT.foldF, GALO.foldF, gm), o = (i) => lerp(TROT.off[i], GALO.off[i], gm);
+      leg(B.rearLegL_01, B.rearLwrL, B.rearHorselinkL, o(0), kr, fr);
+      leg(B.rearLegR_01, B.rearLwrR, B.rearHorselinkR, o(1), kr, fr);
+      leg(B.frontUprL, B.frontLwrL, B.frontHorselinkL, o(2), kf, ff);
+      leg(B.frontUprR, B.frontLwrR, B.frontHorselinkR, o(3), kf, ff);
+      const flex = Math.sin(a + GT.fph) * GT.flex * g * gm;                     // Rücken rund ↔ gestreckt (Galopp)
       if (B.spine1) rotW(B.spine1, X(), flex); if (B.chest) rotW(B.chest, X(), flex * 0.8);
-      if (B.neck1) rotW(B.neck1, X(), -Math.sin(a + 0.4) * 0.14 * g);       // Kopf hält dagegen
-      if (B.tail2) rotW(B.tail2, X(), (0.35 + Math.sin(a) * 0.25) * g);   // Schwanz weht nach hinten
+      if (B.neck1) rotW(B.neck1, X(), (-Math.sin(a + 0.4) * 0.14 * gm + Math.cos(2 * a) * 0.04 * (1 - gm)) * g); // Kopf hält dagegen / nickt im Trab
+      if (B.tail2) rotW(B.tail2, X(), (0.2 + 0.15 * gm + Math.sin(a) * 0.25 * gm) * g);  // Schwanz weht nach hinten
     }
     // Schwanz: wedelt in Ruhe, steif beim Lauern, pendelt beim Gehen
     const wag = this.st === 'idle' ? Math.sin(this.t * 7) * 0.35 : this.aggro ? Math.sin(this.t * 2) * 0.06 : Math.sin(this.gp * TAU) * 0.2;
@@ -525,14 +540,17 @@ class Dog {
       M.holder.rotation.set(pitch + headX * 0.15, yawOff, roll);
       // Gewicht weich nachführen (sonst flackert es zwischen Stehen und Laufen)
       let wt = clamp((gsp - 0.15) / 0.5, 0, 1), tt;
-      // Galopp-Anteil schon hier (für den gemeinsamen Schritt-Takt)
-      const gal = !this.dead && this.st !== 'leap' && this.st !== 'down' ? smooth01((sp - 2.4) / 1.4) : 0;
-      this.gw = lerp(this.gw || 0, gal, damp(6, dt));
+      // Gangart: Anteil Code-Gang (gw: Gehen → Trab) und Trab → Galopp (gm); nur vorwärts
+      const fwdS = Math.max(0, this.va.x * Math.sin(this.yaw) + this.va.y * Math.cos(this.yaw));
+      const codeOk = !this.dead && this.st !== 'leap' && this.st !== 'down' && this.st !== 'wind';
+      this.gw = lerp(this.gw || 0, codeOk ? smooth01((fwdS - TROT.from) / TROT.span) : 0, damp(6, dt));
+      this.gm = lerp(this.gm || 0, smooth01((fwdS - GALO.from) / GALO.span), damp(5, dt));
       this.gk = 1 + GT.grow * clamp((sp - 4.4) / 3, 0, 1);
-      // Schrittlänge: Gehen wächst etwas mit dem Tempo, Galopp hat eigene Sprunglänge. Im Übergang laufen beide im selben Takt
+      // Schrittlänge: Gehen wächst etwas mit dem Tempo, Trab und Galopp haben eigene Längen. Alles im selben Takt
       // (gemischte Schrittlänge) – so passt die gemischte Beinbewegung zur Strecke.
-      const cyc = DOG_STRIDE * DOG_S * (1 + clamp((sp - 1.5) / 2.5, 0, 1) * 0.5);
-      const Le = (1 - this.gw) * cyc + this.gw * GT.len * this.gk;
+      const cyc = DOG_STRIDE * DOG_S * WALK.k * (1 + clamp((sp - 1.5) / 2.5, 0, 1) * WALK.grow);
+      this.Lc = lerp(TROT.len + TROT.lenK * clamp((sp - 2) / 1.5, 0, 1), GT.len * this.gk, this.gm);
+      const Le = (1 - this.gw) * cyc + this.gw * this.Lc;
       if (this.st === 'leap') { wt = 1; this.gp = 0.55; tt = 0.55; }
       else if (this.st === 'down') { wt = 1; this.gp = (this.gp + dt * 2.6) % 1; tt = this.gp; } // Beine zappeln
       else if (this.st === 'wind') { wt = 0.8; this.gp += (0.55 - this.gp) * damp(8, dt); tt = this.gp; } // Beine gehen in die Sprunghaltung
@@ -542,12 +560,14 @@ class Dog {
       }
       if (this.dead) wt = 0;
       this.aw = lerp(this.aw || 0, wt, damp(this.st === 'leap' ? 20 : 7, dt));
-      // Galopp: ab ~2,6 m/s übernimmt eine Galopp-Bewegung per Code (der Lauf-Clip ist nur ein Gehen)
+      // Trab/Galopp per Code (der Lauf-Clip ist nur ein Gehen): eigener Takt, solange der Code-Gang aus ist am Clip ausgerichtet
+      if (this.gw < 0.02) this.gph = (this.gp + 0.5 - RL0 + 2) % 1;
+      else this.gph = ((this.gph || 0) + dt * sp / Le) % 1;
       if (this.gw > 0.01) {
-        this.gph = ((this.gph || 0) + dt * sp / Le) % 1;
-        const a = this.gph * TAU;
-        M.holder.position.y += (Math.sin(a + 0.6) * 0.035) * this.gw;            // Schwebephase
-        M.holder.rotation.x += (Math.sin(a + 1.4) * GT.rock + 0.05) * this.gw;     // Schaukeln vor/zurück
+        const a = this.gph * TAU, gm = this.gm;
+        const bob = lerp(-Math.cos(2 * a) * 0.012, Math.sin(a + 0.6) * 0.035, gm);    // Trab: zweimal pro Takt, Galopp: Schwebephase
+        M.holder.position.y += bob * this.gw;
+        M.holder.rotation.x += (Math.sin(a + 1.4) * GT.rock + 0.05) * gm * this.gw;  // Galopp: Schaukeln vor/zurück
       }
       // Gehen: Kopf nickt mit den Schritten, Körper wiegt leicht
       const walkK = this.aw * (1 - this.gw) * clamp(gsp / 1.2, 0, 1);
