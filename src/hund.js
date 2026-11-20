@@ -583,10 +583,10 @@ class Dog {
   }
 }
 
-/** Hunde aufstellen: ein Rudel im Norden, einer an der Querstraße */
+/** Hunde aufstellen: ein einzelner kurz hinter dem Start, ein Rudel weiter nördlich (vor dem Nebeltor) */
 export function spawnDogs(scene) {
   ladeModell(new GLTFLoader(), DOG_URL, (g) => { DOG_GLTF = g; for (const d of dogs) d.useModel(); }, (e) => console.warn('Hunde-Modell fehlt – Grundformen bleiben.', e));
-  for (const [x, z, y] of [[-2, -30, 0.4], [2.5, -33, -0.6], [-1, -36, 2.8], [24, 2, -1.5]]) dogs.push(new Dog(scene, x, z, y));
+  for (const [x, z, y] of [[-2, -30, 0.4], [2.5, -33, -0.6], [-1, -36, 2.8], [2.5, 20, -2.6]]) dogs.push(new Dog(scene, x, z, y));
   return dogs;
 }
 

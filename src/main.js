@@ -1,7 +1,9 @@
 // Aschenblatt – Einstieg: Welt, Figur, Kamera, Menüs und Spielschleife.
 import * as THREE from 'three';
 import { setupInput, poll, inp } from './input.js';
-import { buildWorld, updateWorld, targets, blockers } from './world.js';
+import { buildWorld, updateWorld, targets, blockers, REST, GATE, ARENA } from './world.js';
+import { FogGate } from './nebel.js';
+import { Boss, BOSS_HP } from './boss.js';
 import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
 import { makeComposer } from './bildfilter.js';
@@ -10,6 +12,7 @@ import { spawnDogs, updateDogs, resetDogs, DOG_HP } from './hund.js';
 import { rumble } from './input.js';
 import { setupBlood, updateBlood, spray } from './blut.js';
 import { sfx } from './ton.js';
+import { glowTex } from './texturen.js';
 
 // ---------- Renderer ----------
 const canvas = document.getElementById('c');
@@ -26,7 +29,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 240);
 const world = buildWorld(scene, renderer);
 const player = new Player(scene);
-player.pos.set(0, 0, 6);
+player.pos.set(REST.x, 0, REST.z - 1.2); player.yaw = REST.yaw;
 const cam = new OrbitCam(camera);
 // Begleitlicht von der Kameraseite: sonst ist der dunkle Mantel von hinten nur ein schwarzer Umriss
 const fill = new THREE.PointLight(0xffe2c8, 9, 8, 1.4);
@@ -43,13 +46,40 @@ setupBlood(scene);
 // Gegner: streunende Hunde (zählen als Ziele für Kamera, Karten und Degen)
 const dogs = spawnDogs(scene);
 targets.push(...dogs);
-const REST = { x: -6.6, z: 6.4, yaw: Math.PI * 0.75 }; // am Spieltisch wieder aufstehen
+// Nebeltor und Boss hinter dem Nebel
+const fog = new FogGate(scene, GATE);
+const boss = new Boss(scene, { x: 0, z: -89, yaw: 0 }, ARENA);
+targets.push(boss);
+let passT = -1, victoryT = -1;
+boss.onSlam = (x, z, k, howl) => { // Aufschlag: Staub, Rütteln (je näher, desto stärker)
+  const near = Math.max(0, 1 - Math.hypot(player.pos.x - x, player.pos.z - z) / 16);
+  if (!howl) { for (let i = 0; i < 3; i++) dust(new THREE.Vector3(x + (Math.random() - 0.5) * 3, 0, z + (Math.random() - 0.5) * 3), 10); sfx.boom(); }
+  cam.shake(0.03 + 0.1 * k * near); rumble(0.5 + 0.5 * near, 0.6, 250);
+};
+// Heiltrank: Glucksen, warme Funken steigen auf
+const healFx = [], GLOWT = glowTex();
+player.onDrink = (empty) => { if (!empty) setTimeout(() => sfx.gulp(), 520); else sfx.thud(); $('potions').classList.remove('pop'); void $('potions').offsetWidth; $('potions').classList.add('pop'); };
+player.onHeal = (p) => {
+  sfx.heal();
+  for (let i = 0; i < 16; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOWT, color: 0xffb860, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    const a = Math.random() * Math.PI * 2, r = 0.25 + Math.random() * 0.35;
+    s.position.set(p.x + Math.cos(a) * r, 0.2 + Math.random() * 0.8, p.z + Math.sin(a) * r); s.scale.setScalar(0.08 + Math.random() * 0.08);
+    scene.add(s); healFx.push({ s, t: 0, life: 0.9 + Math.random() * 0.6, vy: 0.8 + Math.random() * 0.9 });
+  }
+};
+function updateHealFx(dt) {
+  for (let i = healFx.length - 1; i >= 0; i--) {
+    const f = healFx[i]; f.t += dt; f.s.position.y += f.vy * dt; f.s.material.opacity = Math.sin(Math.PI * Math.min(1, f.t / f.life)) * 0.85;
+    if (f.t > f.life) { scene.remove(f.s); f.s.material.dispose(); healFx.splice(i, 1); }
+  }
+}
 let deathT = -1;
 player.onDamage = (n, dead) => {
   rumble(dead ? 1 : 0.7, 0.8, dead ? 600 : 220);
   cam.shake(dead ? 0.1 : 0.06); sfx.hit(true);
   spray(new THREE.Vector3(player.pos.x, 1.1, player.pos.z), new THREE.Vector3(Math.sin(player.yaw + Math.PI), 0, Math.cos(player.yaw + Math.PI)), 8);
-  if (dead) { deathT = 0; cam.lock = null; }
+  if (dead) { deathT = 0; cam.lock = null; passT = -1; }
 };
 const post = makeComposer(renderer, scene, camera, { ao: !MOBILE });
 cam.yaw = 0;
@@ -88,6 +118,14 @@ function hud(dt) {
   hpBar.style.width = (100 * player.hp / player.maxHp) + '%';
   stBar.style.width = (100 * player.st / player.maxSt) + '%';
   stBar.parentElement.classList.toggle('empty', player.exhausted);
+  $('potN').textContent = player.potions; $('potions').classList.toggle('empty', player.potions <= 0);
+  // Bossleiste: erscheint mit dem Kampf, helle Schadensanzeige läuft nach
+  const bb = $('bossBar'), bOn = boss.active && (!boss.dead || boss.deadT < 2.5);
+  if (bOn) { bb.classList.add('on'); bb.style.opacity = boss.dead ? Math.max(0, 1 - (boss.deadT - 1.5)) : 1; $('bossName').textContent = boss.name;
+    $('bossHp').style.width = (100 * boss.hp / BOSS_HP) + '%'; $('bossLag').style.width = (100 * boss.lag / BOSS_HP) + '%'; }
+  else { bb.classList.remove('on'); bb.style.opacity = 0; }
+  const vt = victoryT < 0 ? 0 : Math.min(1, victoryT / 0.8) * Math.max(0, Math.min(1, (5.5 - victoryT) / 1.0));
+  $('victory').style.opacity = vt; $('victory').style.display = vt > 0 ? 'flex' : 'none';
   if (cam.lock) {
     pv.copy(cam.lock.pos).project(camera);
     lockMark.style.display = pv.z < 1 ? 'block' : 'none';
@@ -97,11 +135,7 @@ function hud(dt) {
   // Hinweis unten: passend zum Gerät, verschwindet nach ein paar Sekunden
   hintT -= dt;
   hint.style.display = hintT > 0 ? 'block' : 'none';
-  hint.textContent = inp.touch
-    ? 'Hunde im Norden! · Links ziehen: Laufen · ⚔ tippen: Schlag, halten: schwer · 🃏: Karte · ⟲: Rolle/Rennen · ◎: Ziel'
-    : inp.pad
-    ? 'Hunde im Norden! · R1/RB: Schlag · R2/RT: schwerer Schlag · L1/LB: Karte · B/○: Rolle · R3: Ziel'
-    : 'Hunde im Norden! · WASD · Links-/Rechtsklick: Schlag/schwer · F: Karte · Leertaste: Rolle · Shift: Rennen · Q: Ziel';
+  hint.textContent = 'Die Straße hinauf nach Norden – hinter dem Nebel wartet etwas …  ' + (inp.touch ? '🧪 Heiltrank' : inp.pad ? 'Y: Heiltrank' : 'H: Heiltrank');
   $('ctrlPad').style.display = inp.pad ? 'grid' : 'none';
   $('ctrlTouch').style.display = inp.touch ? 'grid' : 'none';
   $('ctrlKeys').style.display = inp.pad || inp.touch ? 'none' : 'grid';
@@ -146,20 +180,31 @@ function frame(now) {
     if (inp.pause || inp.back || inp.confirm) setState('play');
   } else {
     if (inp.pause) { setState('pause'); }
-    if (inp.lock) cam.toggleLock(player, targets);
+    if (inp.lock && passT < 0) cam.toggleLock(player, targets);
     if (inp.flick) cam.switchTarget(player, targets, inp.flick);
     const f = cam.forward();
     // Stick relativ zur Kamera: oben = vorwärts (von der Kamera weg), rechts = (−f.z, f.x)
     mv.x = f.x * -inp.my - f.z * inp.mx;
     mv.z = f.z * -inp.my + f.x * inp.mx;
+    // Nebeltor: wer hineinläuft, geht langsam hindurch (Steuerung ruht) – dahinter beginnt der Bosskampf
+    let ctrl = inp;
+    if (passT < 0 && !boss.dead && player.state !== 'dead' && fog.touches(player.pos)) { passT = 0; fog.rip = 1; cam.lock = null; sfx.card(); }
+    if (passT < 0 && !boss.active && !boss.dead && player.pos.z < GATE.z - 0.3) { fog.seal(); boss.start(); } // z. B. hindurchgerollt
+    if (passT >= 0) {
+      passT += dt; ctrl = {}; mv.x = (((GATE.x0 + GATE.x1) / 2) - player.pos.x) * 0.4; mv.z = -0.42;
+      if (player.pos.z < GATE.z - 1.4 || passT > 3) { passT = -1; fog.seal(); boss.start(); }
+    }
     // Trefferstopp: bei einem Treffer friert alles kurz ein (fühlt sich wuchtiger an)
     const pdt = player.hitStop > 0 ? dt * 0.08 : dt;
     player.hitStop = Math.max(0, player.hitStop - dt);
-    player.update(pdt, mv, inp, cam.lock ? cam.lock.pos : null, f);
+    player.update(pdt, mv, ctrl, cam.lock ? cam.lock.pos : null, f);
     updateDogs(pdt, player);
+    boss.update(pdt, player);
+    if (boss.dead && victoryT < 0) { victoryT = 0; fog.vanish(); player.potions = player.maxPotions; }
+    if (victoryT >= 0) victoryT += dt;
     if (deathT >= 0) {
       deathT += dt;
-      if (deathT > 4.2) { deathT = -1; player.revive(REST.x, REST.z, REST.yaw); resetDogs(); cam.yaw = REST.yaw + Math.PI; }
+      if (deathT > 4.2) { deathT = -1; player.revive(REST.x, REST.z - 1.2, REST.yaw); resetDogs(); cam.yaw = REST.yaw + Math.PI; if (!boss.dead) { boss.reset(); fog.reset(); } }
     }
     cam.update(dt, player, cam.lock ? 0 : inp.cx, cam.lock ? 0 : inp.cy);
     hud(dt);
@@ -167,7 +212,8 @@ function frame(now) {
   }
   fill.position.set(player.pos.x + (camera.position.x - player.pos.x) * 0.35, 2.4, player.pos.z + (camera.position.z - player.pos.z) * 0.35);
   updateWorld(dt, time, world, player.pos);
-  if (state !== 'pause') { updateCards(dt); updateBlood(dt); }
+  if (state !== 'pause') { updateCards(dt); updateBlood(dt); updateHealFx(dt); }
+  fog.update(dt);
   post.render(time);
 }
 setState('title');

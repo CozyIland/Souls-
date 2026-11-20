@@ -15,6 +15,7 @@ export const inp = {
   card: false,         // Karte werfen
   light: false,        // leichter Degen-Schlag
   heavy: false,        // schwerer Degen-Schlag
+  heal: false,         // Heiltrank trinken (Y)
   flick: 0,            // Ziel wechseln (−1 links / +1 rechts)
   pause: false, confirm: false, back: false,
   nav: 0,              // Menü hoch/runter
@@ -68,7 +69,7 @@ export function rumble(strong, weak, ms) {
 const dz = (v, d = 0.16) => (Math.abs(v || 0) < d ? 0 : (v - Math.sign(v) * d) / (1 - d));
 
 export function poll(dt) {
-  inp.roll = inp.lock = inp.pause = inp.confirm = inp.back = inp.card = inp.light = inp.heavy = false;
+  inp.roll = inp.lock = inp.pause = inp.confirm = inp.back = inp.card = inp.light = inp.heavy = inp.heal = false;
   inp.flick = 0; inp.nav = 0;
   let mx = 0, my = 0, cx = 0, cy = 0, run = false;
 
@@ -83,6 +84,7 @@ export function poll(dt) {
   if (kHit.KeyF) inp.card = true;
   if (kHit.KeyE || kHit.Mouse0) inp.light = true;
   if (kHit.KeyR || kHit.Mouse2) inp.heavy = true;
+  if (kHit.KeyH || kHit.KeyC) inp.heal = true;
   if (kHit.Escape || kHit.KeyP) inp.pause = true;
   if (kHit.Enter || kHit.Space) inp.confirm = true;
   if (kHit.Escape) inp.back = true;
@@ -115,6 +117,7 @@ export function poll(dt) {
     if (hit(PB.LB)) inp.card = true;
     if (hit(PB.RB)) inp.light = true;
     if (hit(PB.RT)) inp.heavy = true;
+    if (hit(PB.Y)) inp.heal = true;
     if (hit(PB.START)) inp.pause = true;
     if (hit(PB.A)) inp.confirm = true;
     if (hit(PB.B)) inp.back = true;
@@ -139,6 +142,7 @@ export function poll(dt) {
   if (T.lock) { inp.lock = true; T.lock = false; }
   if (T.pause) { inp.pause = true; T.pause = false; }
   if (T.card) { inp.card = true; T.card = false; }
+  if (T.heal) { inp.heal = true; T.heal = false; }
   if (T.atk && !T.atkHeavy && performance.now() - T.atkT0 > HEAVY_HOLD * 1000) { T.atkHeavy = true; inp.heavy = true; }
   if (T.light) { inp.light = true; T.light = false; }
 
@@ -216,6 +220,7 @@ function setupTouch(canvas) {
   btn('tLock', () => { T.lock = true; });
   btn('tPause', () => { T.pause = true; });
   btn('tCard', () => { T.card = true; });
+  btn('tHeal', () => { T.heal = true; });
   btn('tAtk', () => { T.atk = true; T.atkT0 = performance.now(); T.atkHeavy = false; }, () => { if (!T.atkHeavy) T.light = true; T.atk = false; });
   // Erste Berührung irgendwo: Handy-Modus an (auch im Titelbild)
   window.addEventListener('touchstart', mark, { passive: true });

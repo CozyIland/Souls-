@@ -21,7 +21,10 @@
   <div class="bars">
     <div class="bar hp"><i id="hpBar"></i></div>
     <div class="bar st"><i id="stBar"></i></div>
+    <div id="potions"><svg viewBox="0 0 24 32" width="20" height="27"><path d="M9 2h6v3h-1v4.2a9 9 0 1 1-4 0V5H9z" fill="rgba(160,190,205,.35)" stroke="#e3b45a" stroke-width="1.4"/><circle cx="12" cy="20" r="6.2" fill="#ff9a3a"/><circle cx="10" cy="18" r="1.6" fill="#ffe0a0"/></svg><b id="potN">3</b></div>
   </div>
+  <div id="bossBar"><div class="bname" id="bossName"></div><div class="bbar"><i id="bossLag"></i><i id="bossHp"></i></div></div>
+  <div id="victory"><span>FEIND GEFÄLLT</span></div>
   <div id="hurtFx"></div>
   <div id="lockMark"></div>
   <div id="hint"></div>
@@ -31,6 +34,7 @@
     <button id="tRoll" class="tbtn big">⟲<small>Rolle · halten: Rennen</small></button>
     <button id="tAtk" class="tbtn">⚔<small>halten: schwer</small></button>
     <button id="tCard" class="tbtn">🃏<small>Karte</small></button>
+    <button id="tHeal" class="tbtn">🧪<small>Heilen</small></button>
     <button id="tLock" class="tbtn">◎<small>Ziel</small></button>
     <button id="tPause" class="tbtn mini">❚❚</button>
   </div>
@@ -55,6 +59,7 @@
     <b>R1 / RB</b><span>Degen-Schlag (mehrmals: Kombo)</span>
     <b>R2 / RT</b><span>schwerer Schlag</span>
     <b>L1 / LB</b><span>Karte aus dem Mantel ziehen und werfen</span>
+    <b>Y</b><span>Heiltrank trinken (3 pro Leben)</span>
     <b>B tippen</b><span>Ausweichrolle</span>
     <b>B halten</b><span>Rennen</span>
     <b>R3 (rechten Stick drücken)</b><span>Ziel erfassen / lösen</span>
@@ -67,6 +72,7 @@
     <b>⚔ tippen</b><span>Degen-Schlag (mehrmals: Kombo)</span>
     <b>⚔ halten</b><span>schwerer Schlag</span>
     <b>🃏</b><span>Karte werfen</span>
+    <b>🧪</b><span>Heiltrank trinken (3 pro Leben)</span>
     <b>⟲ tippen</b><span>Ausweichrolle</span>
     <b>⟲ halten</b><span>Rennen</span>
     <b>◎</b><span>Ziel erfassen / lösen</span>
@@ -79,6 +85,7 @@
     <b>Linksklick / E</b><span>Degen-Schlag (mehrmals: Kombo)</span>
     <b>Rechtsklick / R</b><span>schwerer Schlag</span>
     <b>F</b><span>Karte werfen</span>
+    <b>H</b><span>Heiltrank trinken (3 pro Leben)</span>
     <b>Leertaste</b><span>Ausweichrolle</span>
     <b>Shift halten</b><span>Rennen</span>
     <b>Q / Mausrad-Klick</b><span>Ziel erfassen / lösen</span>

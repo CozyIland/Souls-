@@ -116,7 +116,30 @@
 - `src/blut.js` – `spray(p, dir, n)` Blutspritzer (fliegen, fallen, hinterlassen Flecken, max. 50), `updateBlood`.
   Treffer auf Lebewesen: Blut + `sfx.hit` + Kamerawackeln `cam.shake` – **kein Aufleuchten**. Puppen: Strohstaub + `sfx.thud`.
 - `src/kollision.js` – `colliders`, `block`, `blockRot` (gedreht), `resolve`, `blockers`.
-- `src/world.js` – Kreuzung der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
+- **Erstes Gebiet = Schlauch** (`world.js`): Start und Rastpunkt am Spieltisch im Süden (`REST`), die Aschenallee nach Norden, Querstraße
+  und Ruinenfeld verbarrikadiert (`barricades`: Zäune, Wracks, Schutt, Sandsäcke + Kollision), ein Hund kurz hinter dem Start, ein Rudel bei z −30,
+  am Nordende das **Nebeltor** `GATE` zwischen zwei Häusern (rostiger Träger mit Ketten), dahinter der **Ascheplatz** `ARENA` (≈ 38 × 37 m,
+  Häuser ringsum, Pflaster, weicher Aschekreis, Feuertonnen in den Ecken, Schutt/Wracks am Rand – Mitte frei) (`arena`).
+- `src/nebel.js` – `FogGate`: drei Shader-Lagen wabernder Nebel (fbm, weiche Ränder, am Boden dichter) + Licht; `touches(p)` → main.js lässt
+  den Magier langsam hindurchgehen (`passT`, Steuerung ruht), danach `seal()` (Wand von innen, Kollision) und `boss.start()`; wer hindurchrollt,
+  löst es auch aus. Tod: `reset()` (offen); Sieg: `vanish()` (löst sich auf).
+- `src/boss.js` – **Boss „Garm, der Aschenhund“** (`models/boss.glb`, Meshy, Clips dog_idle/dog_walk/dog_run), Größe `S` 4,3 (Kopf ≈ 5,4 m,
+  gut 3× der Magier), alle Reichweiten × `K`. 640 Leben (`BOSS_HP`). Clips nach Tempo gemischt, Schrittlänge beim Laden aus den Hinterpfoten
+  gemessen (`stride` – die Vorderzehen krümmen sich im Schwung nach unten), beim Drehen treten die Beine. Lenkung mit Drehtempo/-beschleunigung.
+  Zustände: sleep (schnüffelt) → wake (Kopf hoch, heulen) → stalk (herankommen/umkreisen/zurückweichen, Abklingzeit `cd`) → Angriffe `ATK`
+  (`choose(d, a)` nach Abstand/Winkel): bite (zurückziehen, vorstoßen), swipe (Pranke links/rechts holt aus und fegt), leap (ducken, Sprung
+  zur Stelle des Spielers, Aufschlag mit Flächenschaden), charge (Ansturm, endet an der Wand), spin (wer hinter ihm steht: einmal herum),
+  stomp (aufbäumen, Vorderpfoten aufschlagen); Phase 2 bei 50 % (`howl`: Druckwelle, schneller ×1,22, Kombos, mehr Glut). Haltung
+  `POISE_MAX` → stagger. Treffer: Kapsel-Körper (`axisPoint`, `hitTest` für Karten, `radius` für den Degen, `pos` = nächster Körperpunkt für
+  Zielerfassung), schiebt den Magier aus dem Körper, bleibt in der Arena. `strike` trifft nur, wenn `player.damage` greift (Rolle weicht aus).
+  Haltungen über den Halter (`y`, Neigung) + Knochen (`rotW`: Kopf/Hals schauen zum Magier, Kiefer, Beine einknicken `fold`, Pranke);
+  Beinknick-Werte `LP` gemessen (Pfoten bleiben am Boden). Glut steigt vom Rücken (`embers`), Licht `glow`. `onSlam` → Staub, Rütteln.
+  Bossleiste unten (`#bossBar`, helle Schadensanzeige `lag` läuft nach), Sieg: `#victory` „FEIND GEFÄLLT“. Kamera beim Erfassen weiter weg
+  (`camDist`/`camPitch` in camera.js). Tod des Spielers → Boss `reset()`, Nebel offen.
+- **Heiltränke** (player.js): 3 pro Leben (`POTIONS`), Y / H / Handy 🧪 (`inp.heal`) → Zustand `heal` (`HEAL_T` 1,35 s, heilt `HEAL_HP` 45 bei
+  `HEAL_AT`): linke Hand holt das Fläschchen (`flask`, Glut-Essenz) vom Gürtel zum Mund (`armIK`), Kopf in den Nacken; langsam gehen geht,
+  angreifen/rollen nicht; leer → Kopfschütteln. Auffüllen nach Tod (`revive`) und nach dem Sieg. Anzeige `#potions`, Funken `onHeal` (main.js).
+- `src/world.js` – Straßen der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
   Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.
   **Alle festen Teile werden am Ende nach Material zusammengefasst** (`mergeStatic`, behält Vertex-Farben; `userData.noMerge` = auslassen).
 - `src/gebaeude.js` – `building(scene, x, z, w, d, Stockwerke, Straßenseite)` (Stufe 2): Stile `STYLES` (Ziegel, Klinker, Putz, Gelb,

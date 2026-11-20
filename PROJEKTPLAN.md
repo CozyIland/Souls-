@@ -59,9 +59,9 @@ und setze Texte und Sprechblasen per Code darüber (dann kann man Texte jederzei
 | 1 ✅ | **Held bewegt sich** (erledigt) | Dein Magier mit Skelett: laufen, rennen, rollen, seitwärts/rückwärts erfasst, Kartenfächer; Stadt detailreich (Fassaden, Läden, Feuerleitern, Strommasten, Zeltstadt, Unkraut, Skyline, Leuchten) | ✔ Modell bekommen (nur Walk/Run – Rest per Code) |
 | 2 | **Kampf-Prototyp** (begonnen: Kartenwurf aus dem Mantel ✅, Stockdegen-Kombo + schwerer Schlag ✅) | Kartenwurf (3 Arten), Nahkampf-Kombo, Treffer, Heilen; ein Übungsgegner | Entscheidung Nahkampf-Waffe(n) |
 | 3 | **Erste Gegner** (begonnen: streunende Hunde mit KI, Biss, Tod & Wiederaufstehen am Spieltisch ✅) | Hunde (Rudel) + Plünderer mit eigener KI, Rastpunkt, Tod & Jetons | Gegner-Modelle (oder ich baue Platzhalter) |
-| 4 | **Erstes Gebiet** | Kleine Ruinenstadt (3–4 Straßen, Abkürzung zum Rastpunkt), Gegenstände finden | Stimmungsbilder der Stadt (optional) |
+| 4 | **Erstes Gebiet** (begonnen: Schlauch vom Spieltisch durch die Aschenallee bis zum Nebeltor ✅) | Kleine Ruinenstadt (3–4 Straßen, Abkürzung zum Rastpunkt), Gegenstände finden | Stimmungsbilder der Stadt (optional) |
 | 5 | **Karte & Inventar** | Stadtkarte mit Nebel, Inventar, Schnellplätze, Deck ausrüsten | – |
-| 6 | **Erster Boss** | z. B. Rudelmutter mit 2 Phasen, Nebeltor, Boss-Leiste | Boss-Entscheidung + Modell |
+| 6 ✅ | **Erster Boss** (erledigt: Garm, der Aschenhund – Riesenhund, 7 Angriffe, 2 Phasen, Nebeltor, Bossleiste, Heiltränke) | z. B. Rudelmutter mit 2 Phasen, Nebeltor, Boss-Leiste | ✔ Modell bekommen |
 | 7 | **Manga-Sequenzen** | Abspieler + Intro und Boss-Sequenz | Manga-Bilder |
 | 8 | **Feinschliff** | Musik/Geräusche, Hauptmenü, Speichern, Einstellungen, Leistung | – |
 | 9 | **Steam-Vorbereitung** | Als PC-Programm verpacken, Spielstände als Datei | Steam-Konto (später) |

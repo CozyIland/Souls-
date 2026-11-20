@@ -104,7 +104,7 @@ export function updateCards(dt) {
       c.m.position.addScaledVector(c.vel, dt / steps);
       const p = c.m.position;
       for (const tg of targets) {
-        if (!tg.dead && Math.hypot(p.x - tg.pos.x, p.z - tg.pos.z) < (tg.onHit ? 0.5 : 0.4) && Math.abs(p.y - tg.pos.y) < 0.9) { hit = tg; break; }
+        if (!tg.dead && (tg.hitTest ? tg.hitTest(p) : Math.hypot(p.x - tg.pos.x, p.z - tg.pos.z) < (tg.onHit ? 0.5 : 0.4) && Math.abs(p.y - tg.pos.y) < 0.9)) { hit = tg; break; }
       }
       if (!hit && p.y < 2.5) for (const b of colliders) if (p.x > b.x0 && p.x < b.x1 && p.z > b.z0 && p.z < b.z1) { wall = true; break; }
       if (p.y < 0.03) { p.y = 0.03; wall = true; }

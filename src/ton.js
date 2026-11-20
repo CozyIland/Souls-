@@ -73,6 +73,33 @@ export const sfx = {
     lfo.connect(lg); lg.connect(g.gain); o.connect(f); f.connect(g); g.connect(master);
     o.start(t); lfo.start(t); o.stop(t + d + 0.05); lfo.stop(t + d + 0.05);
   },
+  /** Boss heult/brüllt (tief, lang); dying = Todesschrei */
+  roar(dying) {
+    const c = ok(); if (!c) return; const t = c.currentTime, d = dying ? 2.2 : 1.7;
+    const o = c.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(dying ? 130 : 95, t); o.frequency.linearRampToValueAtTime(dying ? 70 : 150, t + d * 0.45); o.frequency.exponentialRampToValueAtTime(dying ? 35 : 60, t + d);
+    const lfo = c.createOscillator(); lfo.frequency.value = 19; const lg = c.createGain(); lg.gain.value = 0.35;
+    const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.32, t + 0.15); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900; f.Q.value = 2;
+    lfo.connect(lg); lg.connect(g.gain); o.connect(f); f.connect(g); g.connect(master);
+    o.start(t); lfo.start(t); o.stop(t + d + 0.05); lfo.stop(t + d + 0.05);
+    noise(c, t, d * 0.8, 'bandpass', 500, 220, 1.2, 0.18, 0.1);
+  },
+  /** schwerer Aufschlag (Boss landet, Stampfen) */
+  boom() {
+    const c = ok(); if (!c) return; const t = c.currentTime;
+    tone(c, t, 0.55, 'sine', 70, 28, 1.0, 0.004); noise(c, t, 0.45, 'lowpass', 900, 120, 0.8, 0.55, 0.003);
+  },
+  /** Trinken: Glucksen */
+  gulp() {
+    const c = ok(); if (!c) return; const t = c.currentTime;
+    for (let i = 0; i < 3; i++) tone(c, t + i * 0.13, 0.09, 'sine', 320 - i * 40, 140, 0.25, 0.01);
+  },
+  /** Heilung: warmer, aufsteigender Klang */
+  heal() {
+    const c = ok(); if (!c) return; const t = c.currentTime;
+    for (const [f, d] of [[392, 0], [523, 0.08], [659, 0.16]]) tone(c, t + d, 0.9, 'sine', f, f * 1.01, 0.12, 0.05);
+  },
   /** Biss: Schnappen */
   bite() {
     const c = ok(); if (!c) return; const t = c.currentTime;

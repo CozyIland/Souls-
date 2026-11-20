@@ -61,12 +61,13 @@ export class OrbitCam {
     // Ziel verloren (zu weit weg)?
     if (this.lock && (this.lock.dead || this.lock.pos.distanceTo(player.pos) > LOCK_RANGE + 4)) this.lock = null;
 
+    const big = this.lock && this.lock.camDist; // große Gegner (Boss): Kamera weiter weg und tiefer, damit er ins Bild passt
     if (this.lock) {
       // hinter der Figur, Blick aufs Ziel
       const dx = player.pos.x - this.lock.pos.x, dz = player.pos.z - this.lock.pos.z;
       const want = Math.atan2(dx, dz);
       this.yaw += angDiff(this.yaw, want) * damp(7, dt);
-      this.pitch += (0.3 - this.pitch) * damp(5, dt);
+      this.pitch += ((big ? this.lock.camPitch : 0.3) - this.pitch) * damp(5, dt);
     } else {
       this.yaw -= cx;
       this.pitch = clamp(this.pitch + cy, -0.35, 1.1);
@@ -74,13 +75,14 @@ export class OrbitCam {
 
     this.focus.lerp(v.set(player.pos.x, player.pos.y + HEIGHT, player.pos.z), damp(14, dt));
     let look = this.focus;
-    if (this.lock) look = v.copy(this.focus).lerp(this.lock.pos, 0.35).setY(this.focus.y - 0.2);
+    if (this.lock) look = v.copy(this.focus).lerp(this.lock.pos, 0.35).setY(this.focus.y - 0.2 + (big ? 0.9 : 0));
 
     // Kamera nicht durch Wände: Strahl von der Figur nach hinten
     dir.set(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch));
-    let want = DIST;
+    this.distB = (this.distB ?? DIST) + ((big ? this.lock.camDist : DIST) - (this.distB ?? DIST)) * damp(3, dt);
+    let want = this.distB;
     if (this.blockers.length) {
-      ray.set(this.focus, dir); ray.far = DIST;
+      ray.set(this.focus, dir); ray.far = want;
       const hit = ray.intersectObjects(this.blockers, false)[0];
       if (hit) want = Math.max(0.8, hit.distance - 0.3);
     }

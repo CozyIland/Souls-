@@ -1,4 +1,5 @@
-// Testgelände: verfallene Kreuzung in der toten Stadt.
+// Erstes Gebiet: ein Schlauch durch die tote Stadt – vom Spieltisch im Süden die Aschenallee hinauf (Seitenstraßen verbarrikadiert),
+// am Nordende ein Nebeltor zwischen zwei Häusern, dahinter der Ascheplatz (Boss-Arena).
 // Häuser mit Läden und Feuerleitern, Gehwege mit Bordstein, Autowracks, Strommasten, Zeltlager, Unkraut, Pfützen,
 // Skyline am Horizont, Rauchsäulen und Asche in der Luft. Kollision über Rechtecke (kollision.js).
 import * as THREE from 'three';
@@ -6,13 +7,17 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { toon } from './toon.js';
 import { seeded, TAU } from './util.js';
 import { block, colliders, blockers, resolve } from './kollision.js';
-import { asphaltTex, sidewalkTex, concreteTex, skyTex, skylineTex, weedTex, smokeTex, asphaltNormal, sidewalkNormal } from './texturen.js';
+import { canvasTex, asphaltTex, sidewalkTex, concreteTex, skyTex, skylineTex, weedTex, smokeTex, asphaltNormal, sidewalkNormal } from './texturen.js';
 import { building, FLOOR } from './gebaeude.js';
 import * as P from './requisiten.js';
 import * as K from './kleinkram.js';
 
 export { colliders, blockers, resolve };
 export const targets = P.targets;
+// Lage der wichtigen Orte (main.js, nebel.js, boss.js)
+export const GATE = { x0: -3, x1: 4, z: -60.5, h: 5.6 };        // Nebeltor zwischen zwei Häusern
+export const ARENA = { x0: -19.2, x1: 19.2, z0: -100.2, z1: -63.6 }; // freie Kampffläche des Bosses
+export const REST = { x: 5.6, z: 48.2, yaw: Math.PI };          // Spieltisch: Start und Wiederaufstehen
 
 const R = seeded(7);
 const rr = (a, b) => a + R() * (b - a);
@@ -183,6 +188,62 @@ function ashCloud(scene) {
   ash.userData.embers = embers;
 }
 
+// ---------- Schlauch: Seitenstraßen und Ruinenfeld dicht ----------
+function barricades(scene) {
+  // Querstraße an der Kreuzung (beide Seiten): Zaun, Autowracks, Schutt, Sandsäcke – man sieht noch dahinter
+  for (const s of [-1, 1]) {
+    P.fence(scene, s * 12.2, 0, 20, Math.PI / 2, true);
+    P.car(scene, s * 11, -4.2, s * 0.12, true); P.car(scene, s * 11.3, 3.4, Math.PI - s * 0.2, s > 0);
+    K.rubbleHeap(scene, s * 11, -8.3, 1.3, true); K.rubbleHeap(scene, s * 11.2, 7.9, 1.2, true); K.rubbleHeap(scene, s * 10.8, -0.4, 0.9, true);
+    P.sandbags(scene, s * 10.3, 0.8, 2.6, Math.PI / 2 + s * 0.1);
+    block(s * 11.6, 0, 1.6, 20.5);
+  }
+  // Ruinenfeld im Westen: Bauzaun mit Schutt davor
+  P.fence(scene, -10.7, -25, 30, Math.PI / 2, true);
+  for (const [z, sz] of [[-13, 1.1], [-21, 0.9], [-29, 1.3], [-37, 1]]) K.rubbleHeap(scene, -10.2, z, sz, true);
+  P.slab(scene, -10.4, -33, 3, 2.2, 1.4, 0.6);
+  block(-10.9, -25, 1.2, 30.5);
+}
+
+// ---------- Nordende: Tor und Ascheplatz (Boss-Arena) ----------
+function arena(scene) {
+  // Südwand mit dem Tor in der Mitte (die Häuser schauen in die Arena)
+  building(scene, -24.5, -60.5, 15, 5, 5, 'z-'); building(scene, -10, -60.5, 14, 5, 4, 'z-');
+  building(scene, 10.5, -60.5, 13, 5, 4, 'z-'); building(scene, 24.5, -60.5, 15, 5, 6, 'z-');
+  // West- und Ostwand, Nordwand
+  for (const s of [-1, 1]) {
+    building(scene, s * 26, -69.5, 12, 12, s < 0 ? 5 : 4, s < 0 ? 'x+' : 'x-');
+    building(scene, s * 26, -82, 12, 13, s < 0 ? 7 : 5, s < 0 ? 'x+' : 'x-');
+    building(scene, s * 26, -95, 12, 13, s < 0 ? 4 : 6, s < 0 ? 'x+' : 'x-');
+  }
+  building(scene, -22, -107, 20, 12, 6, 'z+'); building(scene, -2, -107, 20, 12, 9, 'z+'); building(scene, 20, -107, 24, 12, 5, 'z+');
+  // Torbogen: rostiger Träger mit Ketten über dem Durchgang
+  const m = P.propMats(), beam = new THREE.Mesh(new THREE.BoxGeometry(GATE.x1 - GATE.x0 + 1.2, 0.35, 0.35), m.rust || toon(0x6a3a24));
+  beam.position.set((GATE.x0 + GATE.x1) / 2, GATE.h + 0.25, GATE.z); beam.rotation.z = 0.04; beam.castShadow = true; scene.add(beam);
+  for (const x of [-1.6, 0.3, 2.4]) {
+    const ch = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2 + Math.abs(x) * 0.3, 5), m.iron || toon(0x3a3632));
+    ch.position.set(x, GATE.h - 0.45 - Math.abs(x) * 0.15, GATE.z); scene.add(ch);
+  }
+  // Boden: alter Platz aus Pflaster, in der Mitte Asche
+  const walk = toon(0xffffff, { map: sidewalkTex(), normalMap: sidewalkNormal() });
+  walk.map = walk.map.clone(); walk.map.repeat.set(20, 19); walk.map.needsUpdate = true;
+  const plaza = new THREE.Mesh(new THREE.PlaneGeometry(40, 38), walk); plaza.rotation.x = -Math.PI / 2; plaza.position.set(0, 0.012, -82); plaza.receiveShadow = true; scene.add(plaza);
+  const ashT = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 4, 64, 64, 64); r.addColorStop(0, 'rgba(30,22,20,0.85)'); r.addColorStop(0.55, 'rgba(36,28,24,0.55)'); r.addColorStop(1, 'rgba(40,30,26,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); }, { clamp: true });
+  const ash = new THREE.Mesh(new THREE.CircleGeometry(11, 40), new THREE.MeshBasicMaterial({ map: ashT, transparent: true, depthWrite: false, color: 0x8a7a70 }));
+  ash.rotation.x = -Math.PI / 2; ash.position.set(0, 0.025, -83); ash.userData.noMerge = true; scene.add(ash);
+  // Durchgang zum Tor gepflastert
+  const pass = new THREE.Mesh(new THREE.PlaneGeometry(GATE.x1 - GATE.x0, 6), walk); pass.rotation.x = -Math.PI / 2; pass.position.set((GATE.x0 + GATE.x1) / 2, 0.012, GATE.z); scene.add(pass);
+  // Rand: Feuertonnen in den Ecken, Schutt, Wracks, tote Bäume – die Mitte bleibt frei für den Kampf
+  for (const [x, z] of [[-16.5, -66.5], [16.5, -66.5], [-16.5, -97], [16.5, -97]]) P.fireBarrel(scene, x, z);
+  for (const [x, z, sz] of [[-18, -80, 1.6], [18, -74.5, 1.4], [17.6, -90, 1.8], [-17.6, -90.5, 1.2], [-6, -99, 1.3], [9, -99.2, 1.5]]) K.rubbleHeap(scene, x, z, sz, true);
+  P.car(scene, -15.5, -99, 1.3, true); P.car(scene, 17.6, -82, 0.1, true);
+  K.deadTree(scene, -18.4, -71); K.deadTree(scene, 18.4, -94);
+  for (const [x, z] of [[-18.6, -76], [18.6, -70], [-12, -99.6], [13, -63.8], [-14, -63.9]]) K.trashBags(scene, x, z, ri(3, 6));
+  for (let i = 0; i < 14; i++) K.bush(scene, (R() < 0.5 ? -1 : 1) * rr(18.4, 19.3), rr(-99, -64), rr(0.6, 1.2));
+  P.papers(scene, -18, 18, -99, -64, 40);
+  for (let i = 0; i < 4; i++) P.puddle(scene, rr(-14, 14), rr(-96, -68), rr(0.6, 1.3));
+}
+
 // ---------- Aufbau ----------
 export function buildWorld(scene, renderer) {
   const sky = skyTex(); sky.mapping = THREE.EquirectangularReflectionMapping;
@@ -203,15 +264,17 @@ export function buildWorld(scene, renderer) {
 
   ground(scene);
   rows(scene);
+  barricades(scene);
+  arena(scene);
 
-  // Nordende: Bus-Barrikade mit Sandsäcken; Süden, Osten, Westen: Schutt und Wracks
-  P.bus(scene, -1, -57, Math.PI / 2 + 0.15); P.sandbags(scene, 4.5, -54.5, 4, 0.1); P.sandbags(scene, -5.5, -54, 3, -0.2);
+  // Nordende der Straße: Sandsäcke und ein ausgebrannter Bus an den Seiten vor dem Tor; Süden, Osten, Westen: Schutt und Wracks
+  P.bus(scene, -6.4, -50, 0.05); P.sandbags(scene, 6.2, -55.2, 3.2, 0.25); P.sandbags(scene, -2.8, -55.6, 2.4, -0.3);
   for (const [x, z, r] of [[0, 57, -0.2], [-47, 0, 1.4], [47, 0, 1.7]]) {
     P.car(scene, x, z, r + Math.PI / 2, true);
     K.rubbleHeap(scene, x + (Math.abs(x) > 1 ? 0 : 3.5), z + (Math.abs(x) > 1 ? 3.5 : 1), 2.2, true);
     K.rubbleHeap(scene, x - (Math.abs(x) > 1 ? 0 : 3.5), z - (Math.abs(x) > 1 ? 3.5 : 1), 2.2, true);
   }
-  block(0, -59.5, 26, 2); block(0, 59, 26, 2); block(-49, 0, 2, 26); block(49, 0, 2, 26);
+  block(0, 59, 26, 2); block(-49, 0, 2, 26); block(49, 0, 2, 26);
   P.fence(scene, -4, 59.5, 8, 0, true); P.fence(scene, 4, 59.5, 6, 0, true);
 
   // Autowracks
@@ -252,8 +315,8 @@ export function buildWorld(scene, renderer) {
   P.tent(scene, -31, 8.4, Math.PI); P.tent(scene, -24.5, 8.6, Math.PI + 0.2); P.tent(scene, -34, -8.6, 0.1);
   P.sandbags(scene, -20.5, 4, 2.5, 1.2);
   P.fireBarrel(scene, -28, 5);
-  P.fireBarrel(scene, 5.5, -8.5); P.fireBarrel(scene, -6, 30); P.fireBarrel(scene, -15, -28);
-  P.cardTable(scene, -8.2, 7.8);
+  P.fireBarrel(scene, 5.5, -8.5); P.fireBarrel(scene, -6, 30); P.fireBarrel(scene, -15, -28); P.fireBarrel(scene, -8.4, 7.6);
+  P.cardTable(scene, 8.6, 50); P.fireBarrel(scene, 8.7, 46.4);   // Spieltisch am Südende: Start und Rastpunkt
 
   // Schutt, Pfützen, Papier, Gullydeckel
   for (let i = 0; i < 14; i++) K.rubbleHeap(scene, rr(-6, 6), rr(-50, 50), rr(0.35, 0.8), false);
@@ -262,7 +325,7 @@ export function buildWorld(scene, renderer) {
   P.papers(scene, -9, 9, -55, 55, 70); P.papers(scene, -45, 45, -9, 9, 40);
   for (const [x, z] of [[2, -26], [-2, 15], [20, -1.5], [-30, 2], [1.5, 46]]) P.manhole(scene, x, z);
 
-  P.dummy(scene, 2.5, -14); P.dummy(scene, -3.5, -16); P.dummy(scene, 12, -2.5); P.dummy(scene, 0.5, 12);
+  P.dummy(scene, 2.6, 41); P.dummy(scene, -2.8, 38.4);   // Übungspuppen am Start
 
   // Stufe 2: Kleinkram – Müllsäcke, kahle Bäume, Gestrüpp, verstreute Steinchen
   for (const [x, z] of [[9.2, -12.5], [-9.3, 13], [9.4, 25.5], [-9.4, -45], [9.3, 46], [-14, 9.3], [21, -9.2], [-38, 9.3], [36, 9.3], [-9.3, 38], [9.2, -38]]) K.trashBags(scene, x, z, ri(3, 7));

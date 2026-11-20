@@ -36,6 +36,8 @@ const STEP_X = 0.45;
 // Fechtstellung beim Angriff (Meter, Körper: x links, z vorn): linker Fuß [x, z], rechter Fuß [x, z] – rechts etwas vorn
 const STANCE = [0.12, -0.07, -0.11, 0.09];
 const FLOURISH_T = 0.9; // Dauer des Degen-Kunststücks im Stehen
+// Heiltrank (Y): in den Mantel greifen, Fläschchen zum Mund, trinken – langsam gehen geht, angreifen/rollen nicht
+const HEAL_T = 1.35, HEAL_AT = 0.78, HEAL_HP = 45, POTIONS = 3, EMPTY_T = 0.75;
 const WRIST_WALK = 0.95, WRIST_RUN = 2.0; // Winkel Klinge ↔ Unterarm beim Tragen (Gehen: nach vorn, Rennen: nach hinten)
 function stepK(A, t) {
   const a0 = A.act[0] - 0.1, a1 = A.act[1], b0 = A.act[1] + 0.04, b1 = A.T - 0.04;
@@ -157,6 +159,7 @@ export class Player {
     this.targets = []; this.onHit = null; // (Ziel, Richtung, schwer)
     this.onThrow = null;              // (Startpunkt, Richtung) → Karte losschicken
     this.queued = false;
+    this.potions = POTIONS; this.maxPotions = POTIONS; this.onHeal = null;
     this.t = 0; this.walk = 0; this.moveK = 0; this.time = 0;
     this.rollDir = new THREE.Vector2(0, 1);
     this.root = new THREE.Group();
@@ -185,6 +188,7 @@ export class Player {
   revive(x, z, yaw) {
     this.pos.set(x, 0, z); this.yaw = yaw; this.vel.set(0, 0);
     this.hp = this.maxHp; this.st = this.maxSt; this.exhausted = false; this.state = 'idle'; this.t = 0; this.atk = null; this.iframe = 1;
+    this.potions = this.maxPotions;
   }
 
   // ---------- Platzhalter (Grundformen) ----------
@@ -260,6 +264,15 @@ export class Player {
     { const n = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); }, I = READY_POSE, ar = n(I.arm), bl = n(I.blade);
       let fo = n(I.fore); const d = fo[0] * bl[0] + fo[1] * bl[1] + fo[2] * bl[2]; fo = n(fo.map((x, i) => x - 0.8 * d * bl[i]));
       for (let i = 0; i < 3; i++) READY_HAND[i] = ar[i] * this.arm.aR + fo[i] * this.arm.bR; }
+    // Heiltrank: kleines bauchiges Fläschchen mit warm glühender Glut-Essenz
+    this.flask = new THREE.Group();
+    const glass = new THREE.MeshToonMaterial({ color: 0x9fb4c0, transparent: true, opacity: 0.45, gradientMap: GRADIENT });
+    const ess = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.8, 0.25), toneMapped: false });
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 14, 10), glass); this.flask.add(bulb);
+    const liq = new THREE.Mesh(new THREE.SphereGeometry(0.036, 12, 8), ess); liq.position.y = -0.006; this.flask.add(liq);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.05, 10), glass); neck.position.y = 0.06; this.flask.add(neck);
+    const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.014, 0.02, 10), toon(0x6a4628)); cork.position.y = 0.092; this.flask.add(cork);
+    this.flask.visible = false; this.root.parent.add(this.flask);
     // linke Faust (beidhändiger Griff beim schweren Schlag): gespiegelte Faust am Griff unter der rechten
     this.fistL = buildFist(); this.fistL.scale.set(1, -1, 1); this.fistL.visible = false; this.root.parent.add(this.fistL);
     this.bladeD = new THREE.Vector3(0, 0, 1);
@@ -295,7 +308,7 @@ export class Player {
    * aimDir = Kamerarichtung (x, z) für Würfe ohne Ziel
    */
   update(dt, mv, c, lockTarget, aimDir) {
-    let { run, roll, card: thr, light, heavy } = c || {};
+    let { run, roll, card: thr, light, heavy, heal } = c || {};
     this.t += dt; this.time += dt;
     const ml = Math.hypot(mv.x, mv.z);
 
@@ -304,7 +317,17 @@ export class Player {
     else if (this.state !== 'roll') this.st = Math.min(this.maxSt, this.st + 38 * dt);
     if (this.exhausted && this.st > 30) this.exhausted = false;
 
-    if (this.state === 'hurt' || this.state === 'dead') { light = heavy = thr = roll = false; }
+    if (this.state === 'hurt' || this.state === 'dead') { light = heavy = thr = roll = heal = false; }
+    // ---------- Heiltrank ----------
+    if (this.state === 'heal') {
+      light = heavy = thr = roll = false;
+      if (!this.healEmpty && !this.healed && this.t >= HEAL_AT) {
+        this.healed = true; this.potions--; this.hp = Math.min(this.maxHp, this.hp + HEAL_HP);
+        if (this.onHeal) this.onHeal(this.pos);
+      }
+      if (this.t >= (this.healEmpty ? EMPTY_T : HEAL_T)) { this.state = 'idle'; this.t = 0; }
+    }
+    if (heal && this.state === 'idle') { this.state = 'heal'; this.t = 0; this.healed = false; this.healEmpty = this.potions <= 0; if (this.onDrink) this.onDrink(this.healEmpty); }
     // ---------- Degen-Angriffe ----------
     if (this.state === 'attack') {
       const A = this.atk.a;
@@ -389,7 +412,7 @@ export class Player {
       if (at.t >= A.act[0] && at.t <= A.act[1]) for (const tg of this.targets) {
         if (at.hit.has(tg) || tg.dead) continue;
         const dx = tg.pos.x - this.pos.x, dz = tg.pos.z - this.pos.z, d = Math.hypot(dx, dz);
-        if (d > A.range + 0.3) continue;
+        if (d - (tg.radius || 0) > A.range + 0.3) continue; // große Gegner: Reichweite bis zur Körperoberfläche
         if (Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) > A.arc && d > 0.6) continue;
         at.hit.add(tg);
         this.hitStop = A.heavy ? 0.1 : 0.05;
@@ -409,8 +432,8 @@ export class Player {
     } else {
       const running = run && ml > 0.3 && !this.exhausted && this.st > 0;
       if (running) { this.st -= RUN_COST * dt; this.stDelay = 0.5; if (this.st <= 0) { this.st = 0; this.exhausted = true; } }
-      const throwing = this.state === 'throw';
-      const spd = (running && !throwing ? RUN : lockTarget || throwing ? LOCK_WALK : WALK) * Math.min(1, ml) * (throwing ? 0.5 : 1);
+      const throwing = this.state === 'throw', healing = this.state === 'heal';
+      const spd = (running && !throwing && !healing ? RUN : lockTarget || throwing || healing ? LOCK_WALK : WALK) * Math.min(1, ml) * (throwing ? 0.5 : healing ? 0.4 : 1);
       this.vel.x = lerp(this.vel.x, mv.x * spd, damp(12, dt));
       this.vel.y = lerp(this.vel.y, mv.z * spd, damp(12, dt));
       let want = null;
@@ -626,6 +649,24 @@ export class Player {
       aim(R.LeftArm, R.LeftForeArm, bodyDir(0.4, -0.7, 0.45, vB), open * 0.8);
       aim(R.LeftForeArm, R.LeftHand, bodyDir(-0.6, 0.1, 0.8, vB), open * 0.8);
     }
+    // Heiltrank: linke Hand holt das Fläschchen aus dem Mantel (Gürtel), führt es zum Mund, Kopf in den Nacken – leer: Kopfschütteln
+    this.flask.visible = false;
+    if (this.state === 'heal') {
+      const tt = this.t, T = this.healEmpty ? EMPTY_T : HEAL_T;
+      const w = smooth(tt / 0.16) * (1 - smooth((tt - (T - 0.22)) / 0.22));
+      const up = this.healEmpty ? 0 : smooth((tt - 0.24) / 0.3) * (1 - smooth((tt - 1.0) / 0.25));
+      const drink = this.healEmpty ? 0 : smooth((tt - 0.5) / 0.16) * (1 - smooth((tt - 0.92) / 0.14));
+      R.Head.updateWorldMatrix(true, false); R.Head.getWorldPosition(vC);
+      const mouth = vC.add(vD.set(0, 0.05, 0.13).applyQuaternion(qBody));
+      const belt = vE.set(0.2, 0.98, 0.16).applyQuaternion(qBody).add(this.root.position); belt.y += this.pivot.position.y - CENTER;
+      const tgt = vF.copy(belt).lerp(vT.copy(mouth).add(vP.set(-0.01, -0.1, 0.04).applyQuaternion(qBody)), up);
+      R.LeftArm.updateWorldMatrix(true, false); R.LeftArm.getWorldPosition(vB);
+      armIK(vB, tgt, this.arm.aL, this.arm.bL, bodyDir(0.6, -0.8, 0.05, vP), vH, vK);   // Ellbogen unten, vor der Brust
+      aim(R.LeftArm, R.LeftForeArm, vH, w); aim(R.LeftForeArm, R.LeftHand, vK, w);
+      bend(R.Neck, AX, -0.3 * drink); bend(R.Head, AX, -0.25 * drink);
+      if (this.healEmpty) bend(R.Head, AY, Math.sin(tt * 18) * 0.18 * smooth((tt - 0.25) / 0.1) * (1 - smooth((tt - 0.6) / 0.12)));
+      this.flaskOn = !this.healEmpty && tt > 0.16 && tt < T - 0.12;
+    } else this.flaskOn = false;
     // Stockdegen: Angriff (Schlüsselhaltungen) oder gezogene Klinge in Bereitschaft
     let bladeOn = false;
     if (this.state === 'attack' || (this.drawn && this.state !== 'throw')) {
@@ -837,6 +878,15 @@ export class Player {
     vB.copy(this.sword.position).addScaledVector(this.bladeD, BLADE_L + 0.015);
     this.trail.update(vC, vB, trailOn, at && at.a.heavy);
 
+    // 4a) Heiltrank in der linken Hand: Hals zeigt zum Mund, beim Trinken kippt er
+    if (this.flaskOn) {
+      R.LeftHand.getWorldPosition(vB); R.Head.getWorldPosition(vC);
+      const mouth = vC.add(vD.set(0, 0.05, 0.13).applyQuaternion(qBody));
+      this.flask.position.copy(vB).add(vE.set(-0.015, 0.05, 0.06).applyQuaternion(qBody));
+      const dir = vF.subVectors(mouth, this.flask.position).normalize();
+      this.flask.quaternion.setFromUnitVectors(AY, dir);
+      this.flask.visible = true;
+    }
     // 4b) Karte in der rechten Hand: taucht beim Ziehen aus dem Mantel auf, verschwindet beim Loslassen
     const show = this.state === 'throw' && this.t > 0.2 && !this.released;
     this.handCard.visible = show;
