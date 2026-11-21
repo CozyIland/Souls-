@@ -154,7 +154,11 @@
   `HEAL_AT`): linke Hand holt das Fläschchen (`flask`, Glut-Essenz) vom Gürtel zum Mund (`armIK`), Kopf in den Nacken; langsam gehen geht,
   angreifen/rollen nicht; leer → Kopfschütteln. Auffüllen nach Tod (`revive`) und nach dem Sieg. Anzeige `#potions`, Funken `onHeal` (main.js).
 - **Stufen-System** (`src/stufe.js`, Klasse `Werte`): Seelen `souls` (Hund 10, Boss 1500 – `SOULS`, über `onDeath` von Hund/Boss →
-  `gainSouls` in main.js, „+n“ am Zähler `#souls`), Stufe 1 … `MAX_LV` 20 = 1 + verteilte Punkte, Kosten `cost(lv)`: 50 → 100 → 200, danach
+  `gainSouls` in main.js, „+n“ am Zähler `#souls`), Stufe 1 … `MAX_LV` 20 = 1 + verteilte (`spent`) + **freie Punkte** `frei`
+  (NIE automatisch verteilen – der Spieler wählt selbst; `levelUp(k)` nimmt erst einen freien Punkt, sonst kauft es am Stein eine Stufe;
+  Testmodus `setLevel` gibt/nimmt freie Punkte; +1-Knöpfe auf der Charakterseite überall, solange Punkte frei sind). Leben-/Ausdauer-Leiste
+  wachsen mit: Länge = Wert × `BAR_PX` 2,4 px (main.js `applyStats`, höchstens 60 vw). Oben links davor das **Porträt** `#portrait`
+  (`bilder/portrait.jpg` = Gesicht aus `konzept/hauptcharakter.png`, 192 px; per `bildUrl` gesetzt) mit Stufe `#lvBadge` unten rechts. Kosten `cost(lv)`: 50 → 100 → 200, danach
   je +50 % (auf 10 gerundet; Stufe 20 ≈ 131.000). Werte (Start je `BASE` 10): **Ausdauer** (+6 Leben, +5 Ausdauer je Punkt), **Stärke**
   (Degen, vor allem schwer; Haltungsschaden), **Trickreich** (leichte Schläge, Rolle und Schläge kosten weniger Ausdauer), **Magie**
   (Kartenschaden `cardMods` in karten.js, Karte kostet weniger). `mods()` → `player.applyStats` (Leben/Ausdauer, `player.mods` für Schaden und
@@ -218,7 +222,7 @@
   `buildWracks` (aus `buildWorld` nach `mergeStatic`) zeichnet sie als EIN `InstancedMesh` aus `models/autowrack.glb` (Meshy-Muscle-Car, rostig
   und bemoost, mit `glb_lod.py` auf 16.000 Dreiecke; Modell: Länge entlang x, vorn bei −x) + Umriss-Instanzen (teilen `instanceMatrix`).
   Je Auto aus der Lage gewürfelt (`hash`): Lackfarbe `PAINT` (Shader dreht nur den Farbton des roten Lacks – Moos, Rost, Glas bleiben),
-  Sättigung/Helligkeit, ausgebrannt (Ruß), Schieflage, eingesunken, Größe ±5 %, ausgebrannte teils auf dem Dach, `roof` = Matratze.
+  Sättigung/Helligkeit, ausgebrannt (Ruß), Schieflage, eingesunken, Größe ±5 %, ausgebrannte teils auf dem Dach. Keine Matratze mehr auf dem Dach (`roof` wird bei den Meshy-Autos ignoriert – steckte im Blech).
   Fehlt das Modell → `P.carBox` (alte Kasten-Autos).
 - **Hochhäuser im Hintergrund** (`src/hochhaeuser.js`): verlassene, überwucherte Plattenbauten (Meshy) statt der beiden nahen
   Skyline-Ringe (nur der ferne Ring bleibt). `plan()`: Raster um die Stadt (33 m, verschoben, Lücken), nicht auf Straßen/Häuserzeilen/Arena

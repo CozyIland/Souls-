@@ -2,11 +2,11 @@
 // mit tools/glb_lod.py auf 16.000 Dreiecke verkleinert) – als EIN InstancedMesh gezeichnet (ein Zeichenaufruf für alle).
 // Damit es nicht nach Kopien aussieht, bekommt jedes Auto eigene Werte (aus seiner Lage gewürfelt, also immer gleich):
 // Lackfarbe (nur der Lack wird im Farbton gedreht – Moos, Rost und Glas bleiben), Sättigung/Helligkeit, ausgebrannt (dunkel, fast
-// grau), leichte Schieflage (platter Reifen), etwas eingesunken, Größe ±5 %, manche liegen auf dem Dach, manche tragen eine Matratze.
+// grau), leichte Schieflage (platter Reifen), etwas eingesunken, Größe ±5 %, manche liegen auf dem Dach.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ladeModell } from './modelle.js';
-import { GRADIENT, toon } from './toon.js';
+import { GRADIENT } from './toon.js';
 
 const URL = 'models/autowrack.glb';
 // Modell: Länge entlang x (1,9 Einheiten, vorn bei −x), Höhe 0,51 (Unterkante −0,255), Breite 0,84
@@ -15,7 +15,6 @@ const K = CAR_L / 1.9, LIFT = 0.255, HEIGHT = 0.51 * K;
 // Lackfarben als Drehung des Farbtons (rad) + Sättigung: rot (Original), orange, ocker, petrol, blau, lila, grau, weißlich
 const PAINT = [[0, 1], [0.45, 0.95], [0.85, 0.7], [2.6, 0.85], [3.7, 0.9], [4.6, 0.75], [0, 0.12], [3.4, 0.25]];
 export const carSpots = [];
-const Y_AX = new THREE.Vector3(0, 1, 0);
 
 /** Stelle für ein Wrack merken (aus requisiten.js car()) */
 export function carSpot(x, z, rot, burnt, roof) { carSpots.push({ x, z, rot, burnt: !!burnt, roof: !!roof }); }
@@ -53,7 +52,6 @@ export function buildWracks(scene, fallback) {
     cars.castShadow = true; cars.receiveShadow = true; cars.userData.noMerge = true;
     const vars = new Float32Array(n * 4), M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler();
     const base = new THREE.Matrix4().makeRotationY(Math.PI / 2).multiply(new THREE.Matrix4().makeScale(K, K, K)).multiply(new THREE.Matrix4().makeTranslation(0, LIFT, 0));
-    const mattress = toon(0x7a6a58);
     carSpots.forEach((c, i) => {
       const r = (k) => hash(c.x, c.z, k);
       const p = PAINT[Math.floor(r(1) * PAINT.length)];
@@ -69,13 +67,7 @@ export function buildWracks(scene, fallback) {
       T.multiply(new THREE.Matrix4().makeScale(s, s, s * (0.97 + 0.06 * r(9)))).multiply(base);
       M.makeTranslation(c.x, (flip ? HEIGHT * s * 0.93 : 0) - sink, c.z).multiply(T);
       cars.setMatrixAt(i, M);
-      if (c.roof && !flip) { // Matratze auf dem Dach
-        const m = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.13, 1.6), mattress);
-        m.position.set(0, HEIGHT * 0.9, 0.1); m.rotation.set((r(10) - 0.5) * 0.15, (r(11) - 0.5) * 0.4, (r(12) - 0.5) * 0.1);
-        const h = new THREE.Group(); h.add(m); h.position.set(c.x, -sink, c.z);
-        h.quaternion.setFromAxisAngle(Y_AX, c.rot).multiply(Q); h.scale.setScalar(s);
-        m.castShadow = true; h.userData.noMerge = true; scene.add(h);
-      }
+      // (früher lag auf manchen Dächern eine Matratze – passt nicht zur Dachform des Meshy-Autos, steckte halb im Blech → entfernt)
     });
     geo.setAttribute('aVar', new THREE.InstancedBufferAttribute(vars, 4));
     cars.instanceMatrix.needsUpdate = true; cars.computeBoundingSphere();

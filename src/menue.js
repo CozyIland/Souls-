@@ -50,15 +50,19 @@ export class Menue {
   }
 
   renderChar() {
-    const w = this.o.werte, m = w.mods(), lv = w.lv, next = w.next, can = this.atStone && w.canUp();
+    const w = this.o.werte, m = w.mods(), lv = w.lv, next = w.next, frei = w.frei;
+    const can = frei > 0 || (this.atStone && w.canUp()), showUp = frei > 0 || this.atStone;   // + nur dort, wo man wirklich etwas setzen kann
     const el = $('page-char');
+    const note = frei > 0 ? `Du hast <b>${frei} freie${frei === 1 ? 'n' : ''} Punkt${frei === 1 ? '' : 'e'}</b> – wähle selbst, welcher Wert um 1 steigt.`
+      : this.atStone ? (can ? 'Wähle einen Wert, der um 1 steigt (kostet die Seelen für die nächste Stufe).' : 'Am Seelenstein – zu wenig Seelen für die nächste Stufe.')
+      : 'Aufsteigen kannst du am Seelenstein am Anfang der Straße.';
     el.innerHTML = `
       <div class="mhead"><span class="lv">Stufe ${lv}</span><span class="sl">Seelen ${w.souls}</span></div>
       <p class="mnote gold">${lv >= MAX_LV ? 'Höchste Stufe erreicht.' : `Nächste Stufe: ${next} Seelen` + (w.souls < next ? ` (es fehlen ${next - w.souls})` : '')}</p>
-      <p class="mnote">${this.atStone ? (can ? 'Wähle einen Wert, der um 1 steigt.' : 'Am Seelenstein – zu wenig Seelen für die nächste Stufe.') : 'Aufsteigen kannst du am Seelenstein am Anfang der Straße.'}</p>
+      <p class="mnote${frei > 0 ? ' frei' : ''}">${note}</p>
       ${STATS.map((s) => `
         <div class="stat"><span class="ic">${s.icon}</span><span class="nm">${s.n}</span><span class="val">${w.s[s.k]}</span>
-          ${this.atStone ? `<button class="sbtn" data-up="${s.k}" ${can ? '' : 'disabled'}>+1</button>` : '<span></span>'}
+          ${showUp ? `<button class="sbtn" data-up="${s.k}" ${can ? '' : 'disabled'}>+1</button>` : '<span></span>'}
           <span class="ds">${s.d}</span></div>`).join('')}
       <div class="derived">
         <span>Leben</span><span>${m.maxHp}</span>
@@ -99,7 +103,7 @@ export class Menue {
     const w = this.o.werte, el = $('page-test');
     el.innerHTML = `
       <div class="mhead"><span class="lv">Testmodus</span><span class="sl">Stufe ${w.lv} · Seelen ${w.souls}</span></div>
-      <p class="mnote">Zum Ausprobieren: Stufe direkt einstellen (Punkte werden reihum verteilt) oder jeden Wert einzeln.</p>
+      <p class="mnote">Zum Ausprobieren: Stufe direkt einstellen – neue Stufen geben freie Punkte, die du unter „Charakter“ selbst verteilst${w.frei ? ` (gerade ${w.frei} frei)` : ''}.</p>
       <div class="trow"><span class="tl">Stufe</span><button class="sbtn" data-lv="-1">−</button><span class="tv">${w.lv}</span><button class="sbtn" data-lv="1">+</button>
         <button class="sbtn" data-lv="-99">Stufe 1</button><button class="sbtn" data-lv="99">Stufe 20</button></div>
       ${STATS.map((s) => `<div class="trow"><span class="tl">${s.icon} ${s.n}</span><button class="sbtn" data-b="${s.k}" data-d="-1">−</button><span class="tv">${w.s[s.k]}</span><button class="sbtn" data-b="${s.k}" data-d="1">+</button></div>`).join('')}

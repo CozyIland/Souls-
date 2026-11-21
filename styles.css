@@ -9,9 +9,19 @@ html, body {
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; display: none; }
 #hud.on { display: block; }
-.bars { position: absolute; left: 24px; top: 22px; width: min(340px, 45vw); }
-.bar { height: 12px; margin-bottom: 6px; background: rgba(0, 0, 0, 0.65); border: 1px solid rgba(227, 180, 90, 0.5); transform: skewX(-18deg); }
-.bar.st { width: 85%; height: 8px; }
+/* Leisten wachsen mit den Werten: Länge setzt main.js (applyStats) aus Leben/Ausdauer – 100 = 240 px, höchstens 60 % der Bildbreite */
+.bars { position: absolute; left: 24px; top: 18px; display: flex; align-items: flex-start; gap: 14px; }
+.barCol { padding-top: 6px; }
+/* Porträt oben links: Gesicht des Magiers im Goldrahmen, Stufe klein unten rechts */
+#portrait { position: relative; flex: none; width: 66px; height: 66px; background: #1a1210 center / cover no-repeat;
+  border: 2px solid rgba(227, 180, 90, 0.85); box-shadow: 0 0 0 1px #000, 0 2px 10px rgba(0, 0, 0, 0.7), inset 0 0 12px rgba(0, 0, 0, 0.55); }
+#lvBadge { position: absolute; right: -9px; bottom: -9px; min-width: 24px; height: 24px; padding: 0 4px; display: flex; align-items: center; justify-content: center;
+  font-family: Georgia, serif; font-size: 13px; font-weight: normal; color: #ffe6b0; background: radial-gradient(#3a2418, #120a06);
+  border: 1.5px solid var(--gold); border-radius: 12px; box-shadow: 0 0 6px rgba(0, 0, 0, 0.8); }
+#lvBadge.pop { animation: potpop 0.5s ease-out; }
+.bar { width: 240px; max-width: 60vw; height: 12px; margin-bottom: 6px; background: rgba(0, 0, 0, 0.65); border: 1px solid rgba(227, 180, 90, 0.5); transform: skewX(-18deg);
+  transition: width 0.6s ease-out; }
+.bar.st { height: 8px; }
 .bar i { display: block; height: 100%; width: 100%; transition: width 0.08s linear; }
 .hp i { background: linear-gradient(#e2474a, #8c1a24); }
 .st i { background: linear-gradient(#7ad37a, #2f7a36); }
@@ -144,6 +154,8 @@ body.menuOpen #prompt, body.menuOpen #hint, body.menuOpen #tUse, body.menuOpen #
 .mhead .sl { font-family: Georgia, serif; font-size: 18px; color: #ffd890; }
 .mnote { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
 .mnote.gold { color: var(--gold); }
+.mnote.frei { color: #fff; background: rgba(227, 180, 90, 0.14); border-left: 3px solid var(--gold); padding: 6px 10px; }
+.mnote.frei b { color: #ffd890; }
 .stat { display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 10px; padding: 7px 8px; border-bottom: 1px solid rgba(227, 180, 90, 0.15); }
 .stat .ic { font-size: 18px; color: var(--gold); text-align: center; }
 .stat .nm { font-size: 16px; color: #fff; }

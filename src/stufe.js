@@ -28,22 +28,31 @@ export function cost(lv) {
 const KEY = 'aschenblatt-stufe';
 export class Werte {
   constructor() { this.reset(); this.load(); }
-  reset() { this.souls = 0; this.s = { aus: BASE, str: BASE, tri: BASE, mag: BASE }; this.god = false; this.karte = 'herzass'; this.karten = ['herzass']; this.waffe = 'degen'; this.waffen = ['degen']; this.truhe = false; }
-  /** Stufe = 1 + alle verteilten Punkte */
-  get lv() { return 1 + STATS.reduce((n, x) => n + this.s[x.k] - BASE, 0); }
+  reset() { this.souls = 0; this.s = { aus: BASE, str: BASE, tri: BASE, mag: BASE }; this.frei = 0; this.god = false; this.karte = 'herzass'; this.karten = ['herzass']; this.waffe = 'degen'; this.waffen = ['degen']; this.truhe = false; }
+  /** verteilte Punkte */
+  get spent() { return STATS.reduce((n, x) => n + this.s[x.k] - BASE, 0); }
+  /** Stufe = 1 + verteilte + noch freie Punkte (freie Punkte verteilt der Spieler selbst) */
+  get lv() { return 1 + this.spent + this.frei; }
   get next() { return cost(this.lv + 1); }
   canUp() { return this.lv < MAX_LV && this.souls >= this.next; }
-  /** am Seelenstein: einen Wert erhöhen (kostet Seelen) */
+  /** einen Punkt auf Wert k setzen: erst freie Punkte, sonst am Seelenstein mit Seelen eine Stufe kaufen */
   levelUp(k) {
-    if (!this.canUp() || !(k in this.s)) return false;
+    if (!(k in this.s)) return false;
+    if (this.frei > 0) { this.frei--; this.s[k]++; this.save(); return true; }
+    if (!this.canUp()) return false;
     this.souls -= this.next; this.s[k]++; this.save(); return true;
   }
   addSouls(n) { this.souls = Math.max(0, Math.round(this.souls + n)); this.save(); }
-  /** Testmodus: Stufe direkt setzen – Punkte reihum auf die vier Werte verteilt */
+  /** Testmodus: Stufe direkt setzen – neue Stufen geben FREIE Punkte (der Spieler verteilt sie selbst, nichts automatisch).
+   *  Weniger Stufen: erst freie Punkte weg, dann vom höchsten Wert; Stufe 1 = alles zurück auf den Startwert. */
   setLevel(lv) {
     lv = Math.max(1, Math.min(MAX_LV, lv));
-    for (const x of STATS) this.s[x.k] = BASE;
-    for (let i = 0; i < lv - 1; i++) this.s[STATS[i % STATS.length].k]++;
+    if (lv === 1) { for (const x of STATS) this.s[x.k] = BASE; this.frei = 0; }
+    while (this.lv < lv) this.frei++;
+    while (this.lv > lv) {
+      if (this.frei > 0) { this.frei--; continue; }
+      const top = STATS.reduce((a, x) => (this.s[x.k] > this.s[a.k] ? x : a), STATS[0]); this.s[top.k]--;
+    }
     this.save();
   }
   /** Testmodus: einen Wert frei verändern (Stufe bleibt im Rahmen 1 … 20) */
@@ -67,11 +76,11 @@ export class Werte {
       resPhys: Math.min(0.4, 0.01 * a), resMag: Math.min(0.4, 0.015 * m),
     };
   }
-  save() { try { localStorage.setItem(KEY, JSON.stringify({ souls: this.souls, s: this.s, god: this.god, karte: this.karte, karten: this.karten, waffe: this.waffe, waffen: this.waffen, truhe: this.truhe })); } catch (e) { /* kein Speicher – egal */ } }
+  save() { try { localStorage.setItem(KEY, JSON.stringify({ souls: this.souls, s: this.s, frei: this.frei, god: this.god, karte: this.karte, karten: this.karten, waffe: this.waffe, waffen: this.waffen, truhe: this.truhe })); } catch (e) { /* kein Speicher – egal */ } }
   load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (d && d.s) { this.souls = d.souls | 0; for (const x of STATS) this.s[x.k] = Math.max(BASE, d.s[x.k] | 0); this.god = !!d.god; }
+      if (d && d.s) { this.souls = d.souls | 0; for (const x of STATS) this.s[x.k] = Math.max(BASE, d.s[x.k] | 0); this.frei = Math.max(0, Math.min(MAX_LV - 1 - this.spent, d.frei | 0)); this.god = !!d.god; }
       if (d && Array.isArray(d.karten)) this.karten = [...new Set(['herzass', ...d.karten.filter((k) => typeof k === 'string')])];
       if (d && typeof d.karte === 'string' && this.karten.includes(d.karte)) this.karte = d.karte;
       // Truhe und Waffen NICHT übernehmen: jedes Spiel beginnt mit geschlossener Truhe und nur dem Stockdegen

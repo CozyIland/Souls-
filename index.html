@@ -19,10 +19,14 @@
 
 <div id="hud">
   <div class="bars">
-    <div class="bar hp"><i id="hpBar"></i></div>
-    <div class="bar st"><i id="stBar"></i></div>
-    <div id="godTag">UNVERWUNDBAR (Test)</div>
-    <div id="potions"><svg viewBox="0 0 24 32" width="20" height="27"><path d="M9 2h6v3h-1v4.2a9 9 0 1 1-4 0V5H9z" fill="rgba(160,190,205,.35)" stroke="#e3b45a" stroke-width="1.4"/><circle cx="12" cy="20" r="6.2" fill="#ff9a3a"/><circle cx="10" cy="18" r="1.6" fill="#ffe0a0"/></svg><b id="potN">3</b></div>
+    <!-- Porträt des Magiers (Bild setzt main.js über bildUrl, damit es auch in der Offline-Datei geht) mit der Stufe klein unten rechts -->
+    <div id="portrait"><b id="lvBadge">1</b></div>
+    <div class="barCol">
+      <div class="bar hp"><i id="hpBar"></i></div>
+      <div class="bar st"><i id="stBar"></i></div>
+      <div id="godTag">UNVERWUNDBAR (Test)</div>
+      <div id="potions"><svg viewBox="0 0 24 32" width="20" height="27"><path d="M9 2h6v3h-1v4.2a9 9 0 1 1-4 0V5H9z" fill="rgba(160,190,205,.35)" stroke="#e3b45a" stroke-width="1.4"/><circle cx="12" cy="20" r="6.2" fill="#ff9a3a"/><circle cx="10" cy="18" r="1.6" fill="#ffe0a0"/></svg><b id="potN">3</b></div>
+    </div>
   </div>
   <div id="bossBar"><div class="bname" id="bossName"></div><div class="bbar"><i id="bossLag"></i><i id="bossHp"></i></div></div>
   <div id="victory"><span>FEIND GEFÄLLT</span></div>

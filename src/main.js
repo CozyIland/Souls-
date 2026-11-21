@@ -7,6 +7,7 @@ import { WAFFEN } from './waffen.js';
 import { Werte, SOULS } from './stufe.js';
 import { Menue } from './menue.js';
 import { karteLaden } from './inventar.js';
+import { bildUrl } from './modelle.js';
 import { FogGate } from './nebel.js';
 import { Boss, BOSS_HP } from './boss.js';
 import { Player } from './player.js';
@@ -64,7 +65,12 @@ let passT = -1, victoryT = -1, chestT = -1, foundT = -1;
 // ---------- Stufen-System: Seelen sammeln, am Seelenstein aufsteigen ----------
 const werte = new Werte();
 const $ = (id) => document.getElementById(id);
-function applyStats() { const m = werte.mods(); player.applyStats(m); player.setWeapon(werte.waffe); cardMods.dmg = m.card; cardMods.critC = m.critC; cardMods.critD = m.critD; wurf.karte = werte.karte; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
+const BAR_PX = 2.4; // Leistenlänge je Punkt Leben/Ausdauer (100 → 240 px)
+$('portrait').style.backgroundImage = `url(${bildUrl('bilder/portrait.jpg')})`; // Porträt oben links (aus konzept/hauptcharakter.png)
+function applyStats() { const m = werte.mods(); player.applyStats(m);
+  const lvB = $('lvBadge'), lv = String(werte.lv);
+  if (lvB.textContent !== lv) { lvB.textContent = lv; lvB.classList.remove('pop'); void lvB.offsetWidth; lvB.classList.add('pop'); }
+  $('hpBar').parentElement.style.width = Math.round(m.maxHp * BAR_PX) + 'px'; $('stBar').parentElement.style.width = Math.round(m.maxSt * BAR_PX) + 'px'; player.setWeapon(werte.waffe); cardMods.dmg = m.card; cardMods.critC = m.critC; cardMods.critD = m.critD; wurf.karte = werte.karte; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
 applyStats(); player.hp = player.maxHp; player.st = player.maxSt;
 if (werte.truhe) truhe.setOpen();
 let soulShow = werte.souls;
