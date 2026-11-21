@@ -6,7 +6,8 @@
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
-const here = path.dirname(new URL(import.meta.url).pathname);
+import { fileURLToPath } from 'node:url';
+const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.argv[2] || path.join(here, '..');
 const out = process.argv[3] || path.join(repo, 'Aschenblatt.html');
 const tmp = fs.mkdtempSync(path.join(here, 'src-'));

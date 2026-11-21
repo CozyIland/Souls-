@@ -217,7 +217,8 @@
   Skyline-Ringe (nur der ferne Ring bleibt). `plan()`: Raster um die Stadt (33 m, verschoben, Lücken), nicht auf Straßen/Häuserzeilen/Arena
   (`KEEP`); nahe Reihe `models/plattenbau.glb` (30.000 Dreiecke), ferne `models/plattenbau_fern.glb` (nur die Form, 8.000 Dreiecke,
   Beton-Farbe – unter ~30.000 Dreiecken geht das Bild dieses Modells kaputt) – je ein `InstancedMesh`, keine Schatten, Dunst nur zu 55/75 % (sonst nur graue Flächen). Je Haus: Höhe ×0,85…1,5, Breite/Tiefe, Drehung (4 Seiten + schief), Farbton `TINT`,
-  manche geneigt oder eingesunken (nicht spiegeln – sonst stimmt das Licht nicht).
+  manche geneigt oder eingesunken (nicht spiegeln – sonst stimmt das Licht nicht). `fixNormals` beim Laden: das ferne Modell hat
+  Punkte mit Normale der Länge 0 → NaN im Shader → Bloom verschmiert das zu großen schwarzen Flächen (betrifft jedes Modell nach `glb_lod.py`).
 - `tools/glb_lod.py quelle_klein.glb ziel.glb Dreiecke [ohnebild]` – verkleinert die FORM riesiger Meshy-Modelle, ohne dass das Bild auf
   der Oberfläche kaputtgeht (MeshLab-Vereinfachung mit Textur; braucht `pip install pymeshlab` und unter Linux `libopengl0`).
   gltfpack `-sa` zerstört bei Meshy die Bildkoordinaten; zweimal hintereinander vereinfachen auch – immer vom Original ausgehen.

@@ -32,12 +32,27 @@ function plan() {
   return out;
 }
 
+/** Das verkleinerte ferne Modell hat Punkte ohne Flächenrichtung (Länge 0). Im Shader wird daraus „keine Zahl“ (NaN),
+ *  und der Leuchtfilter (Bloom) verschmiert diese Punkte zu großen schwarzen Flächen über das ganze Bild.
+ *  Darum: Richtungen neu berechnen und was dann noch fehlt nach oben zeigen lassen. */
+function fixNormals(geo) {
+  const ok = (n, i) => Math.hypot(n.getX(i), n.getY(i), n.getZ(i)) > 0.5;
+  let n = geo.attributes.normal, bad = 0;
+  if (n) for (let i = 0; i < n.count; i++) if (!ok(n, i)) bad++;
+  if (n && !bad) return;
+  geo.computeVertexNormals();
+  n = geo.attributes.normal;
+  for (let i = 0; i < n.count; i++) if (!ok(n, i)) n.setXYZ(i, 0, 1, 0);
+  n.needsUpdate = true;
+}
+
 export function buildHochhaeuser(scene) {
   const spots = plan();
   const make = (url, list, next) => ladeModell(new GLTFLoader(), url, (g) => {
     let src = null; g.scene.traverse((m) => { if (m.isMesh && !src) src = m; });
     if (next) next();
     if (!src || !list.length) return;
+    fixNormals(src.geometry);
     // fernes Modell = nur Form (keine Bildkoordinaten): schlichter Beton, der Dunst macht den Rest
     const mat = src.geometry.attributes.uv
       ? new THREE.MeshToonMaterial({ map: src.material.map, normalMap: src.material.normalMap, gradientMap: GRADIENT })
