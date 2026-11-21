@@ -239,6 +239,8 @@
 ## Arbeitsweise
 - Klare deutsche Commit-Nachrichten.
 - Nach jeder fertigen Änderung eine spielbare Offline-Datei bauen und direkt mitschicken.
+  Am Windows-PC zusätzlich hochladen: `powershell -ExecutionPolicy Bypass -File tools\veroeffentlichen.ps1` → Release „stand“,
+  fester Download-Link (auch fürs Handy): https://github.com/CozyIland/Souls-/releases/download/stand/Aschenblatt.html
 - Erfahrungen aus „Der Lernende“ (in der Git-Geschichte nachlesbar): Mixamo-Skelett mit Three.js
   (`player3d.js`: Animationszeit selbst setzen, Haltung per Knochen, Mixer schreibt nur bei Änderungen),
   Controller über die Gamepad-API (`input.js`), Offline-Einzeldatei (`tools/einzeldatei.mjs`),
