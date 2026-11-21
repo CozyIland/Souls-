@@ -11,6 +11,8 @@ import { canvasTex, asphaltTex, sidewalkTex, concreteTex, skyTex, skylineTex, we
 import { building, FLOOR } from './gebaeude.js';
 import * as P from './requisiten.js';
 import * as K from './kleinkram.js';
+import { buildWracks } from './wracks.js';
+import { buildHochhaeuser } from './hochhaeuser.js';
 
 export { colliders, blockers, resolve };
 export const targets = P.targets;
@@ -147,9 +149,8 @@ function horizon(scene) {
     return m;
   };
   // fern = heller und dunstiger (Luftperspektive)
+  // nur noch der ferne Horizont – davor stehen echte Hochhäuser (hochhaeuser.js)
   ring(170, 80, '#7c4438', 'rgba(150,80,56,A)', 5, 3, -8, 0.9).renderOrder = -3;
-  ring(140, 62, '#5c3230', 'rgba(130,70,52,A)', 9, 3, -6, 0.7).renderOrder = -2;
-  ring(112, 40, '#3e2426', 'rgba(116,64,48,A)', 13, 4, -4, 0.5).renderOrder = -1;
   const tex = smokeTex();
   for (const [x, z, sc] of [[-60, -70, 1], [70, -50, 0.8], [40, 85, 1.2], [-85, 30, 0.9]]) {
     for (let i = 0; i < 9; i++) {
@@ -372,6 +373,8 @@ export function buildWorld(scene, renderer) {
   K.scatter(scene, spots);
 
   mergeStatic(scene);
+  buildWracks(scene, (c) => P.carBox(scene, c)); // Autowracks: Meshy-Modell, jedes anders (wracks.js)
+  buildHochhaeuser(scene);                         // Plattenbauten rund um die Stadt (hochhaeuser.js)
   // Pfützen spiegeln den Himmel (nur sie bekommen die Umgebungskarte)
   P.propMats().puddle.envMap = env; P.propMats().puddle.needsUpdate = true;
   weedField(scene);

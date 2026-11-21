@@ -199,7 +199,7 @@
 - **Seitenstraße** = Kartenstraße Ost (Sackgasse von der Kreuzung bis x ≈ 36, Sperre wie an der Westseite nur verschoben, dahinter
   Sandsäcke/Kiste/Feuertonne), Truhe `TRUHE` (33,4 / 0,8, Schloss nach Westen), drei Hunde davor (hund.js Startliste).
 - `src/world.js` – Straßen der toten Stadt: Boden, Gehwege mit Bordstein, Markierungen, Häuserzeilen (`rows`), Ruinenfeld,
-  Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), Skyline-Ringe + ferne Rauchsäulen (`horizon`), Asche & Glut.
+  Requisiten, Zeltstadt, Unkraut (`InstancedMesh`, Wind im Shader), ferner Skyline-Ring + Rauchsäulen (`horizon`), Asche & Glut.
   **Alle festen Teile werden am Ende nach Material zusammengefasst** (`mergeStatic`, behält Vertex-Farben; `userData.noMerge` = auslassen).
 - `src/gebaeude.js` – `building(scene, x, z, w, d, Stockwerke, Straßenseite)` (Stufe 2): Stile `STYLES` (Ziegel, Klinker, Putz, Gelb,
   Beton, Grün; reihum gemischt), Mauern mit Relief (`wallMaterialTex`: Farbe + Normal-Map, 1 Kachel = 2 m), **Fenster als echte
@@ -207,7 +207,22 @@
   Sturz oder Putzfaschen mit Schlussstein, Ladenfronten (Nischen mit `shopAtlasTex`, Pfeiler, Schildband), Sockel, Gesimse,
   Ecksteine. Geometrie wird je Material in `Acc` gesammelt (wenige Meshes). Dazu Schilder, Markisen, Balkone, Feuerleitern,
   Efeu, Kabel, Dachaufbauten oder abgebrochene Kante; Umriss als Kasten, Kollision + Kamera-Blocker.
-- `src/requisiten.js` – Autos (Profil ausgestanzt), Bus, Laternen, Strommasten + `wire`, Ampeln, Schilder, Container, Fässer,
+- **Autowracks** (`src/wracks.js`): alle `P.car(...)` merken nur die Stelle (`carSpot`) + Kollision (`CAR_L` 4,6 × `CAR_W` 2 m);
+  `buildWracks` (aus `buildWorld` nach `mergeStatic`) zeichnet sie als EIN `InstancedMesh` aus `models/autowrack.glb` (Meshy-Muscle-Car, rostig
+  und bemoost, mit `glb_lod.py` auf 16.000 Dreiecke; Modell: Länge entlang x, vorn bei −x) + Umriss-Instanzen (teilen `instanceMatrix`).
+  Je Auto aus der Lage gewürfelt (`hash`): Lackfarbe `PAINT` (Shader dreht nur den Farbton des roten Lacks – Moos, Rost, Glas bleiben),
+  Sättigung/Helligkeit, ausgebrannt (Ruß), Schieflage, eingesunken, Größe ±5 %, ausgebrannte teils auf dem Dach, `roof` = Matratze.
+  Fehlt das Modell → `P.carBox` (alte Kasten-Autos).
+- **Hochhäuser im Hintergrund** (`src/hochhaeuser.js`): verlassene, überwucherte Plattenbauten (Meshy) statt der beiden nahen
+  Skyline-Ringe (nur der ferne Ring bleibt). `plan()`: Raster um die Stadt (33 m, verschoben, Lücken), nicht auf Straßen/Häuserzeilen/Arena
+  (`KEEP`); nahe Reihe `models/plattenbau.glb` (30.000 Dreiecke), ferne `models/plattenbau_fern.glb` (nur die Form, 8.000 Dreiecke,
+  Beton-Farbe – unter ~30.000 Dreiecken geht das Bild dieses Modells kaputt) – je ein `InstancedMesh`, keine Schatten, Dunst nur zu 55/75 % (sonst nur graue Flächen). Je Haus: Höhe ×0,85…1,5, Breite/Tiefe, Drehung (4 Seiten + schief), Farbton `TINT`,
+  manche geneigt oder eingesunken (nicht spiegeln – sonst stimmt das Licht nicht).
+- `tools/glb_lod.py quelle_klein.glb ziel.glb Dreiecke [ohnebild]` – verkleinert die FORM riesiger Meshy-Modelle, ohne dass das Bild auf
+  der Oberfläche kaputtgeht (MeshLab-Vereinfachung mit Textur; braucht `pip install pymeshlab` und unter Linux `libopengl0`).
+  gltfpack `-sa` zerstört bei Meshy die Bildkoordinaten; zweimal hintereinander vereinfachen auch – immer vom Original ausgehen.
+  Originale von Auto (45 MB) und Plattenbau (195 MB) liegen nur auf dem Google Drive des Entwicklers (zu groß fürs Repo).
+- `src/requisiten.js` – Autos (Stelle + Kollision, siehe wracks.js; `carBox` als Ersatz), Bus, Laternen, Strommasten + `wire`, Ampeln, Schilder, Container, Fässer,
   Reifen, Kisten, Sandsäcke, Zäune, Zelte, Einkaufswagen, Haltestelle, Pfützen (spiegeln den Himmel), Papier, Schutt, Platten,
   Feuertonnen (`fires`), Spieltisch (Rastpunkt), Übungspuppen (`targets`).
 - `src/kleinkram.js` – Schutthaufen `rubbleHeap` (Kieshügel, kantige Brocken `rockGeo`, Betonstücke, Ziegel, Eisen), verstreute

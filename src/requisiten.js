@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { part, toon, outline } from './toon.js';
 import { seeded, TAU } from './util.js';
 import { block, blockRot } from './kollision.js';
+import { carSpot, CAR_L, CAR_W } from './wracks.js';
 import { rustTex, woodTex, fenceTex, tarpTex, signTex, glowTex, concreteTex, paperTex } from './texturen.js';
 
 const R = seeded(19);
@@ -69,7 +70,13 @@ function wheel(g, m, x, z, flat) {
   const t = mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 14), m.tire, g, x, flat ? 0.24 : 0.34, z, 0.015); t.rotation.z = Math.PI / 2;
   const r = mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.26, 8), m.rim, g, x, t.position.y, z); r.rotation.z = Math.PI / 2;
 }
+/** Autowrack: Stelle merken (gezeichnet wird das Meshy-Modell in wracks.js, mit eigener Farbe/Lage je Auto) + Kollision */
 export function car(scene, x, z, rot, burnt, roof) {
+  carSpot(x, z, rot, burnt, roof);
+  blockRot(x, z, CAR_W + 0.1, CAR_L, rot);
+}
+/** Ersatz, falls das Modell fehlt: Auto aus Grundformen */
+export function carBox(scene, { x, z, rot, burnt, roof }) {
   const m = mats(), g = new THREE.Group();
   const L = 4.3, W = 1.8;
   const paint = burnt ? m.burnt : pick(m.cars);
@@ -94,7 +101,6 @@ export function car(scene, x, z, rot, burnt, roof) {
   if (burnt) for (let i = 0; i < 3; i++) box(g, m.burnt, rr(0.3, 0.6), 0.04, rr(0.3, 0.6), rr(-0.6, 0.6), 1.46, rr(-0.8, 0.8), R(), R(), R());
   g.position.set(x, burnt ? -0.08 : 0, z); g.rotation.set(0, rot, rr(-0.04, 0.04));
   scene.add(g);
-  blockRot(x, z, 1.95, L, rot);
   return g;
 }
 
