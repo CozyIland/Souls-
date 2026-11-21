@@ -146,8 +146,13 @@
   `POISE_MAX` → stagger. Treffer: Kapsel-Körper (`axisPoint`, `hitTest` für Karten, `radius` für den Degen, `pos` = nächster Körperpunkt für
   Zielerfassung), schiebt den Magier aus dem Körper, bleibt in der Arena. `strike` trifft nur, wenn `player.damage` greift (Rolle weicht aus).
   Haltungen über den Halter (`y`, Neigung) + Knochen (`rotW`: Kopf/Hals schauen zum Magier, Kiefer, Beine einknicken `fold`, Pranke);
-  Beinknick-Werte `LP` gemessen (Pfoten bleiben am Boden). Die Glättung `sm` übernimmt nie NaN (früher fehlte beim ersten Betreten der Kopf,
-  weil die Atem-Uhr `it` im ersten Bild noch fehlte). Glut steigt vom Rücken (`embers`), Licht `glow`. `onSlam` → Staub, Rütteln.
+  Beinknick-Werte `LP` gemessen (Pfoten bleiben am Boden). **Alle Haltungsgrößen laufen über gedämpfte Federn** (`spring`, Zustand `this.F`
+  mit Lage x und Tempo v; Steifigkeit `OM` je Zustand × `OMK` je Größe, `ZETA` 0,88; Kopf/Hals hängen etwas nach) – auch Pranke
+  (`pawR/pawO/pawL`), Sprungbeine (`air`) und Schwanz: Zustandswechsel und abgebrochene Angriffe blenden weich, nichts springt.
+  Treffer = Stoß in die Federn (`this.kick` aus `onHit`), kein Zittern. Eigene Uhr `clk` (springt nie auf 0) für Schwanz und Atmen
+  (Lauern: schnelles Hecheln). Gehen: leichtes Wiegen/Auf-und-Ab (`sway`/`bob`). Vor/zurück weich (`gdir`). **Lauf-Clip ist keine saubere
+  Schleife** (Meshy, Beine springen bis 13°): `seam()` misst das beim Laden, `run2` (Kopie auf Zeit 0) wird auf den letzten 14 % weich
+  übergeblendet. Gemessen (40 s Kampf, Bild für Bild): stärkster Ruck ~4400 → ~450 rad/s². NaN wird in den Federn nie übernommen. Glut steigt vom Rücken (`embers`), Licht `glow`. `onSlam` → Staub, Rütteln.
   Bossleiste unten (`#bossBar`, helle Schadensanzeige `lag` läuft nach), Sieg: `#victory` „FEIND GEFÄLLT“. Kamera beim Erfassen weiter weg
   (`camDist`/`camPitch` in camera.js). Tod des Spielers → Boss `reset()`, Nebel offen.
 - **Heiltränke** (player.js): 3 pro Leben (`POTIONS`), Y / H / Handy 🧪 (`inp.heal`) → Zustand `heal` (`HEAL_T` 1,35 s, heilt `HEAL_HP` 45 bei

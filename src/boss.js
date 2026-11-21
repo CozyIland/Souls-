@@ -26,6 +26,23 @@ const LP = { cF: 0.8, cR: 0.3, lF: 0.7, lR: 0.2, sy: -0.15, sF: 0.2, sR: 0.1, gy
 const sm = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 const bump = (t, a, b) => sm((t - a) / Math.max(1e-3, b - a));  // 0 → 1 zwischen a und b
 
+// ---------- Federn statt einfacher Glättung ----------
+// Jede Haltungsgröße hat Lage UND Tempo (gedämpfte Feder). Früher lief die Haltung dem Ziel nur hinterher: bei jedem Zustandswechsel
+// (Lauern → Angriff, Angriff abgebrochen) sprang das Tempo schlagartig → ruckartig und hölzern. Die Feder beschleunigt und bremst weich.
+// OM = Steifigkeit je Zustand (höher = folgt schneller), OMK = Faktor je Größe (Kopf/Hals hängen etwas nach → wirkt lebendig).
+const OM = { sleep: 5, wake: 8, stalk: 7, bite: 17, swipe: 15, leap: 18, charge: 10, spin: 15, stomp: 14, howl: 9, stagger: 10, dead: 20 };
+const OMK = { neck: 0.85, head: 0.7, jaw: 1.6, tail: 0.55, pawR: 1.35, pawO: 1.35, pawL: 1.35, air: 1.2, legF: 1.1, legR: 1.1 };
+const ZETA = 0.88;           // knapp unter 1: kommt ohne Zappeln an, schwingt aber ganz leicht aus (wirkt schwer und organisch)
+const POSE = ['y', 'pitch', 'roll', 'neck', 'head', 'jaw', 'legF', 'legR', 'tail', 'pawR', 'pawO', 'pawL', 'air'];
+/** eine Feder-Größe k auf das Ziel zu bewegen (in kleinen Schritten, damit sie auch bei ruckelnden Bildraten stabil bleibt) */
+function spring(F, k, target, om, dt) {
+  if (!Number.isFinite(target)) target = 0;
+  let x = Number.isFinite(F.x[k]) ? F.x[k] : target, v = Number.isFinite(F.v[k]) ? F.v[k] : 0;
+  const n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
+  for (let i = 0; i < n; i++) { v += (om * om * (target - x) - 2 * ZETA * om * v) * h; x += v * h; }
+  F.x[k] = x; F.v[k] = v;
+}
+
 // Angriffe: Dauer T (Phase 2 läuft schneller), Treffer-Fenster hit, Schaden dmg
 const ATK = {
   bite: { T: 1.45, hit: [0.6, 0.76], dmg: 32 },
@@ -88,9 +105,13 @@ export class Boss {
     const clip = (re) => g.animations.find((a) => re.test(a.name));
     const act = (c) => { if (!c) return null; const a = mixer.clipAction(c); a.play(); a.timeScale = 0; a.setEffectiveWeight(0); return a; };
     const B = {}; model.traverse((o) => { if (o.isBone) B[o.name] = o; });
-    this.mm = { model, holder, mixer, B, idle: act(clip(/idle/)), walk: act(clip(/walk/)), run: act(clip(/run/)) };
+    const runC = clip(/run/);
+    this.mm = { model, holder, mixer, B, idle: act(clip(/idle/)), walk: act(clip(/walk/)), run: act(runC), run2: act(runC && runC.clone()) };
     // Schrittlänge der Clips messen: wie weit wandert eine Pfote im Bodenkontakt pro Durchlauf zurück (Meter bei Größe S)
     const M = this.mm;
+    // Der Lauf-Clip von Meshy ist keine saubere Schleife (Ende ≠ Anfang, Beine springen bis 13°). Kurz vor dem Ende wird darum
+    // weich zum Anfangsbild übergeblendet (zweite Kopie run2 steht auf Zeit 0) – sonst ruckt er bei jedem Laufschritt.
+    M.runSeam = this.seam(M.run) > 3 ? 0.14 : 0;
     M.walkL = this.stride(M.walk) || 4.8; M.runL = this.stride(M.run) || 15;
     M.phW = this.stancePhase(M.walk); M.phR = this.stancePhase(M.run);
     const ctl = ['head', 'neck1', 'neck_01', 'jaw', 'chest', 'spine1', 'spine2', 'hips', 'frontUprL', 'frontUprR', 'frontLwrL', 'frontLwrR',
@@ -100,6 +121,17 @@ export class Boss {
     this.place();
   }
 
+  /** größter Knochen-Sprung (Grad) zwischen letztem und erstem Bild eines Clips – > 3° = keine saubere Schleife */
+  seam(a) {
+    if (!a) return 0;
+    const M = this.mm, names = ['hips', 'chest', 'neck1', 'frontUprL', 'frontUprR', 'rearLegL_01', 'rearLegR_01'].filter((n) => M.B[n]);
+    for (const x of [M.idle, M.walk, M.run, M.run2]) if (x) x.setEffectiveWeight(0);
+    a.setEffectiveWeight(1);
+    const grab = (tt) => { a.time = tt; M.mixer.update(0); return names.map((n) => M.B[n].quaternion.clone()); };
+    const s = grab(0), e = grab(a.getClip().duration - 1e-4);
+    a.setEffectiveWeight(0);
+    return Math.max(...s.map((q, i) => 2 * Math.acos(Math.min(1, Math.abs(q.dot(e[i])))) * 180 / Math.PI));
+  }
   /** Phase (0..1), in der das linke Hinterbein am tiefsten steht (Mitte der Standphase) – um Gehen und Rennen gleich zu takten */
   stancePhase(a) {
     if (!a || !this.mm.B.rearToeL) return 0;
@@ -138,7 +170,7 @@ export class Boss {
     this.st = 'sleep'; this.t = 0; this.v.set(0, 0); this.sv = 0; this.w = 0; this.yawRate = 0;
     this.cd = 1.2; this.poise = 0; this.poiseT = 0; this.flinch = 0; this.hitDone = false; this.combo = 0;
     this.deadT = 0; this.pooled = false; this.gp = 0; this.aw = { idle: 1, walk: 0, run: 0 }; this.lag = BOSS_HP;
-    this.sm = null; this.side = 1; this.leap = null; this.it = this.it || 0; // it = eigene Atem-Uhr (muss vor dem ersten Bild stehen)
+    this.F = null; this.kick = null; this.side = 1; this.leap = null; this.it = this.it || 0; // it = eigene Atem-Uhr (muss vor dem ersten Bild stehen)
     this.place();
   }
 
@@ -152,6 +184,9 @@ export class Boss {
     if (this.dead || this.st === 'sleep') return;
     this.hp = Math.max(0, this.hp - dmg);
     this.flinch = heavy ? 0.35 : 0.22; this.hitDir = dir.clone(); this.lagHold = 0.7;
+    // Treffer-Reaktion: ein Stoß in die Haltungs-Federn (Kopf und Körper zucken weg und federn zurück – kein Zittern, kein Sprung)
+    const k = heavy ? 1 : 0.6, side = dir && Number.isFinite(dir.x) ? Math.sign(dir.x * Math.cos(this.yaw) - dir.z * Math.sin(this.yaw)) || 1 : 1;
+    this.kick = { p: (this.kick ? this.kick.p : 0) + 0.9 * k, r: (this.kick ? this.kick.r : 0) + 0.55 * k * side, n: (this.kick ? this.kick.n : 0) + 1.6 * k };
     if (this.hp <= 0) { this.dead = true; this.go('dead'); this.deadSide = Math.random() < 0.5 ? 1 : -1; sfx.roar(true); if (this.onDeath) this.onDeath(this); return; }
     if (!this.phase2 && this.hp <= BOSS_HP * 0.5 && this.st !== 'stagger') { this.phase2 = true; this.go('howl'); sfx.roar(false); return; }
     this.poise += poiseDmg != null ? poiseDmg : (heavy ? 30 : dmg); this.poiseT = 0;
@@ -381,22 +416,41 @@ export class Boss {
         const bounce = Math.sin(clamp((T - 0.9) / 0.35, 0, 1) * Math.PI) * 0.08 * (1 - sm((T - 0.9) / 0.5));
         y = LP.dB * buck * (1 - fall) + LP.dY * fall; roll = -sd * (fall * 1.45 - bounce); pitch = 0.2 * buck * (1 - fall); neck = 0.3; jaw = 0.4; legF = LP.dF * buck; legR = LP.dR * buck; break; }
     }
-    // Lauern: Kopf tief, angespannt; Gewicht vor/zurück beim Antreten/Bremsen
+    // Lauern: Kopf tief, angespannt, schweres Atmen
     if (st === 'stalk') { neck = 0.18; jaw = 0.15; y = -0.1; }
-    const S0 = this.sm || (this.sm = { y, pitch, roll, neck, head, jaw, legF, legR, tail });
-    const kq = damp({ bite: 16, swipe: 14, leap: 20, stomp: 14, howl: 9, stagger: 10, dead: 30, charge: 10, spin: 16 }[st] || 6, dt);
-    const tg = { y, pitch, roll, neck, head, jaw, legF, legR, tail };
-    // ungültige Zahl (NaN) nie in der Glättung behalten – sonst bleibt z. B. der Kopf für immer weg
-    for (const k in tg) { if (!Number.isFinite(tg[k])) tg[k] = 0; S0[k] = Number.isFinite(S0[k]) ? S0[k] + (tg[k] - S0[k]) * (k === 'y' && rise ? 1 : kq) : tg[k]; }
-    if (rise) S0.y = y;
-    // in die Kurve legen, beim Treffer kurz zucken
-    let r2 = S0.roll + (st !== 'dead' ? clamp(-this.yawRate * sp * 0.03, -0.15, 0.15) : 0), p2 = S0.pitch;
-    if (this.flinch > 0) { const e = (this.flinch / 0.35) ** 2; p2 += 0.05 * e; r2 += 0.04 * e * Math.sin(this.t * 40); }
+    // eigene Uhren, die bei Zustandswechseln NICHT auf 0 springen (früher hing z. B. der Schwanz an this.t → sprang bei jedem Angriff)
+    this.clk = (this.clk || 0) + dt;
+    const calm = st === 'sleep' || st === 'stalk' || st === 'wake', pant = st === 'stalk' ? 1 : 0;
+    const breath = Math.sin(this.clk * (pant ? 3.4 : 1.7));
+    if (calm && !this.dead) { y += 0.035 * breath; neck -= 0.03 * breath; jaw += 0.06 * pant * (0.5 + 0.5 * breath); }
+    // Prankenhieb: Pranke hoch und nach außen, dann quer nach innen-unten (als Feder-Ziele – bricht der Hieb ab, blendet die Pranke weich aus)
+    let pawR = 0, pawO = 0, pawL = 0;
+    if (st === 'swipe') {
+      const a1 = bump(t, 0.05, 0.45), b1 = bump(t, 0.5, 0.68), c1 = bump(t, 0.85, 1.3);
+      pawR = (-1.25 * a1 + 1.0 * b1) * (1 - c1); pawO = (0.7 * a1 - 1.25 * b1) * (1 - c1); pawL = 0.5 * a1 * (1 - c1);
+    }
+    // Schwanz: hängt beim Liegen, fegt bei der Drehung, sonst langsames Pendeln (eigene Uhr)
+    tail = st === 'sleep' ? 0.3 : st === 'spin' ? tail : 0.15 * Math.sin(this.clk * 1.7);
+    const tg = { y, pitch, roll, neck, head, jaw, legF, legR, tail, pawR, pawO, pawL, air: st === 'leap' ? rise : 0 };
+    const F = this.F || (this.F = { x: { ...tg }, v: {} });
+    // Treffer: Stoß in die Federn (Kopf zuckt zurück, Körper weicht seitlich aus) – wird über die nächsten Bilder weich ausgeschwungen
+    if (this.kick && !this.dead) { F.v.pitch = (F.v.pitch || 0) + this.kick.p; F.v.roll = (F.v.roll || 0) + this.kick.r; F.v.neck = (F.v.neck || 0) - this.kick.n; }
+    this.kick = null;
+    const om = OM[st] || 7;
+    for (const k of POSE) spring(F, k, tg[k], om * (OMK[k] || 1), dt);
+    // im Sprung bestimmt die Flugbahn die Höhe direkt (die Feder übernimmt danach mit dem passenden Tempo)
+    if (rise) { F.v.y = dt > 0 ? (y - F.x.y) / dt : 0; F.x.y = y; }
+    const S0 = F.x;
+    // Gehen: leichtes Wiegen von Seite zu Seite und Auf und Ab im Schritt (macht den Gang schwer und lebendig)
+    const walkW = this.aw.walk, runW = this.aw.run;
+    const sway = Math.sin(this.gp * TAU) * (0.03 * walkW + 0.015 * runW), bob = (0.5 - 0.5 * Math.cos(this.gp * TAU * 2)) * (0.05 * walkW + 0.03 * runW);
+    // in die Kurve legen
+    let r2 = S0.roll + sway + (st !== 'dead' ? clamp(-this.yawRate * sp * 0.03, -0.15, 0.15) : 0), p2 = S0.pitch;
     // Gewicht vor beim Antreten, zurück beim Bremsen (wie bei den Hunden)
     const acF = dt > 0 ? (fwd - (this.fwd0 ?? fwd)) / dt : 0; this.fwd0 = fwd;
     this.accL = lerp(this.accL || 0, st === 'dead' || st === 'leap' ? 0 : clamp(acF * 0.01, -0.07, 0.06), damp(5, dt));
     p2 += this.accL;
-    M.holder.position.y = S0.y * K; M.holder.rotation.set(p2, 0, r2);
+    M.holder.position.y = (S0.y - bob) * K; M.holder.rotation.set(p2, 0, r2);
     // ---------- Beine: Clips nach Tempo (Schritte passen zur Strecke), beim Drehen auf der Stelle treten ----------
     // Drehen auf der Stelle = Gehschritte (die Pfoten sind ~2,6 m von der Mitte weg), nie Galopp; Rennen nur aus echtem Tempo
     const gsp = Math.max(sp, Math.min(3.0, Math.abs(this.yawRate) * 2.1 * K));
@@ -407,7 +461,8 @@ export class Boss {
     const idle = 1 - walk - (legOk ? run : 0);
     const L = lerp(M.walkL, M.runL, run);
     this.it = (this.it || 0) + dt * 0.62;     // eigene Uhr fürs Atmen im Stehen
-    this.gp = (this.gp + (fwd < -0.2 ? -1 : 1) * dt * gsp / Math.max(0.5, L) + 1) % 1;
+    this.gdir = lerp(this.gdir ?? 1, fwd < -0.2 ? -1 : 1, damp(7, dt)); // vor/zurück: Beine bremsen ab und laufen weich andersherum
+    this.gp = (this.gp + this.gdir * dt * gsp / Math.max(0.5, L) + 1) % 1;
     for (const [k, a2, w2] of [['idle', M.idle, idle], ['walk', M.walk, walk], ['run', M.run, legOk ? run : 0]]) {
       this.aw[k] = lerp(this.aw[k], w2, damp(8, dt));
       if (!a2) continue;
@@ -417,7 +472,10 @@ export class Boss {
     for (const b of M.ctl) b.quaternion.copy(b.userData.base);
     if (M.idle) M.idle.setEffectiveWeight(this.aw.idle);
     if (M.walk) M.walk.setEffectiveWeight(this.aw.walk);
-    if (M.run) M.run.setEffectiveWeight(this.aw.run);
+    // Lauf-Clip: kurz vor dem Schleifenende weich ins Anfangsbild (run2 steht auf 0) – der Clip selbst springt dort
+    const ru = M.run ? M.run.time / M.run.getClip().duration : 0, seamW = M.runSeam && M.run2 ? sm((ru - (1 - M.runSeam)) / M.runSeam) : 0;
+    if (M.run) M.run.setEffectiveWeight(this.aw.run * (1 - seamW));
+    if (M.run2) { M.run2.time = 0; M.run2.setEffectiveWeight(this.aw.run * seamW); }
     M.mixer.update(0);
     for (const b of M.ctl) b.userData.base.copy(b.quaternion);
     // ---------- Knochen per Code ----------
@@ -442,18 +500,16 @@ export class Boss {
       fold(B['frontUpr' + s], B['frontLwr' + s], B['frontHorselink' + s], S0.legF, -1);
       fold(B['rearLeg' + s + '_01'], B['rearLwr' + s], B['rearHorselink' + s], S0.legR, 1);
     }
-    // Prankenhieb: Pranke hoch und nach außen, dann quer nach innen-unten
-    if (st === 'swipe') {
-      const s = this.swSide, side = s > 0 ? 'L' : 'R', up = B['frontUpr' + side], lo = B['frontLwr' + side];
-      const a1 = bump(t, 0.05, 0.45), b1 = bump(t, 0.5, 0.68), c1 = bump(t, 0.85, 1.3);
-      const raise = (-1.25 * a1 + 1.0 * b1) * (1 - c1), out = (0.7 * a1 - 1.25 * b1) * (1 - c1);
-      rotW(up, Z, -s * out); rotW(up, X, raise); rotW(lo, X, 0.5 * a1 * (1 - c1));
+    // Prankenhieb (Werte aus den Federn: auch ein abgebrochener Hieb endet weich)
+    if (Math.abs(S0.pawR) + Math.abs(S0.pawO) + Math.abs(S0.pawL) > 1e-3) {
+      const s = this.swSide || 1, side = s > 0 ? 'L' : 'R', up = B['frontUpr' + side], lo = B['frontLwr' + side];
+      rotW(up, Z, -s * S0.pawO); rotW(up, X, S0.pawR); rotW(lo, X, S0.pawL);
     }
     // Sprung: Vorderbeine vor, Hinterbeine zurück
-    if (st === 'leap' && rise > 0) for (const s of ['L', 'R']) { rotW(B['frontUpr' + s], X, -0.9 * rise); rotW(B['rearLeg' + s + '_01'], X, 0.8 * rise); }
-    // Schwanz: steif im Kampf, fegt bei der Drehung, hängt beim Liegen
-    const tw = st === 'sleep' ? 0.3 : st === 'spin' ? S0.tail : 0.15 * Math.sin(this.t * 1.7);
-    rotW(B.tail2, Y, tw * 0.5); rotW(B.tail3, Y, tw * 0.4);
+    if (S0.air > 1e-3) for (const s of ['L', 'R']) { rotW(B['frontUpr' + s], X, -0.9 * S0.air); rotW(B['rearLeg' + s + '_01'], X, 0.8 * S0.air); }
+    // Schwanz (Feder: schwingt nach, springt nie); Atmen hebt den Brustkorb
+    rotW(B.tail2, Y, S0.tail * 0.5); rotW(B.tail3, Y, S0.tail * 0.4); rotW(B.tail4, Y, S0.tail * 0.3);
+    if (calm && !this.dead && B.chest) rotW(B.chest, X, -0.025 * breath);
     if (this.dead) { const sd = this.deadSide, lie = sm((this.deadT - 0.6) / 0.6);
       rotW(B.neck1, Z, -sd * 0.3 * lie); rotW(B.tail2, Z, sd * 0.4 * lie);
       for (const s of ['L', 'R']) { const top = (sd > 0) === (s === 'R'); rotW(B['frontUpr' + s], Z, sd * (top ? LP.tF : LP.bF) * lie); rotW(B['rearLeg' + s + '_01'], Z, sd * (top ? LP.tR : LP.bR) * lie); }
