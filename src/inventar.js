@@ -9,7 +9,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ladeModell, bildUrl } from './modelle.js';
 import { sfx } from './ton.js';
-import { WAFFEN, WAFFEN_IDS, schwertLaden, buildSchwert } from './waffen.js';
+import { WAFFEN, WAFFEN_IDS, schwertLaden, buildSchwert, waffenInfo } from './waffen.js';
 import { buildCane } from './degen.js';
 
 export const KARTEN = [
@@ -385,9 +385,11 @@ export class Inventar {
     w.traverse((m) => { if (m.isMesh && m.material && 'envMapIntensity' in m.material) m.material.envMapIntensity = 1.1; });
     const g = new THREE.Group(), tilt = new THREE.Group(); tilt.rotation.z = W_TILT; tilt.add(inner); g.add(tilt);
     const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256;
-    const x = cv.getContext('2d'), gr = x.createRadialGradient(32, 128, 0, 32, 128, 128);
-    gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-    x.fillStyle = gr; x.fillRect(0, 0, 64, 256);
+    // ovaler Verlauf, der zu ALLEN Rändern hin auf 0 ausläuft (vorher endete er seitlich hart → sichtbarer Kasten um die Waffe)
+    const x = cv.getContext('2d'); x.setTransform(1, 0, 0, 4, 0, 0);
+    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 31);
+    gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.3)'); gr.addColorStop(0.75, 'rgba(255,255,255,0.06)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
     const h = new THREE.Mesh(new THREE.PlaneGeometry(0.42, W_LEN * 1.25), new THREE.MeshBasicMaterial({ map: tex(cv), color: glowCol, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
     h.position.z = -0.08; h.renderOrder = 3; h.userData.halo = true; tilt.add(h);
     g.userData.weapon = true;
@@ -502,7 +504,7 @@ export class Inventar {
   hintA() { const p = this.inp || {}; return p.pad ? 'A' : p.touch || document.body.classList.contains('touch') ? 'Antippen' : 'Enter / Klick'; }
   itemData(kind) {
     const w = this.o.werte, m = w.mods(), p = this.o.player, f0 = Math.round;
-    if (kind === 'waffe') { const W = WAFFEN[w.waffe] || WAFFEN.degen; return { n: W.n, tag: 'WAFFE · AUSGERÜSTET', d: `${W.d} Schaden leicht ${f0(12 * m.light)}, schwer ${f0(32 * m.heavy)}.`, hint: true }; }
+    if (kind === 'waffe') { const W = WAFFEN[w.waffe] || WAFFEN.degen; return { html: waffenInfo(W, m, W, { tag: 'AUSGERÜSTET' }), hint: true }; }
     if (kind === 'trank') return { n: 'Heiltrank', q: `${p.potions} / ${p.maxPotions}`, d: 'Glut-Essenz im Fläschchen. Heilt 45 Leben. Am Seelenstein und nach dem Tod wieder voll.' };
     return { n: 'Seelen', q: w.souls, d: 'Von besiegten Gegnern (Hund 10, Boss 1500). Am Seelenstein gegen Stufen tauschen.' };
   }
@@ -513,7 +515,7 @@ export class Inventar {
     if (i === 0 && k) h = `<div class="nm">${k.n}</div><div class="tag">AUSGERÜSTETE KARTE</div><p class="ds">${k.d}</p><p class="hn">${this.hintA()}: Karte wählen</p>`;
     else if (SLOT_ITEM[i]) {
       const d = this.itemData(SLOT_ITEM[i]), more = d.hint && this.o.werte.waffen.length > 1;
-      h = `<div class="nm">${d.n}${d.q !== undefined ? ` <span class="qt">${d.q}</span>` : ''}</div>${d.tag ? `<div class="tag">${d.tag}</div>` : ''}<p class="ds">${d.d}</p>`
+      h = (d.html || `<div class="nm">${d.n}${d.q !== undefined ? ` <span class="qt">${d.q}</span>` : ''}</div>${d.tag ? `<div class="tag">${d.tag}</div>` : ''}<p class="ds">${d.d}</p>`)
         + (d.hint ? `<p class="hn">${this.hintA()}: ${more ? 'Waffe wechseln' : 'Waffen ansehen'}</p>` : '');
     }
     else if (i > 0) h = '<div class="nm dim">Leere Fassung</div><p class="ds">Hier ist noch Platz für Fundstücke.</p>';
@@ -524,10 +526,8 @@ export class Inventar {
     const ki = this.info.querySelector('.kinfo'); if (!ki) return;
     if (this.kind === 'waffe') {
       const id = this.kFocus.startsWith('w:') ? this.kFocus.slice(2) : null, W = id && WAFFEN[id], cur = WAFFEN[this.o.werte.waffe] || WAFFEN.degen;
-      const m = this.o.werte.mods(), f0 = Math.round;
-      ki.innerHTML = W ? `<div class="nm sm">${W.n}${id === this.o.werte.waffe ? ' <span class="tag">AUSGERÜSTET</span>' : ''}</div><p class="ds">${W.d}</p>`
-        + `<p class="ds">Schaden leicht ${f0(12 * m.light / cur.light * W.light)} · schwer ${f0(32 * m.heavy / cur.heavy * W.heavy)}</p>`
-        : '<div class="nm sm dim">Unbekannte Waffe</div><p class="ds">Noch nicht gefunden. Vielleicht liegt sie irgendwo in der Stadt …</p>';
+      ki.innerHTML = W ? waffenInfo(W, this.o.werte.mods(), cur, { tag: id === this.o.werte.waffe ? 'AUSGERÜSTET' : '', small: true })
+        :'<div class="nm sm dim">Unbekannte Waffe</div><p class="ds">Noch nicht gefunden. Vielleicht liegt sie irgendwo in der Stadt …</p>';
       return;
     }
     const k = KARTEN.find((c) => c.id === this.kFocus);

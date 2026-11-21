@@ -2,11 +2,12 @@
 // Ganz mit dem Controller bedienbar: LB/RB Seite, Steuerkreuz/Stick auswählen, A bestätigen, B zurück. Maus/Touch: antippen.
 import { STATS, MAX_LV, BASE, cost } from './stufe.js';
 import { Inventar } from './inventar.js';
-import { WAFFEN } from './waffen.js';
+import { WAFFEN, angriff, waffenInfo } from './waffen.js';
 
 const TABS = ['char', 'inv', 'ctrl', 'test'];
 const $ = (id) => document.getElementById(id);
 const f0 = (x) => Math.round(x);
+const pc = (x) => (Math.round(x * 1000) / 10).toLocaleString('de-DE') + ' %'; // 0,055 → „5,5 %“
 
 export class Menue {
   /** o = { werte, player, apply() (Werte übernehmen), jump(ort), reset() } */
@@ -42,7 +43,6 @@ export class Menue {
   render() {
     for (const b of $('tabs').querySelectorAll('.tab')) b.classList.toggle('on', b.dataset.tab === this.tab);
     for (const t of TABS) $('page-' + t).classList.toggle('on', t === this.tab);
-    $('page-inv').parentElement.classList.toggle('wide', this.tab === 'inv'); // Inventar bekommt mehr Platz
     if (this.tab === 'char') this.renderChar();
     if (this.tab === 'inv') this.renderInv();
     if (this.tab === 'test') this.renderTest();
@@ -61,10 +61,14 @@ export class Menue {
           ${this.atStone ? `<button class="sbtn" data-up="${s.k}" ${can ? '' : 'disabled'}>+1</button>` : '<span></span>'}
           <span class="ds">${s.d}</span></div>`).join('')}
       <div class="derived">
-        <span>Leben</span><span>${m.maxHp}</span><span>Ausdauer</span><span>${m.maxSt}</span>
-        <span>${(WAFFEN[w.waffe] || WAFFEN.degen).n} leicht / schwer</span><span>${f0(12 * m.light)} / ${f0(32 * m.heavy)}</span>
-        <span>Karte (Schaden · Ausdauer)</span><span>${f0(8 * m.card)} · ${f0(12 * m.cardCost)}</span>
-        <span>Rolle kostet Ausdauer</span><span>${f0(22 * m.roll)}</span>
+        <span>Leben</span><span>${m.maxHp}</span>
+        <span>Ausdauer</span><span>${m.maxSt}</span>
+        <span>Angriff (${(WAFFEN[w.waffe] || WAFFEN.degen).n})</span><span>${angriff(WAFFEN[w.waffe] || WAFFEN.degen, m, WAFFEN[w.waffe] || WAFFEN.degen)}</span>
+        <span>Angriffstempo</span><span>${pc(m.atkSpeed)}</span>
+        <span>Krit-Chance</span><span>${pc(m.critC)}</span>
+        <span>Krit-Schaden</span><span>${pc(m.critD)}</span>
+        <span>Physischer Widerstand</span><span>${pc(m.resPhys)}</span>
+        <span>Magie-Widerstand</span><span>${pc(m.resMag)}</span>
       </div>`;
     for (const b of el.querySelectorAll('[data-up]')) b.onclick = () => {
       if (w.levelUp(b.dataset.up)) { this.o.apply(); if (this.o.onLevel) this.o.onLevel(); }
@@ -81,11 +85,11 @@ export class Menue {
     if (this.inv) this.inv.refresh(); else this.renderInvList();
   }
   renderInvList() {
-    const w = this.o.werte, m = w.mods(), p = this.o.player;
-    const it = (icon, name, desc, qty, eq) => `<div class="item"><div class="ii">${icon}</div><div><div class="in">${name}${eq ? ' <span class="eq">AUSGERÜSTET</span>' : ''}</div><div class="id">${desc}</div></div><div class="iq">${qty}</div></div>`;
+    const w = this.o.werte, m = w.mods(), p = this.o.player, W = WAFFEN[w.waffe] || WAFFEN.degen;
+    const it =(icon, name, desc, qty, eq) => `<div class="item"><div class="ii">${icon}</div><div><div class="in">${name}${eq ? ' <span class="eq">AUSGERÜSTET</span>' : ''}</div><div class="id">${desc}</div></div><div class="iq">${qty}</div></div>`;
     $('page-inv').innerHTML = `
       <div class="mhead"><span class="lv">Inventar</span><span class="sl">Seelen ${w.souls}</span></div>
-      ${it('⚔', 'Stockdegen', `Verborgene Klinge im Spazierstock. Schaden leicht ${f0(12 * m.light)}, schwer ${f0(32 * m.heavy)}.`, '', true)}
+      <div class="item"><div class="ii">⚔</div><div class="invInfo">${waffenInfo(W, m, W, { tag: 'AUSGERÜSTET', small: true })}</div><div class="iq"></div></div>
       ${it('🃏', 'Spielkarten', `Aus dem Mantel gezogen und geworfen. ${f0(8 * m.card)} Schaden je Karte, ${f0(12 * m.cardCost)} Ausdauer.`, '∞', true)}
       ${it('🧪', 'Heiltrank', 'Glut-Essenz im Fläschchen. Heilt 45 Leben. Am Seelenstein und nach dem Tod wieder voll.', `${p.potions} / ${p.maxPotions}`)}
       ${it('✦', 'Seelen', 'Von besiegten Gegnern (Hund 10, Boss 1500). Am Seelenstein gegen Stufen tauschen.', w.souls)}`;

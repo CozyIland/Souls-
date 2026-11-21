@@ -7,13 +7,31 @@ import { GRADIENT, hullOutline } from './toon.js';
 
 // light/heavy = Schaden leicht/schwer, poise = Haltungsschaden, cost = Ausdauer je Schlag (Faktoren), range = Reichweite (m dazu),
 // bladeL = Klingenspitze im Klingen-Raum (m), fist = Größe der Faust (der Kristallgriff ist dicker)
+// d = kurze Beschreibung (ein, zwei Sätze), fx = Effekt (nur wenn die Waffe einen hat, sonst null)
 export const WAFFEN = {
   degen: { id: 'degen', n: 'Stockdegen', light: 1, heavy: 1, poise: 1, cost: 1, range: 0, bladeL: 0.795, fist: 1,
-    d: 'Verborgene Klinge im Spazierstock. Schnell und leicht.' },
+    d: 'Verborgene Klinge im Spazierstock. Schnell und leicht.', fx: null },
   schwert: { id: 'schwert', n: 'Kristallklinge', glb: 'models/kristallschwert.glb', light: 1.2, heavy: 1.25, poise: 1.25, cost: 1.12, range: 0.18, bladeL: 0.937, fist: 1.18,
-    d: 'Ein Schwert aus schillerndem Kristall, versteckt in einer verrosteten Truhe in der Kartenstraße. Länger und schwerer als der Stockdegen: trifft härter und weiter, kostet etwas mehr Ausdauer.' },
+    d: 'Schwert aus schillerndem Kristall, gefunden in einer Truhe in der Kartenstraße. Länger und schwerer als der Stockdegen.', fx: null },
 };
 export const WAFFEN_IDS = Object.keys(WAFFEN);
+
+// Grundschaden der Angriffe (degen.js ATTACKS): leichter Schlag 12, schwerer Schlag 32
+const DMG_MIN = 12, DMG_MAX = 32;
+/** Angriffswert von–bis einer Waffe mit den aktuellen Werten (m = werte.mods(), gilt für die ausgerüstete Waffe cur) */
+export function angriff(W, m, cur) {
+  const lo = Math.round(DMG_MIN * m.light / cur.light * W.light), hi = Math.round(DMG_MAX * m.heavy / cur.heavy * W.heavy);
+  return `${lo} – ${hi}`;
+}
+/** Einheitliche Waffen-Anzeige fürs Menü: Name · Beschreibung · Angriff von–bis · Effekt (falls vorhanden) */
+export function waffenInfo(W, m, cur, { tag = '', small = false } = {}) {
+  return `<div class="wInfo">
+    <div class="nm${small ? ' sm' : ''}">${W.n}${tag ? ` <span class="tag">${tag}</span>` : ''}</div>
+    <p class="ds">${W.d}</p>
+    <div class="wRow"><span>Angriff</span><b>${angriff(W, m, cur)}</b></div>
+    ${W.fx ? `<div class="wRow fx"><span>Effekt</span><em>${W.fx}</em></div>` : ''}
+  </div>`;
+}
 
 // Kristallklinge: Modell steht senkrecht (Klinge nach +y, 1,9 Einheiten); Unterkante der Parierstange bei y −0,47.
 // Maßstab 0,66 → 1,25 m lang, Griff 0,22 m (wie beim Stockdegen, zwei Hände passen), Klinge 0,83 m.

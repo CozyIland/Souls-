@@ -425,7 +425,7 @@ class Dog {
       case 'dead':
         this.deadT += dt;
         if (this.deadT > 0.6 && !this.pooled) { this.pooled = true; pool(this.p.x + Math.cos(this.yaw) * 0.25 * (this.deadSide || 1), this.p.z - Math.sin(this.yaw) * 0.25 * (this.deadSide || 1)); }
-        if (this.deadT > 25 && d > 18) this.reset(); // kommt irgendwann wieder (zum Üben)
+        // bleibt tot liegen – neu erscheinen nur beim Rasten am Seelenstein (oder wenn der Magier stirbt)
         break;
     }
     if (!plOk && this.aggro && this.st !== 'dead' && this.st !== 'hurt' && this.st !== 'down' && this.st !== 'leap') this.calm();

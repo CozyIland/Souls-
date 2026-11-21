@@ -177,9 +177,10 @@ export class Player {
 
   get invulnerable() { return this.god || (this.state === 'roll' && this.t > 0.05 && this.t < 0.42) || this.state === 'dead' || this.iframe > 0; }
 
-  /** Schaden nehmen (Biss usw.): wegstoßen, kurz taumeln; bei 0 Leben fallen */
-  damage(n, dir) {
+  /** Schaden nehmen (Biss usw.): wegstoßen, kurz taumeln; bei 0 Leben fallen. art 'phys' (Bisse, Prankenschläge) oder 'mag' (Zauber) */
+  damage(n, dir, art = 'phys') {
     if (this.invulnerable) return false;
+    n = Math.max(1, Math.round(n * (1 - ((art === 'mag' ? this.mods.resMag : this.mods.resPhys) || 0)))); // Widerstand
     this.hp = Math.max(0, this.hp - n);
     this.hurtFlash = 1; this.atk = null; this.handCard && (this.handCard.visible = false);
     this.vel.set(dir.x * 5, dir.z * 5);
@@ -415,7 +416,7 @@ export class Player {
       this.running = false;
     } else if (this.state === 'attack') {
       const at = this.atk, A = at.a;
-      at.t += dt;
+      at.t += dt * (this.mods.atkSpeed || 1); // Angriffstempo (Trickreich)
       // Ausfallschritt im Schlag, sonst stehen bleiben
       // genau so weit wie der Fuß vortritt (gleiche Kurve wie in animateRig), sonst rutschen die Füße
       const k = stepK(A, at.t);
@@ -444,7 +445,9 @@ export class Player {
         if (Math.abs(angDiff(this.yaw, Math.atan2(dx, dz))) > A.arc && d > 0.6) continue;
         at.hit.add(tg);
         this.hitStop = A.heavy ? 0.1 : 0.05;
-        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy, Math.round(A.dmg * (A.heavy ? this.mods.heavy : this.mods.light)), A.poise * this.mods.poise);
+        const crit = Math.random() < (this.mods.critC || 0);   // kritischer Treffer: Schaden × Krit-Schaden
+        const dmg = Math.round(A.dmg * (A.heavy ? this.mods.heavy : this.mods.light) * (crit ? this.mods.critD || 1.5 : 1));
+        if (this.onHit) this.onHit(tg, new THREE.Vector3(dx, 0, dz).normalize(), A.heavy, dmg, A.poise * this.mods.poise, crit);
       }
       this.running = false;
     } else if (this.state === 'roll') {

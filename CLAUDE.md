@@ -4,6 +4,7 @@
 - Neues Spiel (das alte „Der Lernende“ liegt in der Git-Geschichte, Commit `8862355`).
 - Souls-like im **Anime-Stil**: Karten-Magier (Konzeptbild `konzept/hauptcharakter.png`) in einer postapokalyptischen Stadt.
   Fernkampf mit Karten, dazu Nahkampf. Gegner: verwahrloste Menschen, streunende Hunde; Bosse.
+- Läuft **nur am PC** (entschieden) – Handy-Ansicht nicht mehr prüfen; die vorhandene Touch-Steuerung bleibt einfach drin.
 - Alles für **Xbox-Controller** auslegen. Karte zum Orientieren, Inventar. Zwischensequenzen als **Manga-Seiten**.
 - Ziel später: Veröffentlichung auf **Steam** (Electron oder Tauri).
 - Plan, Roadmap und offene Fragen: **`PROJEKTPLAN.md`** – bei Fortschritt dort abhaken und aktuell halten.
@@ -114,8 +115,8 @@
   Körperhaltung wird weich nachgeführt (`sm`) · hurt (zuckt weg von der Trefferrichtung `hx`/`hz`, Kopf reißt zurück) · down (schwerer
   Schlag wirft ihn auf die Seite, Beine zappeln, nach `DOWN_T` 1,5 s rappelt er sich auf) · dead (Beine knicken ein, kippt wie ein Sack auf die Seite, federt
   nach; untere Beine liegen gestreckt auf, die oberen fallen um die Längsachse auf sie herab, Schwanz sinkt zum Boden – Werte in `D`,
-  gemessen an den Modell-Ecken: nichts schwebt, kaum etwas steckt im Boden; Rücken leicht rund, letztes Zucken, Blutlache `pool`; bleibt als Leiche liegen, kommt nach 25 s
-  wieder, wenn man weit weg ist). 60 Leben; Treffer über `onHit(dmg, dir, heavy)` – Ziele mit `onHit` sind Gegner (`targets` enthält
+  gemessen an den Modell-Ecken: nichts schwebt, kaum etwas steckt im Boden; Rücken leicht rund, letztes Zucken, Blutlache `pool`; bleibt als Leiche liegen; neu erscheinen
+  Hunde NUR beim Rasten am Seelenstein oder wenn der Magier stirbt – kein Zeitgeber). 60 Leben; Treffer über `onHit(dmg, dir, heavy)` – Ziele mit `onHit` sind Gegner (`targets` enthält
   Puppen und Hunde, `dead` wird überall übersprungen). Lebensleisten `.ebar`, roter Rand `#hurtFx`, Tod: `#death` „GESTORBEN“,
   nach 4 s am Spieltisch (`REST`) wieder aufstehen (`player.revive`), Hunde zurück.
 - `src/ton.js` – erzeugte Geräusche `sfx` (Web Audio, ohne Dateien; erst nach Klick/Taste hörbar): swing, hit, thud, card,
@@ -157,7 +158,11 @@
   je +50 % (auf 10 gerundet; Stufe 20 ≈ 131.000). Werte (Start je `BASE` 10): **Ausdauer** (+6 Leben, +5 Ausdauer je Punkt), **Stärke**
   (Degen, vor allem schwer; Haltungsschaden), **Trickreich** (leichte Schläge, Rolle und Schläge kosten weniger Ausdauer), **Magie**
   (Kartenschaden `cardMods` in karten.js, Karte kostet weniger). `mods()` → `player.applyStats` (Leben/Ausdauer, `player.mods` für Schaden und
-  Kosten). Speichert in `localStorage` (`aschenblatt-stufe`, mit try/catch). Seelen bleiben beim Tod erhalten.
+  Kosten). Speichert in `localStorage` (`aschenblatt-stufe`, mit try/catch). Seelen bleiben beim Tod erhalten. **Truhe und Waffen werden
+  beim Laden NICHT übernommen** – jeder Start: Truhe zu, nur Stockdegen. Kampfwerte in `mods()` (Charakterseite, Prozent über `pc`):
+  `atkSpeed` (Trickreich, ≤ 130 %, multipliziert `at.t` im Angriff), `critC` 5 % + 0,5 %/Trickreich (≤ 30 %), `critD` 150 % + 2 %/Stärke
+  (Degen in player.js und Karten über `cardMods`; Krit wirkt im Treffer-Effekt wie schwer), `resPhys` 1 %/Ausdauer, `resMag` 1,5 %/Magie
+  (je ≤ 40 %; `player.damage(n, dir, art)` mit art 'phys' Standard / 'mag' – noch macht kein Gegner Magie-Schaden).
 - **Seelenstein** (`world.js` `soulStone`, Lage `STONE` am Start): schiefer Stein mit glimmenden Runen + Licht. In der Nähe Hinweis `#prompt`
   („A / Enter / 🪨“, Handy-Knopf `#tUse`), `inp.use` (A, Enter/G) → `useStone`: Leben/Ausdauer/Tränke voll, Hunde zurück, Menü „Charakter“
   mit +1-Knöpfen je Wert (`levelUp`).
@@ -189,7 +194,9 @@
   Modell senkrecht, Klinge +y, Parierstange unten bei y −0,47 → `buildSchwert` legt sie in den Klingen-Raum: Griff entlang +Z, Maßstab
   `SCHWERT_K` 0,66 = 1,25 m, Griff 0,22 m wie beim Degen). Je Waffe Faktoren light/heavy/poise/cost, `range` (+m), Klingenspitze `bladeL`,
   Faustgröße `fist` (Kristallgriff dicker → Faust und Handgelenk-Punkt `player.wrist` ×1,18). Werte wirken über `Werte.mods()`; im Spieler
-  `setWeapon(id)` (aus `applyStats`): Degen-Teile `caneParts` + Stock aus, Kristallklinge (`swordAlt`, Toon + `hullOutline`) an. Ohne Degen
+  `setWeapon(id)` (aus `applyStats`). Anzeige überall gleich über `waffenInfo(W, m, cur)`: Name · kurze Beschreibung `d` · Angriff von–bis
+  (`angriff`: leichter Schlag 12 … schwerer 32, mit Werten und Waffenfaktor) · Effekt `fx` nur wenn vorhanden. Menü-Fenster
+  (`.panel.menu`) hat für alle Reiter dieselbe feste Größe, nur die Seite rollt. Degen-Teile `caneParts` + Stock aus, Kristallklinge (`swordAlt`, Toon + `hullOutline`) an. Ohne Degen
   hängt beim Kartenwurf die Klinge selbst an der Hüfte. `werte.waffe`/`waffen` gespeichert.
 - **Truhe** (`src/truhe.js`, Klasse `Truhe`, `models/truhe.glb` – ein Mesh ohne Animation): beim Laden wird der **Deckel abgetrennt**
   (alle Dreiecke über der Fuge `SEAM` 0,22 – dort läuft rundherum eine Rille), dreht sich um das Scharnier hinten (`HINGE_Z`); innen dunkle

@@ -79,7 +79,7 @@ Danach: weitere Gebiete, mehr Karten-Farben/Joker, Bankhalter, Meister.
 
 ## 6. Offene Fragen
 - Name des Helden? (Spiel vorerst „Aschenblatt“ – Asche der Stadt + Kartenblatt)
-- Nur **PC mit Controller**, oder soll es auch am **Handy** spielbar bleiben? (Nur PC erlaubt schönere Grafik.)
+- ~~Nur PC oder auch Handy?~~ → **nur PC** (entschieden; Handy wird nicht mehr geprüft)
 - ~~Nahkampf-Waffe~~ → **Stockdegen** (entschieden)
 - Welcher **erste Boss**?
 - Manga-Sequenzen **schwarz-weiß** (klassisch Manga) oder **farbig**?

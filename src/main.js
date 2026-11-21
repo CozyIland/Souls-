@@ -43,7 +43,10 @@ cam.blockers = blockers;
 setupCards(scene, targets);
 player.onThrow = (from, dir, suit) => throwCard(from, dir, cam.lock, suit);
 player.targets = targets;
-player.onHit = (tg, dir, heavy, dmg, poise) => { hitFx(tg, dir, heavy, dmg, poise); cam.shake(heavy ? 0.07 : 0.035); cam.punch(heavy ? 3.5 : 1.5); };
+player.onHit = (tg, dir, heavy, dmg, poise, crit) => { // Krit: wirkt wie ein schwerer Treffer (mehr Blut, Rütteln, Ruck)
+  hitFx(tg, dir, heavy || crit, dmg, poise); cam.shake(heavy || crit ? 0.07 : 0.035); cam.punch(crit ? 4.5 : heavy ? 3.5 : 1.5);
+  if (crit) player.hitStop = Math.max(player.hitStop || 0, 0.09);
+};
 player.onSwing = (heavy) => sfx.swing(heavy);
 player.onDust = (p, n) => dust(p, n);
 player.onSlam = () => { cam.shake(0.05); sfx.thud(); rumble(0.6, 0.4, 160); }; // schwerer Schlag trifft den Boden
@@ -61,7 +64,7 @@ let passT = -1, victoryT = -1, chestT = -1, foundT = -1;
 // ---------- Stufen-System: Seelen sammeln, am Seelenstein aufsteigen ----------
 const werte = new Werte();
 const $ = (id) => document.getElementById(id);
-function applyStats() { const m = werte.mods(); player.applyStats(m); player.setWeapon(werte.waffe); cardMods.dmg = m.card; wurf.karte = werte.karte; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
+function applyStats() { const m = werte.mods(); player.applyStats(m); player.setWeapon(werte.waffe); cardMods.dmg = m.card; cardMods.critC = m.critC; cardMods.critD = m.critD; wurf.karte = werte.karte; player.god = werte.god; $('godTag').style.display = werte.god ? 'block' : 'none'; }
 applyStats(); player.hp = player.maxHp; player.st = player.maxSt;
 if (werte.truhe) truhe.setOpen();
 let soulShow = werte.souls;
