@@ -29,8 +29,9 @@ const MOBILE = matchMedia('(pointer: coarse)').matches;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MOBILE ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+// Neutrale Farbumrechnung (Khronos PBR Neutral) statt ACES: Farben bleiben kräftig und klar, ACES wusch sie aus
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.3;   // ACES hellte intern um ×1,67 auf – darum hier höher
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 240);

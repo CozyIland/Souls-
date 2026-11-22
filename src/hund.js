@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { toon, outline, GRADIENT, skinOutline } from './toon.js';
+import { toon, outline, toonFigur, skinOutline } from './toon.js';
 import { ladeModell } from './modelle.js';
 import { sfx } from './ton.js';
 import { pool } from './blut.js';
@@ -142,8 +142,9 @@ class Dog {
       if (!o.isMesh) return;
       o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
       const m = o.material;
-      o.material = new THREE.MeshToonMaterial({ map: m.map, normalMap: m.normalMap, gradientMap: GRADIENT, side: THREE.DoubleSide });
-      if (o.material.normalMap) o.material.normalScale.set(0.7, 0.7);
+      // wie der Boss: Randlicht + Aufhelllicht, damit das dunkle Fell nicht zur schwarzen Fläche wird (toon.js toonFigur)
+      // (helles Fell: kaum aufhellen, sonst wirken sie milchig)
+      o.material = toonFigur(m, { normal: 0.6, rim: 0.45, gamma: 0.95, lift: 1.0, fill: 0.22 });
       mats.push(o.material);
     });
     const sk = []; model.traverse((o) => { if (o.isSkinnedMesh) sk.push(o); });

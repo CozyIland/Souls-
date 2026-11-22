@@ -5,7 +5,7 @@
 // Bewegung wie bei den Hunden: Drehtempo begrenzt, Schritte passend zum Tempo (Schrittlänge der Clips beim Laden gemessen).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { GRADIENT, skinOutline } from './toon.js';
+import { toonFigur, skinOutline } from './toon.js';
 import { ladeModell } from './modelle.js';
 import { glowTex } from './texturen.js';
 import { sfx } from './ton.js';
@@ -112,7 +112,7 @@ function rotW(bone, axisW, ang) {
   bone.parent.getWorldQuaternion(qP);
   const wq = qP.clone().multiply(bone.quaternion);
   qR.setFromAxisAngle(axisW, ang).multiply(wq);
-  bone.quaternion.copy(qP.invert().multiply(qR));
+  bone.quaternion.copy(qP.invert().multiply(qR)).normalize();   // Länge 1 halten (siehe bossbeine.js rotW)
 }
 
 export class Boss {
@@ -141,9 +141,8 @@ export class Boss {
     model.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
-      const m = o.material;
-      o.material = new THREE.MeshToonMaterial({ map: m.map, normalMap: m.normalMap, gradientMap: GRADIENT, side: THREE.DoubleSide });
-      if (o.material.normalMap) o.material.normalScale.set(0.8, 0.8);
+      // Anime-Material mit Randlicht und glühenden Augen/Glutrissen (toon.js toonFigur); Glut folgt der Hitze (animate)
+      o.material = this.mat = toonFigur(o.material, { glow: 2.2 });
     });
     const sk = []; model.traverse((o) => { if (o.isSkinnedMesh) sk.push(o); });
     for (const o of sk) skinOutline(o, 0.022);
@@ -832,6 +831,7 @@ export class Boss {
     B.chest && B.chest.getWorldPosition(vY);
     this.glow.position.set(vY.x, vY.y + 0.8, vY.z);
     this.glow.intensity = heat * (this.phase2 ? 10 : 5) * (0.85 + 0.15 * Math.sin(this.t * 11));
+    if (this.mat) this.mat.userData.u.uGlow.value = heat * 2.9 * (0.9 + 0.1 * Math.sin(this.t * 7.3));   // Augen/Glutrisse glimmen mit
     for (const e of this.embers) {
       if (e.life <= 0) {
         if (Math.random() < dt * 16 * heat) {

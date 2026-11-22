@@ -27,14 +27,25 @@ const Y_UP = new THREE.Vector3(0, 1, 0), QI = new THREE.Quaternion(), RATE = 12;
 const sm = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 const smoother = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * c * (c * (6 * c - 15) + 10); };
 
-/** Knochen um eine Weltachse drehen (Eltern-Weltmatrix muss aktuell sein) */
+/**
+ * Knochen um eine Weltachse drehen (Eltern-Weltmatrix muss aktuell sein).
+ * Immer auf Länge 1 bringen: weicht eine Drehung nur minimal davon ab, wird die Knochen-Matrix schief, die nächste
+ * Welt-Drehung daraus ist es noch mehr – über das Gedächtnis (mem) schaukelte sich das von Bild zu Bild auf, bis ein
+ * Bein „explodierte“ (Knochen Millionen Meter weit weg → riesige schwarze Dreiecke über dem Boden der Arena).
+ */
 function rotW(bone, axisW, ang) {
   if (!bone || !Number.isFinite(ang) || Math.abs(ang) < 1e-6) return;
   bone.parent.getWorldQuaternion(qP);
   qW.copy(qP).multiply(bone.quaternion);
   qR.setFromAxisAngle(axisW, ang).multiply(qW);
-  bone.quaternion.copy(qP.invert().multiply(qR));
+  bone.quaternion.copy(qP.invert().multiply(qR)).normalize();
   bone.updateMatrixWorld(true);
+}
+/** Gemerkte Korrektur prüfen: Länge 1, sonst (NaN/kaputt) zurück auf „keine Korrektur“ */
+function clean(q) {
+  const n = q.length();
+  if (!Number.isFinite(n) || n < 1e-6) return q.identity();
+  return q.normalize();
 }
 
 export class Beine {
@@ -91,7 +102,7 @@ export class Beine {
         l.st = 'frei'; l.prevY = A.y;
         if (l.mem) {
           const k = 1 - Math.exp(-RATE * dt);
-          l.bones.forEach((b, j) => { l.mem[j].slerp(QI, k); b.quaternion.multiply(l.mem[j]); }); l.bones[0].updateMatrixWorld(true);
+          l.bones.forEach((b, j) => { clean(l.mem[j].slerp(QI, k)); b.quaternion.multiply(l.mem[j]).normalize(); }); l.bones[0].updateMatrixWorld(true);
           l.acc = l.acc.map((a) => a * (1 - k)); l.lat = (l.lat || 0) * (1 - k);
         }
         return;
@@ -153,7 +164,7 @@ export class Beine {
     // und kann nicht von einem Bild zum nächsten in eine andere Lösung umspringen (das Bein ruckte bis ~11.000 rad/s²) –
     // und erreicht das Ziel trotzdem in jedem Bild ganz (kein Nachziehen, die Pfote bleibt stehen).
     const acc = l.mem ? l.acc.slice() : [0, 0, 0];
-    if (l.mem) { l.bones.forEach((b, j) => b.quaternion.multiply(l.mem[j])); l.bones[0].updateMatrixWorld(true); }
+    if (l.mem) { l.bones.forEach((b, j) => b.quaternion.multiply(clean(l.mem[j])).normalize()); l.bones[0].updateMatrixWorld(true); }
     for (let it = 0; it < 5; it++) {
       for (let j = 2; j >= 0; j--) {
         const b = l.bones[j];
@@ -180,10 +191,10 @@ export class Beine {
     }
     // Lösung (Korrektur je Gelenk gegenüber der Animation) für den Warmstart im nächsten Bild merken
     if (!l.mem) l.mem = l.bones.map(() => new THREE.Quaternion());
-    l.bones.forEach((b, j) => l.mem[j].copy(q0[j]).invert().multiply(b.quaternion));
+    l.bones.forEach((b, j) => clean(l.mem[j].copy(q0[j]).invert().multiply(b.quaternion)));
     l.acc = acc;
     // Pfote flach lassen: Weltlage wie vor der IK
-    foot.parent.getWorldQuaternion(qP); foot.quaternion.copy(qP.invert().multiply(qF)); foot.updateMatrixWorld(true);
+    foot.parent.getWorldQuaternion(qP); foot.quaternion.copy(qP.invert().multiply(qF)).normalize(); foot.updateMatrixWorld(true);
   }
 }
 
@@ -202,7 +213,7 @@ export function ccdAim(chain, eff, T, w, lim, iters = 4, mem = null, dt = 0, rat
   const k = mem && dt > 0 ? 1 - Math.exp(-rate * dt) : 1;
   if (w <= 0.001) {                                             // nichts zu zielen: gemerkte Korrektur weich zurück auf null
     if (mem && mem.length) {
-      for (let j = chain.length - 1; j >= 0; j--) { const b = chain[j]; if (!b || !mem[j]) continue; mem[j].slerp(qI, k); b.quaternion.multiply(mem[j]); }
+      for (let j = chain.length - 1; j >= 0; j--) { const b = chain[j]; if (!b || !mem[j]) continue; clean(mem[j].slerp(qI, k)); b.quaternion.multiply(mem[j]).normalize(); }
       const root = chain[chain.length - 1]; if (root) root.updateMatrixWorld(true);
     }
     return Infinity;
@@ -226,9 +237,9 @@ export function ccdAim(chain, eff, T, w, lim, iters = 4, mem = null, dt = 0, rat
   if (mem) {   // Korrektur je Gelenk (im eigenen Raum) weich nachführen statt hart übernehmen
     for (let j = chain.length - 1; j >= 0; j--) {
       const b = chain[j]; if (!b) continue;
-      qD.copy(q0[j]).invert().multiply(b.quaternion);
-      if (!mem[j]) mem[j] = qD.clone(); else mem[j].slerp(qD, k);
-      b.quaternion.copy(q0[j]).multiply(mem[j]);
+      clean(qD.copy(q0[j]).invert().multiply(b.quaternion));
+      if (!mem[j]) mem[j] = qD.clone(); else clean(mem[j].slerp(qD, k));
+      b.quaternion.copy(q0[j]).multiply(mem[j]).normalize();
     }
     const root = chain[chain.length - 1]; if (root) root.updateMatrixWorld(true);
   }

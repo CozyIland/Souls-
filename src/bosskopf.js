@@ -18,7 +18,7 @@ function rotW(bone, axisW, ang) {
   bone.parent.getWorldQuaternion(qP);
   qW.copy(qP).multiply(bone.quaternion);
   qR.setFromAxisAngle(axisW, ang).multiply(qW);
-  bone.quaternion.copy(qP.invert().multiply(qR));
+  bone.quaternion.copy(qP.invert().multiply(qR)).normalize();   // Länge 1 halten (siehe bossbeine.js rotW)
 }
 /** gedämpfte Feder (Lage x, Tempo v); zeta < 1 schwingt leicht nach – wirkt weich und lebendig */
 function spring(s, target, om, zeta, dt) {

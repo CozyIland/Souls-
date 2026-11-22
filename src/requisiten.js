@@ -37,7 +37,8 @@ function mats() {
     barrel: [toon(0xffffff, { map: rustTex('#2a3a5a') }), toon(0xffffff, { map: rustTex('#7a2a1a') }), toon(0xffffff, { map: rustTex('#6a6a30') })],
     red: toon(0x8a1a14), yellow: toon(0xb08a2a), white: toon(0xd8d0c0),
     lampOff: toon(0x3a3a34),
-    puddle: new THREE.MeshStandardMaterial({ color: 0x0a0808, roughness: 0.1, metalness: 0.0, envMapIntensity: 0.55, transparent: true, opacity: 0.85 }),
+    // nasses Pflaster statt schwarzem Loch: halb durchsichtig, spiegelt den Abendhimmel
+    puddle: new THREE.MeshStandardMaterial({ color: 0x261a15, roughness: 0.06, metalness: 0.35, envMapIntensity: 1.0, transparent: true, opacity: 0.68, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
   };
   return M;
 }
@@ -282,7 +283,8 @@ export function puddle(scene, x, z, s) {
   const n = 12;
   for (let i = 0; i <= n; i++) { const a = (i / n) * TAU, r = s * rr(0.7, 1.1); const px = Math.cos(a) * r * 1.4, pz = Math.sin(a) * r; if (i === 0) sh.moveTo(px, pz); else sh.lineTo(px, pz); }
   const geo = new THREE.ShapeGeometry(sh); geo.rotateX(-Math.PI / 2);
-  const p = new THREE.Mesh(geo, m.puddle); p.position.set(x, 0.012, z); p.rotation.y = R() * TAU; p.receiveShadow = true;
+  // über dem Arena-Pflaster (0,012) – auf gleicher Höhe flackerten die Pfützen als schwarze Flecken
+  const p = new THREE.Mesh(geo, m.puddle); p.position.set(x, 0.022, z); p.rotation.y = R() * TAU; p.receiveShadow = true;
   p.userData.noMerge = true;
   scene.add(p);
 }

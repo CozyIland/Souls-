@@ -17,8 +17,12 @@
 ## Technik (Stand Schritt 1)
 - Three.js 0.170 per Import-Map vom CDN, Code als ES-Module in `src/`, kein Build-Schritt fürs Spielen.
 - `src/main.js` – Renderer, Zustände (title/play/pause), HUD, Begleitlicht `fill` (Kameraseite), Spielschleife; gezeichnet wird über `bildfilter.js`.
+  Farbumrechnung **`NeutralToneMapping`, Belichtung 1,3** (ACES wusch die Farben aus; ACES hellt intern ×1,67 auf → darum höher).
 - `src/bildfilter.js` – `makeComposer(…, {ao})`: Umgebungsverdeckung GTAO (nur PC; Sprites, Durchsichtiges und Umrisse werden dafür
-  ausgeblendet), Bloom (Feuer, Glut), Farbstimmung (Schatten kühl, Licht warm), Vignette, Filmkorn (HalfFloat + 4× MSAA).
+  ausgeblendet; **kleiner Radius 0,5 / thickness 0,8** – mit 0,7/1,5 wurden große Flächen des Bosses schwarz), Bloom (Feuer, Glut; enger
+  Schein, Radius 0,38), dann `Grade`: **Nachschärfen** wie AMD-CAS (`uSharp` 0,45, an starken Kanten weniger, auf Nachbar-min/max begrenzt,
+  `uPx` = 1/Pixelgröße bei setSize), Sättigung `uSat` 0,96, Farbstimmung (Schatten kühl, Licht warm), Vignette, nur ein Hauch Filmkorn
+  (HalfFloat + 4× MSAA).
 - `src/input.js` – `poll(dt)` jedes Bild → `inp` (Bewegung, Kamera, Ereignisse). Controller: B tippen = Rolle,
   B halten (> 0,28 s) = Rennen, R3 Ziel, rechten Stick schnippen = Ziel wechseln, Start Pause. Tastatur/Maus als Ersatz.
   Achtung bei Tasten-Flanken: alten Stand merken, bevor `prev` überschrieben wird.
@@ -87,7 +91,7 @@
   Eingabe `inp.card`: LB oder F, Handy-Knopf `#tCard` 🃏.
 - `src/hund.js` – **Streunende Hunde** (`spawnDogs`, `updateDogs`, `resetDogs`, `dogs`): **Meshy-Modell `models/hund.glb`**
   (Pitbull mit Geschirr, nur Clip „dog_walk“; `DOG_S` 0,72, Füße bei y −0,67, schaut nach +Z) – je Hund geklont (`useModel`,
-  eigene Toon-Materialien), Clip-Zeit passend zum Tempo (`DOG_STRIDE` 1,3, Schritt wächst beim Rennen), Clip-Gewicht `aw` weich nachgeführt, Galopp-Wippen, Haltungen (ducken, Sprung, taumeln,
+  eigene Materialien `toonFigur`, kaum aufgehellt – helles Fell), Clip-Zeit passend zum Tempo (`DOG_STRIDE` 1,3, Schritt wächst beim Rennen), Clip-Gewicht `aw` weich nachgeführt, Galopp-Wippen, Haltungen (ducken, Sprung, taumeln,
   umfallen) über den Halter `mm.holder`. Ohne Modell: Grundformen (`buildDog`). Zustände idle (streunen) →
   growl (knurren, ab 13 m; danach `aggro` – sie geben nie auf, nur wenn du stirbst `calm`) → chase → circle (lauern: Blick auf dich,
   ein paar Schritte hin und her, Abstand halten) → wind (ducken) → leap (Sprung + Biss `BITE` 28, `player.damage`) → rec (verwundbar);
@@ -169,6 +173,11 @@
   ihre Weltlage, nie unter den Boden. Gewicht je Bein (boss.js animate): 0 bei Liegen/Tod/Sprung in der Luft/Satz bei der Drehung/
   schlagender Pranke/Aufbäumen; schnell zupacken (22), weich loslassen (10). Tritt → `onStep` → main.js: Staub, `sfx.tritt`, Beben nach
   Abstand. Beine laufen nach dem **wirklichen** Tempo (`vAct`/`va` nach der Wand; an der Wand bremst `sv`). Drehung = kleiner Satz (`hop`).
+  **Drehungen immer auf Länge 1** (`rotW` in boss.js/bossbeine.js/bosskopf.js: `.normalize()`, gemerkte Korrekturen über `clean(q)`):
+  Three.js `invert()` ist nur die Konjugierte – eine minimal zu lange Drehung machte die Knochen-Matrix schief, die Welt-Drehung daraus
+  noch schiefer; über das Gedächtnis (`l.mem`, `ccdAim`-mem) schaukelte sich das beim Lauern von Bild zu Bild auf (gemessen bis 10¹⁷),
+  bis ein Hinterbein Millionen Meter weit weg lag → **riesige schwarze Dreiecke flackerten über den Arena-Boden**. Gemessen danach:
+  13 min Kampf + Lauern, Abweichung bleibt 2·10⁻¹⁶.
   Gemessen (40 s Kampf): aufgesetzte Pfote rutschte im Mittel 1,4–2,7 m/s → 0,01–0,09 m/s (Ansturm 3,7 → 0,4, Drehung 16 → 0,7).
   **Drehen auf der Stelle**: KEIN Geh-Clip mehr (`gsp` = nur echtes Tempo), sondern Trippelschritte der IK (`turning`: kleinere Schritt-
   grenze 0,55 m, Schritt 0,26 s, Ziel mit Pfotentempo inkl. Drehung `mot.wy` vorausberechnet); im Stand dreht er langsamer (×0,6).
@@ -207,7 +216,7 @@
   Angriffsformen in ihrer Farbe `ZCOL` (schwach beim Ausholen, kräftig im Treffermoment), Sprung/Heulen als Kreise am Boss, gelbe Kapsel
   = Magier; Ansicht `hbState.view` 0 aus / 1 Körper + laufender Angriff / 2 alles. Testmenü „Boss-Hitboxen“ (`HBROWS`, `hitboxHtml`/
   `hitboxWire` in menue.js): Ansicht, „Boss greift an“, Faktoren −/+ 0,1 bzw. Meter −/+ 0,25, Angriff vorführen (`o.bossAttack`),
-  Kopieren, Standard. Glut steigt vom Rücken (`embers`), Licht `glow`. `onSlam` → Staub, Rütteln.
+  Kopieren, Standard. Glut steigt vom Rücken (`embers`), Licht `glow`; Material `this.mat` = `toonFigur` (Augen/Glutrisse glühen mit der Hitze). `onSlam` → Staub, Rütteln.
   Bossleiste unten (`#bossBar`, helle Schadensanzeige `lag` läuft nach), Sieg: `#victory` „FEIND GEFÄLLT“. Kamera beim Erfassen weiter weg
   (`camDist`/`camPitch` in camera.js). Tod des Spielers → Boss `reset()`, Nebel offen.
 - **Heiltränke** (player.js): 3 pro Leben (`POTIONS`), Y / H / Handy 🧪 (`inp.heal`) → Zustand `heal` (`HEAL_T` 1,35 s, heilt `HEAL_HP` 45 bei
@@ -295,13 +304,19 @@
   gltfpack `-sa` zerstört bei Meshy die Bildkoordinaten; zweimal hintereinander vereinfachen auch – immer vom Original ausgehen.
   Originale von Auto (45 MB) und Plattenbau (195 MB) liegen nur auf dem Google Drive des Entwicklers (zu groß fürs Repo).
 - `src/requisiten.js` – Autos (Stelle + Kollision, siehe wracks.js; `carBox` als Ersatz), Bus, Laternen, Strommasten + `wire`, Ampeln, Schilder, Container, Fässer,
-  Reifen, Kisten, Sandsäcke, Zäune, Zelte, Einkaufswagen, Haltestelle, Pfützen (spiegeln den Himmel), Papier, Schutt, Platten,
+  Reifen, Kisten, Sandsäcke, Zäune, Zelte, Einkaufswagen, Haltestelle, Pfützen (nasses Pflaster: halb durchsichtig, spiegeln den Himmel;
+  liegen auf y 0,022 über dem Arena-Pflaster 0,012 + polygonOffset – auf gleicher Höhe flackerten sie als schwarze Flecken), Papier, Schutt, Platten,
   Feuertonnen (`fires`), Spieltisch (Rastpunkt), Übungspuppen (`targets`).
 - `src/kleinkram.js` – Schutthaufen `rubbleHeap` (Kieshügel, kantige Brocken `rockGeo`, Betonstücke, Ziegel, Eisen), verstreute
   Steinchen `scatter` (InstancedMesh), Müllsäcke, kahle Bäume in Baumscheiben `deadTree`, Gestrüpp `bush`.
 - `src/texturen.js` – alle Canvas-Texturen (dazu `fbm`-Rauschen, `normalTex` Höhe→Relief, Asphalt-/Gehweg-Relief) (Asphalt, Gehweg, Fassaden-Atlas `FACADES`, Rost, Holz, Unkraut, Efeu, Schilder, Himmel, Skyline).
 - `src/toon.js` – Anime-Look: `toon(farbe)` (3 harte Lichtstufen), `outline(mesh)` (Umriss als vergrößerte Rückseite),
   `part(geo, farbe, linie)`, `skinOutline(skinnedMesh)` (Umriss für Figuren mit Skelett). Geometrien zentriert lassen.
+  **`toonFigur(gltfMaterial, opt)`** für Meshy-Figuren (Boss, Hunde): 4 Lichtstufen `GRADIENT_FIGUR`, Randlicht aus der glatten Form
+  (`rim`, `rimA`/`rimB` = Fresnel-Bereich, warm), Aufhelllicht von der Kamera (`fill`, die Gegenlicht-Seite wird kein schwarzer Klotz),
+  Farbe anheben (`gamma`/`lift`, im linearen Raum – dunkles Fell braucht ~0,72, helles 0,95), Glut-Maske aus der Textur (kräftig
+  orange → `glow`, Bloom lässt Augen/Glutrisse glühen; beim Boss folgt `uGlow` der Hitze in animate), Anisotropie 8. Werte live in
+  `material.userData.u`.
 - `src/modelle.js` – `ladeModell(loader, url, …)`: in der Offline-Datei kommen alle `models/*.glb` eingebettet (Base64);
   Bilder aus `bilder/` über `bildUrl(url)` (in der Offline-Datei als data-URL in `BILDER`).
 - `tools/einzeldatei.mjs` – Offline-Datei `Aschenblatt.html`; `tools/glb_klein.py quelle ziel Name` – Meshy-Texturen verkleinern

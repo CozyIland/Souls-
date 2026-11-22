@@ -257,7 +257,8 @@ function arena(scene) {
   const ash = new THREE.Mesh(new THREE.CircleGeometry(11, 40), new THREE.MeshBasicMaterial({ map: ashT, transparent: true, depthWrite: false, color: 0x8a7a70 }));
   ash.rotation.x = -Math.PI / 2; ash.position.set(0, 0.025, -83); ash.userData.noMerge = true; scene.add(ash);
   // Durchgang zum Tor gepflastert
-  const pass = new THREE.Mesh(new THREE.PlaneGeometry(GATE.x1 - GATE.x0, 6), walk); pass.rotation.x = -Math.PI / 2; pass.position.set((GATE.x0 + GATE.x1) / 2, 0.012, GATE.z); scene.add(pass);
+  // endet genau am Platzrand (z −63) – überlappend flackerten beide Pflaster ineinander
+  const pass = new THREE.Mesh(new THREE.PlaneGeometry(GATE.x1 - GATE.x0, 5.5), walk); pass.rotation.x = -Math.PI / 2; pass.position.set((GATE.x0 + GATE.x1) / 2, 0.012, GATE.z + 0.25); scene.add(pass);
   // Rand: Feuertonnen in den Ecken, Schutt, Wracks, tote Bäume – die Mitte bleibt frei für den Kampf
   for (const [x, z] of [[-16.5, -66.5], [16.5, -66.5], [-16.5, -97], [16.5, -97]]) P.fireBarrel(scene, x, z);
   for (const [x, z, sz] of [[-18, -80, 1.6], [18, -74.5, 1.4], [17.6, -90, 1.8], [-17.6, -90.5, 1.2], [-6, -99, 1.3], [9, -99.2, 1.5]]) K.rubbleHeap(scene, x, z, sz, true);
