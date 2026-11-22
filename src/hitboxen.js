@@ -78,7 +78,7 @@ export class HitboxView {
     });
     // Angriffsformen an den Körperteilen
     for (const k of PARTS) {
-      const cur = B.st === k, ph = cur ? hitPhase(k, B.t) : 0, show = view === 2 || (cur && ph > 0);
+      const cur = B.st === k || (k === 'bite' && (B.st === 'biteQ' || B.st === 'bite2')), ph = cur ? hitPhase(B.st, B.t) : 0, show = view === 2 || (cur && ph > 0);
       const list = this.atk[k];
       const shapes = show ? T.attack(k, HB, B.swSide || 1) : [];
       while (list.length < shapes.length) list.push(new Cap(this.g, ZCOL[k], 0.5));

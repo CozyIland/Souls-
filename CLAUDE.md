@@ -180,6 +180,23 @@
   Boden-Kollision `COL` beim Laden aus den Beinen berechnet (vorher ragte sie 3,2 m vor die Pfoten – nichts konnte treffen).
   Reichweiten (Treffer-Test): Biss 3–10 m bis ±30°, Prankenhieb 2–8 m bis ±60°, Stampfen 2–8 m bis ±30°, Ansturm 5–11 m, Drehung 2–4 m
   rundum, Sprung 6–18 m → danach wählt `choose(d, a)`.
+  **Kopf, Ohren, Schwanz** (`src/bosskopf.js`, Klasse `Kopf`, `this.kopf`, jedes Bild aus animate mit Kontext `KC`): Blick = Federn
+  Hals (`yN`/`pN`, langsam) + Kopf (`yH`/`pH`, schnell, deckt den Rest ab → Kopf führt, Hals folgt), Ziel `look` × `lookW` (Biss 0,6,
+  Angriff 0,7, Ansturm 0) und `down`; glattes Rauschen (`noise2`, nur in Ruhe), Kopf ruhig halten (`stab` gegen Körper-Neigung), Kopfrolle
+  `rH` um „vorn am Kopf“ (`fwdL` = Schnauzenrichtung). Lauer-Verhalten `pick` (alle 2–6 s): knurren (Kopf tief, Ohren flach, Kiefer bebt
+  `jaw`, Körper duckt sich `lower`, Geräusch), schütteln, umschauen, neigen. Ohren (`earL_01`/`earR_01`, Feder zeta 0,4 = wippt nach):
+  anlegen `pin` (Kampf), seitlich nach Kopfdrehtempo, Zucken. Schwanz als Federkette (`tail2, tail3, tail_03, tail4`, Glieder immer
+  weicher → Welle): Haltung `S0.tail` + Nachschleppen bei Drehung + Pendeln + im Kampf erhoben; im Schwanzfeger nur dessen Haltung.
+  Wirbelsäule biegt sich im Gang seitlich (spine1). Kurvenlage `bank` und Vor-/Zurückneigen `accL` nur beim Laufen (Vorstöße erreichen
+  kurz >20 m/s – der Körper kippte sonst schlagartig).
+  **Bisse** (`BITE`, `isBite`): Reißbiss `bite` (Vorstoß bis 5,5 m, Zuschnappen 0,66 s, danach Kopfschütteln 5,2 Hz), Schnappbiss `biteQ`
+  (schnell, nah), Doppelbiss `bite2` (zwei Vorstöße/Bisse, `hit2`, `second` setzt `hitDone` zurück). Ablauf: Ausholen (Gewicht zurück,
+  Kopf hoch, Lefzen gebleckt/bebend) → Vorstoß (Maul reißt auf, Kopf schräg `hroll` – Seite nach Lage des Ziels `biteTilt`) → Zuschnappen
+  (Kiefer-Feder ×2,2 steif) → (Schütteln / zweiter Biss) → zurück. Ziel 1,5 m hoch (tiefer rollt den Kopf ein). Reichweiten (Treffer-
+  Test): Reißbiss 3–10 m ±30°, Schnappbiss 2–7 m ±20°, Doppelbiss 3–9 m ±30°. Phase 2: nach Biss Pranke oder Schnappbiss.
+  **Zielen mit Gedächtnis**: `ccdAim(…, mem, dt, rate)` führt die Korrektur je Gelenk weich nach (Biss/Pranke/Schwanz, rate 45) und blendet
+  sie bei w = 0 aus – CCD sprang sonst zwischen Lösungen (Hals ruckte). **Fuß-IK mit Warmstart** (`l.mem`/`l.acc`/`l.lat`): startet bei
+  der Lösung vom letzten Bild → kein Umspringen, kein Nachziehen (Pfoten 0,005 m/s); Schritte mit `smoother` und sin²-Bogen.
   **Schwanzfeger** (`spin`, ersetzt den 360°-Kreisel um die Mitte): `spinP` = Richtung `s` (der LANGE Weg herum, damit der Schwanz durch
   den Magier fegt; danach schaut er ihn an), Gesamtwinkel `tot` = 2π − Winkel zum Magier (2,6 … 4,4 rad), Drehpunkt `piv` = Vorderpfoten
   (Körper wandert so, dass sie stehen bleiben; `mot.pivot` → Vorderpfoten trippeln mit). Ablauf: Ausholen 0,05–0,4 s (Hüfte −0,35 rad zur

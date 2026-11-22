@@ -19,7 +19,7 @@ const HBROWS = [
   ['howl', 'Heulen (Boden)', [['r', 'Radius', 'm']]],
 ];
 const KIND = Object.fromEntries(HBROWS.flatMap(([k, , fs]) => fs.map(([f, , a]) => [k + '.' + f, a])));
-const ATK_SHOW = [['bite', 'Biss'], ['swipe', 'Prankenhieb'], ['leap', 'Sprung'], ['charge', 'Ansturm'], ['spin', 'Drehung'], ['stomp', 'Stampfen'], ['howl', 'Heulen']];
+const ATK_SHOW = [['bite', 'Reißbiss'], ['biteQ', 'Schnappbiss'], ['bite2', 'Doppelbiss'], ['swipe', 'Prankenhieb'], ['leap', 'Sprung'], ['charge', 'Ansturm'], ['spin', 'Drehung'], ['stomp', 'Stampfen'], ['howl', 'Heulen']];
 const num = (x, a) => (a === 'x' ? '× ' + x.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : x.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m');
 
 const TABS = ['char', 'inv', 'ctrl', 'test'];

@@ -13,6 +13,7 @@ import { pool } from './blut.js';
 import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 import { Beine, LEG_BONES, ccdAim } from './bossbeine.js';
 import { Teile, hitsPlayer } from './bossteile.js';
+import { Kopf } from './bosskopf.js';
 
 const URL = 'models/boss.glb';
 export const BOSS_NAME = 'Garm, der Aschenhund';
@@ -51,6 +52,7 @@ export function hitPhase(st, t) {
   const A = ATK[st]; if (!A) return 0;
   const at = A.hit || (A.land != null ? [A.land - 0.05, A.land + 0.15] : A.slam != null ? [A.slam - 0.05, A.slam + 0.15] : A.push != null ? [A.push - 0.05, A.push + 0.2] : null);
   if (!at) return 0;
+  if (A.hit2) { if (t >= A.hit2[0] && t <= A.hit2[1]) return 2; if (t > at[1] && t < A.hit2[0]) return 1; }   // Doppelbiss
   return t >= at[0] && t <= at[1] ? 2 : t < at[0] ? 1 : 0;
 }
 const POISE_MAX = 150, POISE_WAIT = 3, POISE_REGEN = 30;
@@ -65,10 +67,10 @@ const smoother = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * 
 // Jede Haltungsgröße hat Lage UND Tempo (gedämpfte Feder). Früher lief die Haltung dem Ziel nur hinterher: bei jedem Zustandswechsel
 // (Lauern → Angriff, Angriff abgebrochen) sprang das Tempo schlagartig → ruckartig und hölzern. Die Feder beschleunigt und bremst weich.
 // OM = Steifigkeit je Zustand (höher = folgt schneller), OMK = Faktor je Größe (Kopf/Hals hängen etwas nach → wirkt lebendig).
-const OM = { sleep: 5, wake: 8, stalk: 7, bite: 17, swipe: 15, leap: 18, charge: 10, spin: 15, stomp: 14, howl: 9, stagger: 10, dead: 20 };
-const OMK = { neck: 0.85, head: 0.7, jaw: 1.6, tail: 0.55, pawR: 1.35, pawO: 1.35, pawL: 1.35, air: 1.2, legF: 1.1, legR: 1.1 };
+const OM = { sleep: 5, wake: 8, stalk: 7, bite: 17, biteQ: 20, bite2: 18, swipe: 15, leap: 18, charge: 10, spin: 15, stomp: 14, howl: 9, stagger: 10, dead: 20 };
+const OMK = { neck: 0.85, head: 0.7, jaw: 1.6, hroll: 1.1, tail: 0.55, pawR: 1.35, pawO: 1.35, pawL: 1.35, air: 1.2, legF: 1.1, legR: 1.1 };
 const ZETA = 0.88;           // knapp unter 1: kommt ohne Zappeln an, schwingt aber ganz leicht aus (wirkt schwer und organisch)
-const POSE = ['y', 'pitch', 'roll', 'neck', 'head', 'jaw', 'legF', 'legR', 'tail', 'pawR', 'pawO', 'pawL', 'air'];
+const POSE = ['y', 'pitch', 'roll', 'neck', 'head', 'jaw', 'hroll', 'legF', 'legR', 'tail', 'pawR', 'pawO', 'pawL', 'air'];
 /** eine Feder-Größe k auf das Ziel zu bewegen (in kleinen Schritten, damit sie auch bei ruckelnden Bildraten stabil bleibt) */
 function spring(F, k, target, om, dt) {
   if (!Number.isFinite(target)) target = 0;
@@ -80,9 +82,20 @@ function spring(F, k, target, om, dt) {
 
 // Feinabstimmung der Reichweiten (Meter zusätzlich zur gemessenen Lage von Schnauze/Schulter/Pfote) – per Treffer-Test bestimmt
 const RE = { bite: 1.3, swipe: 1.8, stomp: 0.6 };
-// Angriffe: Dauer T (Phase 2 läuft schneller), Treffer-Fenster hit, Schaden dmg
+// Bisse – drei Varianten mit eigenem Ablauf (Zeiten in s): w = Ausholen bis, l = Vorstoß [von, bis], snap = Maul schnappt zu,
+// sh = Kopfschütteln [von, bis] (Reißen wie bei Beute), rec = zurücknehmen [von, bis], max = längster Vorstoß (m);
+// Doppelbiss: nach dem ersten Biss kurz zurück, neu zielen, zweiter Vorstoß l2 / snap2
+const BITE = {
+  bite: { w: 0.48, l: [0.5, 0.68], snap: 0.66, sh: [0.72, 1.15], rec: [1.12, 1.7], max: 5.5 },   // Reißbiss
+  biteQ: { w: 0.26, l: [0.27, 0.41], snap: 0.39, sh: null, rec: [0.5, 1.05], max: 3.0 },         // Schnappbiss (schnell, nah)
+  bite2: { w: 0.38, l: [0.39, 0.53], snap: 0.51, l2: [0.8, 0.95], snap2: 0.93, sh: null, rec: [1.05, 1.8], max: 3.5 }, // Doppelbiss
+};
+const isBite = (s) => s in BITE;
+// Angriffe: Dauer T (Phase 2 läuft schneller), Treffer-Fenster hit (Doppelbiss: zweites hit2), Schaden dmg
 const ATK = {
-  bite: { T: 1.45, hit: [0.6, 0.8], dmg: 32 },
+  bite: { T: 1.75, hit: [0.6, 0.8], dmg: 32 },
+  biteQ: { T: 1.1, hit: [0.33, 0.5], dmg: 24 },
+  bite2: { T: 1.85, hit: [0.44, 0.6], hit2: [0.86, 1.02], dmg: 22 },
   swipe: { T: 1.4, hit: [0.5, 0.7], dmg: 28 },
   leap: { T: 2.3, land: 1.22, dmg: 42, dmg2: 22 },
   charge: { T: 2.1, hit: [0.5, 1.55], dmg: 36 },
@@ -150,7 +163,7 @@ export class Boss {
     M.runSeam = this.seam(M.run) > 3 ? 0.14 : 0;
     M.walkL = this.stride(M.walk) || 4.8; M.runL = this.stride(M.run) || 15;
     M.phW = this.stancePhase(M.walk); M.phR = this.stancePhase(M.run);
-    const ctl = ['head', 'neck1', 'neck_01', 'jaw', 'chest', 'spine1', 'spine2', 'hips', 'tail2', 'tail3', 'tail4', ...LEG_BONES];
+    const ctl = ['head', 'neck1', 'neck_01', 'jaw', 'chest', 'spine1', 'spine2', 'hips', 'tail2', 'tail3', 'tail4', ...Kopf.BONES, ...LEG_BONES];
     M.ctl = [...new Set(ctl)].map((n) => B[n]).filter(Boolean);
     // Beine: Bodenhöhe der Pfoten messen (Fuß-IK, bossbeine.js); Tritt → Staub/Geräusch über onStep
     this.beine = new Beine(B); this.beine.measure(M, M.walk);
@@ -159,6 +172,9 @@ export class Boss {
     for (const x of [M.idle, M.walk, M.run, M.run2]) if (x) x.setEffectiveWeight(0);
     M.mixer.update(0); this.root.updateMatrixWorld(true);
     this.teile = new Teile(model, B);
+    // Kopf, Ohren, Schwanz: Blick, Verhalten, Nachschwingen (bosskopf.js)
+    this.kopf = new Kopf(B, this.teile.ok ? this.teile.tip : null);
+    this.kopf.onGrowl = () => sfx.growl(true);
     // Reichweiten in der Grundhaltung (Meter vor der Körpermitte): Schnauze, Schultern, Vorderpfoten, Hals-Ansatz
     if (this.teile.ok) {
       const fwd = (p) => this.root.worldToLocal(p.clone()).z, up = (p) => p.y;
@@ -326,13 +342,15 @@ export class Boss {
   choose(d, a) {
     const r = Math.random(), A = Math.abs(a);
     if (A > 1.7) return d < 4.5 ? 'spin' : null;                  // hinter ihm: nur dicht dran die Drehung, sonst erst herumdrehen
-    if (A > 1.05) return d < 4.2 ? (r < 0.6 ? 'spin' : null) : null;
-    if (d < 3) return r < 0.5 ? 'stomp' : 'swipe';
+    if (A > 1.05) return null;                                   // genau neben ihm: erst herumdrehen, dann zuschlagen
+    // Bisse: nah meist der schnelle Schnappbiss, weiter weg Reißbiss oder (in Phase 2 öfter) Doppelbiss
+    const bite = () => { const q = Math.random(); if (d < 5.5) return q < 0.6 && A < 0.35 ? 'biteQ' : 'bite'; return q < (this.phase2 ? 0.45 : 0.25) ? 'bite2' : 'bite'; };
+    if (d < 3) return r < 0.4 ? 'stomp' : r < 0.75 ? 'swipe' : 'biteQ';
     if (d < 7.5) {
       if (A > 0.5) return 'swipe';                               // schräg vor ihm: Pranke
-      return r < 0.36 ? 'bite' : r < 0.68 ? 'swipe' : 'stomp';
+      return r < 0.4 ? bite() : r < 0.7 ? 'swipe' : 'stomp';
     }
-    if (d < 10.5) return A < 0.5 ? (r < 0.55 ? 'bite' : r < 0.85 ? 'charge' : 'leap') : (r < 0.5 ? 'leap' : null);
+    if (d < 10.5) return A < 0.5 ? (r < 0.55 ? bite() : r < 0.85 ? 'charge' : 'leap') : (r < 0.5 ? 'leap' : null);
     if (d < 13) return r < 0.45 ? 'charge' : r < 0.85 ? 'leap' : null;
     return r < 0.45 ? 'leap' : r < 0.7 ? 'charge' : null;
   }
@@ -371,14 +389,22 @@ export class Boss {
         }
         break;
       }
-      case 'bite': {
-        // ausholen (Kopf zurück, zielt), dann Vorstoß genau so weit, dass die Schnauze dich erreicht; Kopf zielt bis kurz vorher mit
-        want = toP; turn = t < 0.5 ? 1.7 : 0.15;
-        spd = t < 0.5 ? -0.6 : 0;
-        if (t < 0.56) this.aimAt(pl, 1.0);
-        if (t >= 0.5 && !this.lunge) this.planLunge(pl, 0.5, 0.72, this.R('biteReach'), 5.5);
-        if (t > ATK.bite.hit[0] && t < ATK.bite.hit[1]) this.req('bite', ATK.bite.dmg, 1.6);   // Schnauze
-        if (t > ATK.bite.T) this.after('bite');
+      case 'bite': case 'biteQ': case 'bite2': {
+        // ausholen (Kopf zurück, Lefzen hoch, zielt), dann Vorstoß genau so weit, dass die Schnauze dich erreicht; das Ziel wird
+        // bis kurz vor dem Zuschnappen nachgeführt (danach kannst du noch ausweichen). Doppelbiss: zwischen den Bissen neu zielen.
+        const P = BITE[this.st], A = ATK[this.st];
+        want = toP; turn = t < P.w ? 1.7 : 0.15;
+        if (P.l2 && t > P.snap + 0.08 && t < P.l2[0]) turn = 1.3;
+        spd = t < P.w ? -0.6 : 0;
+        // Ziel: Oberkörper/Kopf des Magiers (1,5 m) – tiefer zu zielen rollt den Kopf ein und zieht die Schnauze zurück
+        if (t < P.snap - 0.1 || (P.l2 && t > P.snap + 0.06 && t < P.snap2 - 0.1)) this.aimAt(pl, 1.5);
+        if (t >= P.l[0] && !this.lunge) this.planLunge(pl, P.l[0], P.l[1], this.R('biteReach'), P.max);
+        if (P.l2 && t >= P.l2[0] - 0.02 && !this.second) {        // zweiter Biss: neuer Vorstoß, darf noch einmal treffen
+          this.second = true; this.lunge = null; this.hitDone = false;
+          this.planLunge(pl, P.l2[0], P.l2[1], this.R('biteReach'), P.max);
+        }
+        if ((t > A.hit[0] && t < A.hit[1]) || (A.hit2 && t > A.hit2[0] && t < A.hit2[1])) this.req('bite', A.dmg, 1.6);   // Schnauze
+        if (t > A.T) this.after(this.st);
         break;
       }
       case 'swipe': {
@@ -473,7 +499,8 @@ export class Boss {
       this.yaw = P.y0 + P.s * (-PRE * sm((t - 0.05) / 0.35) + (P.tot + PRE) * smoother((t - 0.42) / 0.62)); this.w = 0;
     } else if (want !== null && this.st !== 'dead' && this.st !== 'stagger') {
       // im Stand dreht der Riese langsamer (sonst kommen die Pfoten mit dem Umsetzen nicht nach und schleifen)
-      const still = this.st !== 'charge' ? lerp(0.6, 1, clamp((this.va || 0) / 3, 0, 1)) : 1;
+      // (nur beim Lauern – beim Ausholen eines Angriffs dreht er voll mit, die Beine trippeln dafür mit)
+      const still = this.st === 'stalk' ? lerp(0.6, 1, clamp((this.va || 0) / 3, 0, 1)) : 1;
       const df = angDiff(this.yaw, want), wMax = TURN_MAX * turn * (this.phase2 ? 1.2 : 1) * still;
       const wT = Math.sign(df) * Math.min(wMax, Math.abs(df) * 3, Math.sqrt(2 * TURN_ACC * Math.abs(df)) * 0.9);
       this.w += clamp(wT - this.w, -TURN_ACC * dt, TURN_ACC * dt); this.yaw += this.w * dt;
@@ -531,8 +558,11 @@ export class Boss {
 
   /** nach einem Angriff: Kombo (Phase 2) oder kurz lauern */
   after(k) {
-    if (this.phase2 && this.combo < 1 && Math.random() < 0.55 && (k === 'bite' || k === 'swipe')) {
-      this.combo++; this.attack(k === 'bite' ? 'swipe' : 'swipe', this.lookYaw, k === 'swipe' ? -this.swSide : null); return;
+    if (this.phase2 && this.combo < 1 && Math.random() < 0.55 && (isBite(k) || k === 'swipe')) {
+      // Phase 2: nachsetzen – nach einem Biss Pranke oder schneller Schnappbiss, nach der Pranke die andere Pranke
+      this.combo++;
+      const nx = k === 'swipe' ? 'swipe' : k !== 'biteQ' && Math.random() < 0.45 ? 'biteQ' : 'swipe';
+      this.attack(nx, this.lookYaw, k === 'swipe' ? -this.swSide : null); return;
     }
     this.combo = 0; this.go('stalk');
     this.cd = (this.phase2 ? 0.5 : 0.9) + Math.random() * (this.phase2 ? 0.6 : 0.9);
@@ -542,6 +572,8 @@ export class Boss {
     this.go(k);
     if (k === 'swipe') this.swSide = forceSide ?? (a > 0 ? 1 : -1); // +1 = Spieler links → linke Pranke
     if (k === 'leap') this.leap = { go: false };
+    // Kopf schräg passend zur Seite, auf der das Ziel steht (wie ein Hund beim Zupacken); gerade vor ihm zufällig
+    if (isBite(k)) { this.biteTilt = a > 0.1 ? -1 : a < -0.1 ? 1 : (Math.random() < 0.5 ? 1 : -1); this.second = false; }
     if (k !== 'spin') sfx.growl(true);
   }
 
@@ -553,14 +585,33 @@ export class Boss {
     // wirkliches Tempo (nach Wand/Sprung), nicht das gewollte – sonst laufen die Beine, obwohl er nicht vorankommt
     const VA = this.vAct || this.v, sp = Math.hypot(VA.x, VA.y), fwd = VA.x * Math.sin(this.yaw) + VA.y * Math.cos(this.yaw);
     // ---------- Ganzkörper-Haltung (Halter) ----------
-    let y = 0, pitch = 0, roll = 0, neck = 0, head = 0, jaw = 0.05, legF = 0, legR = 0, tail = 0, rise = 0, drop = 0, curl = 0;
+    let y = 0, pitch = 0, roll = 0, neck = 0, head = 0, jaw = 0.05, legF = 0, legR = 0, tail = 0, rise = 0, drop = 0, curl = 0, hroll = 0;
     switch (st) {
       case 'sleep': neck = 0.75 + 0.08 * Math.sin(this.it * 3.1); head = 0.3; jaw = 0.12; pitch = 0.06; break; // schnüffelt am Boden (Kopf tief)
       case 'wake': { const u = sm(t / 0.9), h = bump(t, 1.25, 1.6) * (1 - bump(t, 2.6, 3.0)); // Kopf hoch, aufbäumen, heulen
         y = 0.25 * h; pitch = 0.06 * (1 - u) - 0.3 * h; neck = 0.75 * (1 - u) - 0.9 * h; head = 0.3 * (1 - u) - 0.4 * h; jaw = 0.1 + 0.6 * h; break; }
-      case 'bite': { const w = bump(t, 0, 0.5) * (1 - bump(t, 0.55, 0.66)), l = bump(t, 0.55, 0.68) * (1 - bump(t, 0.95, 1.4));
-        // Zuschnappen: Vorderkörper taucht tief nach vorn ab (ein Riese muss sich zum kleinen Magier hinunterbeugen)
-        pitch = -0.12 * w + 0.3 * l; neck = -0.45 * w + 0.8 * l; head = -0.3 * w + 0.35 * l; jaw = 0.1 + 0.65 * w * (1 - l) + 0.2 * (1 - bump(t, 0.66, 0.72)) * l; y = -0.15 * w - 0.45 * l; break; }
+      case 'bite': case 'biteQ': case 'bite2': {
+        // Biss wie bei einem echten Raubtier:
+        // AUSHOLEN – Gewicht nach hinten, Kopf hoch und zurück, Lefzen gebleckt (Maul einen Spalt offen, bebt)
+        // VORSTOSS – Vorderkörper taucht ab, Hals schießt vor, Kopf legt sich schräg, das Maul reißt weit auf
+        // ZUSCHNAPPEN – Maul schlägt schlagartig zu (Kiefer-Feder hier besonders steif)
+        // Reißbiss: danach Kopfschütteln wie beim Zerren (siehe unten) · Doppelbiss: kurz zurück, Maul wieder auf, zweiter Biss
+        // ZURÜCK – Kopf hebt sich, Maul hängt kurz offen, Haltung entspannt sich
+        const P = BITE[st], tl = this.biteTilt || 1;
+        const W = bump(t, 0, P.w) * (1 - bump(t, P.l[0], P.l[0] + 0.08));
+        const L1 = bump(t, P.l[0], P.l[1]) * (1 - (P.l2 ? bump(t, P.snap + 0.06, P.l2[0]) : bump(t, P.rec[0], P.rec[1])));
+        const L2 = P.l2 ? bump(t, P.l2[0], P.l2[1]) * (1 - bump(t, P.rec[0], P.rec[1])) : 0;
+        const mid = P.l2 ? bump(t, P.snap + 0.06, P.l2[0] - 0.06) * (1 - bump(t, P.l2[0], P.l2[0] + 0.06)) : 0;
+        const L = Math.max(L1, L2);
+        const op1 = bump(t, P.l[0] - 0.04, P.snap - 0.07) * (1 - bump(t, P.snap - 0.035, P.snap + 0.005));
+        const op2 = P.l2 ? bump(t, P.snap + 0.1, P.snap2 - 0.07) * (1 - bump(t, P.snap2 - 0.035, P.snap2 + 0.005)) : 0;
+        const shE = P.sh ? bump(t, P.sh[0], P.sh[0] + 0.06) * (1 - bump(t, P.sh[1] - 0.15, P.sh[1])) : 0;
+        const rec = bump(t, P.rec[0], P.rec[0] + 0.15) * (1 - bump(t, P.rec[1] - 0.25, P.rec[1]));
+        jaw = 0.1 + W * (0.16 + 0.04 * Math.sin(t * 47)) + 0.85 * op1 + 0.8 * op2 + 0.1 * shE + 0.14 * rec;
+        pitch = -0.14 * W + 0.3 * L - 0.05 * mid; y = -0.12 * W - 0.45 * L - 0.1 * mid;
+        neck = -0.5 * W + 0.8 * L - 0.15 * shE - 0.2 * mid; head = -0.3 * W + 0.35 * L - 0.1 * mid;
+        hroll = tl * (0.28 * L - 0.08 * W); roll = tl * 0.04 * L;   // Kopf schräg wie ein Hund beim Zupacken
+        break; }
       case 'swipe': { const r = bump(t, 0.05, 0.48) * (1 - bump(t, 0.5, 0.6)), s2 = bump(t, 0.5, 0.7) * (1 - bump(t, 0.9, 1.35));
         roll = -this.swSide * (0.12 * r - 0.1 * s2); pitch = -0.1 * r + 0.08 * s2; neck = 0.15 * s2; jaw = 0.25; y = 0.1 * r; break; }
       case 'leap': { const c = bump(t, 0, 0.55) * (1 - bump(t, 0.6, 0.7)), air = t > 0.6 && t < ATK.leap.land ? Math.sin((t - 0.6) / (ATK.leap.land - 0.6) * Math.PI) : 0;
@@ -596,8 +647,8 @@ export class Boss {
         const bounce = Math.sin(clamp((T - 0.9) / 0.35, 0, 1) * Math.PI) * 0.08 * (1 - sm((T - 0.9) / 0.5));
         y = LP.dB * buck * (1 - fall) + LP.dY * fall; roll = -sd * (fall * 1.45 - bounce); pitch = 0.2 * buck * (1 - fall); neck = 0.3; jaw = 0.4; legF = LP.dF * buck; legR = LP.dR * buck; break; }
     }
-    // Lauern: Kopf tief, angespannt, schweres Atmen
-    if (st === 'stalk') { neck = 0.18; jaw = 0.15; y = -0.1; }
+    // Lauern: Kopf tief, angespannt, schweres Atmen; beim Knurren duckt sich der Vorderkörper (bosskopf.js)
+    if (st === 'stalk') { const low = this.kopf ? this.kopf.lower : 0; neck = 0.18 + 0.12 * low; jaw = 0.15; y = -0.1 - 0.12 * low; pitch = 0.05 * low; }
     // eigene Uhren, die bei Zustandswechseln NICHT auf 0 springen (früher hing z. B. der Schwanz an this.t → sprang bei jedem Angriff)
     this.clk = (this.clk || 0) + dt;
     const calm = st === 'sleep' || st === 'stalk' || st === 'wake', pant = st === 'stalk' ? 1 : 0;
@@ -610,25 +661,30 @@ export class Boss {
       pawR = (-1.25 * a1 + 1.0 * b1) * (1 - c1); pawO = (0.7 * a1 - 1.25 * b1) * (1 - c1); pawL = 0.5 * a1 * (1 - c1);
     }
     // Schwanz: hängt beim Liegen, fegt bei der Drehung, sonst langsames Pendeln (eigene Uhr)
-    tail = st === 'sleep' ? 0.3 : st === 'spin' ? tail : 0.15 * Math.sin(this.clk * 1.7);
-    const tg = { y, pitch, roll, neck, head, jaw, legF, legR, tail, pawR, pawO, pawL, air: st === 'leap' ? rise : 0 };
+    tail = st === 'sleep' ? 0.3 : st === 'spin' ? tail : 0;   // Pendeln und Nachschleppen macht jetzt die Schwanzkette (bosskopf.js)
+    const tg = { y, pitch, roll, neck, head, jaw, hroll, legF, legR, tail, pawR, pawO, pawL, air: st === 'leap' ? rise : 0 };
     const F = this.F || (this.F = { x: { ...tg }, v: {} });
     // Treffer: Stoß in die Federn (Kopf zuckt zurück, Körper weicht seitlich aus) – wird über die nächsten Bilder weich ausgeschwungen
     if (this.kick && !this.dead) { F.v.pitch = (F.v.pitch || 0) + this.kick.p; F.v.roll = (F.v.roll || 0) + this.kick.r; F.v.neck = (F.v.neck || 0) - this.kick.n; }
     this.kick = null;
     const om = OM[st] || 7;
-    for (const k of POSE) spring(F, k, tg[k], om * (OMK[k] || 1), dt);
+    // Kiefer in Bissen besonders steif: das Maul schlägt schlagartig zu (sonst wirkt das Zuschnappen weich wie Kauen)
+    for (const k of POSE) spring(F, k, tg[k], om * (OMK[k] || 1) * (k === 'jaw' && isBite(st) ? 2.2 : 1), dt);
     // im Sprung bestimmt die Flugbahn die Höhe direkt (die Feder übernimmt danach mit dem passenden Tempo)
     if (rise) { F.v.y = dt > 0 ? (y - F.x.y) / dt : 0; F.x.y = y; }
     const S0 = F.x;
     // Gehen: leichtes Wiegen von Seite zu Seite und Auf und Ab im Schritt (macht den Gang schwer und lebendig)
     const walkW = this.aw.walk, runW = this.aw.run;
     const sway = Math.sin(this.gp * TAU) * (0.03 * walkW + 0.015 * runW), bob = (0.5 - 0.5 * Math.cos(this.gp * TAU * 2)) * (0.05 * walkW + 0.03 * runW);
-    // in die Kurve legen
-    let r2 = S0.roll + sway + (st !== 'dead' ? clamp(-this.yawRate * sp * 0.03, -0.15, 0.15) : 0), p2 = S0.pitch;
+    // in die Kurve legen – nur beim Laufen (Lauern/Aufstehen) und geglättet; beim Vorstoß eines Angriffs springt das Tempo sonst
+    // für einen Moment auf über 20 m/s und der ganze Körper kippte schlagartig zur Seite
+    const bankT = (st === 'stalk' || st === 'wake') ? clamp(-this.yawRate * Math.min(sp, 8) * 0.03, -0.15, 0.15) : 0;
+    this.bank = lerp(this.bank || 0, bankT, damp(5, dt));
+    let r2 = S0.roll + sway + this.bank, p2 = S0.pitch;
     // Gewicht vor beim Antreten, zurück beim Bremsen (wie bei den Hunden)
     const acF = dt > 0 ? (fwd - (this.fwd0 ?? fwd)) / dt : 0; this.fwd0 = fwd;
-    this.accL = lerp(this.accL || 0, st === 'dead' || st === 'leap' ? 0 : clamp(acF * 0.01, -0.07, 0.06), damp(5, dt));
+    const locoAcc = st === 'stalk' || st === 'wake' || st === 'charge';   // nur beim Laufen – Vorstöße haben ihre eigene Haltung
+    this.accL = lerp(this.accL || 0, locoAcc ? clamp(acF * 0.01, -0.07, 0.06) : 0, damp(5, dt));
     p2 += this.accL;
     M.holder.position.y = (S0.y - bob) * K; M.holder.rotation.set(p2, 0, r2);
     // ---------- Beine: Clips nach Tempo (Schritte passen zur Strecke), beim Drehen auf der Stelle treten ----------
@@ -665,16 +721,20 @@ export class Boss {
     const ax = (x, y2, z) => vX.set(x, y2, z).applyQuaternion(qH).clone();
     const X = ax(1, 0, 0), Y = ax(0, 1, 0), Z = ax(0, 0, 1);
     const alive = !this.dead && st !== 'sleep';
-    // Kopf schaut zum Magier (der ist klein → Kopf etwas nach unten, wenn er nah ist)
-    // Kopf schaut zum Magier; beim Schwanzfeger beim Ausholen weit über die Schulter (Warnung), im Schwung kaum
-    const lt = !alive || st === 'charge' ? 0 : st === 'spin' ? clamp(this.lookYaw || 0, -1.3, 1.3) * (1 - 0.8 * bump(t, 0.4, 0.5) * (1 - bump(t, 1.0, 1.15)))
-      : clamp(this.lookYaw || 0, -0.9, 0.9);
-    this.lk = lerp(this.lk || 0, lt, damp(5, dt));
-    const down = alive ? clamp((9 * K - (this.lookD || 9)) / (9 * K), 0, 1) * 0.35 : 0;
-    rotW(B.neck1, Y, this.lk * 0.5); rotW(B.head, Y, this.lk * 0.35);
-    const nod = Math.sin(this.gp * TAU * 2 + 0.6) * 0.035 * this.aw.walk;      // Kopf nickt mit jedem Schritt
-    rotW(B.neck1, X, S0.neck + down + nod); rotW(B.head, X, S0.head + down * 0.4);
-    if (B.jaw) rotW(B.jaw, X, S0.jaw);
+    // ---------- Kopf, Blick, Ohren (bosskopf.js): Kopf führt, Hals folgt; Verhalten beim Lauern; Ohren federn ----------
+    // Blickstärke: beim Ansturm nicht (Kopf rammt), beim Schwanzfeger weit über die Schulter beim Ausholen, im Schwung kaum,
+    // in Bissen nur bis zum Zuschnappen (danach führt das Zielen den Kopf)
+    const atkNow = !!ATK[st] && st !== 'howl';
+    const lookW = !alive || st === 'charge' ? 0 : st === 'spin' ? 1 - 0.8 * bump(t, 0.4, 0.5) * (1 - bump(t, 1.0, 1.15)) : isBite(st) ? 0.6 : atkNow ? 0.7 : 1;
+    const down = alive ? clamp((9 * K - (this.lookD || 9)) / (9 * K), 0, 1) * 0.35 : 0;   // nahes Ziel: Kopf tiefer
+    const nod = Math.sin(this.gp * TAU * 2 + 0.6) * 0.035 * this.aw.walk;                    // Kopf nickt mit jedem Schritt
+    rotW(B.neck1, X, S0.neck + nod); rotW(B.head, X, S0.head);
+    if (Math.abs(S0.hroll) > 1e-4) rotW(B.head, Z, S0.hroll);                               // Kopf schräg (Biss)
+    const KC = this.kc || (this.kc = {});
+    Object.assign(KC, { st, alive, calm, attack: atkNow, angry: st === 'stalk' && (this.lookD || 99) < 12, look: clamp(this.lookYaw || 0, -1.3, 1.3), lookW,
+      down, far: (this.lookD || 0) > 11, bodyRoll: r2, yawRate: this.yawRate || 0, X, Y, clk: this.clk, onGrowl: () => sfx.growl(true) });
+    if (this.kopf && alive) this.kopf.update(dt, KC);
+    if (B.jaw) rotW(B.jaw, X, S0.jaw + (this.kopf && alive ? this.kopf.jaw : 0));
     // in die Kurve biegen
     this.tb = lerp(this.tb || 0, alive ? clamp(this.yawRate * 0.12, -0.25, 0.25) : 0, damp(6, dt));
     rotW(B.chest, Y, this.tb * 0.5); rotW(B.neck1, Y, this.tb * 0.5); rotW(B.hips, Y, -this.tb * 0.3);
@@ -691,17 +751,21 @@ export class Boss {
     }
     // Sprung: Vorderbeine vor, Hinterbeine zurück
     if (S0.air > 1e-3) for (const s of ['L', 'R']) { rotW(B['frontUpr' + s], X, -0.9 * S0.air); rotW(B['rearLeg' + s + '_01'], X, 0.8 * S0.air); }
-    // Schwanz (Feder: schwingt nach, springt nie); Atmen hebt den Brustkorb
-    rotW(B.tail2, Y, S0.tail * 0.5); rotW(B.tail3, Y, S0.tail * 0.4); rotW(B.tail4, Y, S0.tail * 0.3);
+    // Schwanz als Federkette (bosskopf.js): Haltung aus dem Körper + Nachschleppen bei Drehungen + Pendeln; schläft er, hängt er
+    if (this.kopf && alive) this.kopf.tail(dt, KC, S0.tail, 0);
+    else { rotW(B.tail2, Y, S0.tail * 0.5); rotW(B.tail3, Y, S0.tail * 0.4); rotW(B.tail4, Y, S0.tail * 0.3); }
+    // Wirbelsäule biegt sich im Gang seitlich mit (Schultern und Becken gegeneinander) – schwerer, tierischer Gang
+    if (alive && B.spine1) rotW(B.spine1, Y, Math.sin(this.gp * TAU + 0.4) * 0.05 * (this.aw.walk + 0.6 * this.aw.run));
     // Schwanzfeger: Vorderkörper bleibt zurück, das Hinterteil wirft sich voraus (Körper krümmt sich wie ein C)
     if (Math.abs(curl) > 1e-3 && B.spine1) rotW(B.spine1, Y, -0.32 * curl);
     // Drehung: Schwanzspitze tief auf Körperhöhe des Magiers führen (in die Richtung, in die der Schwanz gerade zeigt)
-    if (drop > 1e-3 && B.tail_05) {
+    // (läuft jedes Bild mit Gedächtnis: blendet nach der Drehung weich aus, springt nie)
+    if (B.tail_05) {
       M.holder.updateMatrixWorld(true);
       const base = B.tail2.getWorldPosition(new THREE.Vector3()), tip = B.tail_05.getWorldPosition(new THREE.Vector3());
       const len = base.distanceTo(tip), hx = tip.x - base.x, hz = tip.z - base.z, hl = Math.hypot(hx, hz) || 1;
       const tg = new THREE.Vector3(base.x + hx / hl * len * 0.95, 0.7, base.z + hz / hl * len * 0.95);
-      ccdAim([B.tail4, B.tail3, B.tail2], (v) => B.tail_05.getWorldPosition(v), tg, drop, [0.8, 0.8, 0.9], 5);
+      ccdAim([B.tail4, B.tail3, B.tail2], (v) => B.tail_05.getWorldPosition(v), tg, drop > 1e-3 ? drop : 0, [0.8, 0.8, 0.9], 5, this.memTail || (this.memTail = []), dt, 45);
     }
     if (calm && !this.dead && B.chest) rotW(B.chest, X, -0.025 * breath);
     if (this.dead) { const sd = this.deadSide, lie = sm((this.deadT - 0.6) / 0.6);
@@ -712,15 +776,29 @@ export class Boss {
     // ---------- Zielen: Angriffe treffen dort, wo der Magier ist (Kopf/Pfote werden zu ihm geführt) ----------
     const T = this.teile && this.teile.ok ? this.teile : null;
     // Biss: Kopf und Hals führen die Schnauze zu dir (auf Brusthöhe) – beim Ausholen schon, beim Zuschnappen voll
-    if (T && st === 'bite' && this.aimP) {
-      const wB = bump(t, 0.3, 0.58) * (1 - bump(t, 0.85, 1.25));
-      ccdAim([B.head, B.neck1, B.neck_01], (v) => T.snout(HB.bite.vor, v), this.aimP, wB, [1.1, 1.1, 0.9], 6);
+    // (läuft jedes Bild mit Gedächtnis: die Zielkorrektur gleitet statt zu springen und blendet nach dem Biss weich aus)
+    if (T) {
+      const P = isBite(st) && this.aimP ? BITE[st] : null;
+      const wB = P ? bump(t, P.w - 0.2, P.l[0] + 0.08) * (1 - bump(t, P.rec[0], P.rec[0] + 0.35)) : 0;
+      ccdAim([B.head, B.neck1, B.neck_01], (v) => T.snout(HB.bite.vor, v), this.aimP || vT, wB, [1.1, 1.1, 0.9], 6, this.memBite || (this.memBite = []), dt, 45);
+      // Reißbiss: nach dem Zuschnappen schüttelt er den Kopf wie beim Zerren an Beute (schnell, klingt ab; Hals schwingt mit)
+      if (P && P.sh) {
+        const shE = bump(t, P.sh[0], P.sh[0] + 0.06) * (1 - bump(t, P.sh[1] - 0.15, P.sh[1]));
+        if (shE > 1e-3) {
+          const s = Math.sin(2 * Math.PI * 5.2 * (t - P.sh[0])) * 0.3 * shE * (1 - 0.4 * clamp((t - P.sh[0]) / (P.sh[1] - P.sh[0]), 0, 1));
+          rotW(B.neck1, Y, 0.45 * s); rotW(B.head, Y, 0.55 * s); rotW(B.head, Z, 0.35 * s * (this.biteTilt || 1));
+        }
+      }
     }
     // Prankenhieb: die Pfote holt außen hoch aus und fegt dann auf Körperhöhe durch die gemerkte Stelle nach innen
     let wS = 0;
-    if (T && st === 'swipe' && this.aimP) {
+    // beide Vorderbeine jedes Bild mit Gedächtnis (die nicht schlagende Pfote mit Gewicht 0 → ihre alte Korrektur blendet aus)
+    const memS = this.memSwipe || (this.memSwipe = { L: [], R: [] });
+    const swingX = T && st === 'swipe' && this.aimP ? ((this.swSide || 1) > 0 ? 'L' : 'R') : null;
+    for (const x of ['L', 'R']) if (x !== swingX && T) ccdAim([B['frontHorselink' + x], B['frontLwr' + x], B['frontUpr' + x]], (v) => B['frontFoot' + x].getWorldPosition(v), vT, 0, [1.2, 1.4, 1.3], 5, memS[x], dt, 30);
+    if (swingX) {
       wS = bump(t, 0.08, 0.4) * (1 - bump(t, 0.78, 1.15));
-      const s = this.swSide || 1, x = s > 0 ? 'L' : 'R', fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+      const s = this.swSide || 1, x = swingX, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
       const ox = Math.cos(this.yaw) * s, oz = -Math.sin(this.yaw) * s;          // nach außen (Seite der schlagenden Pfote)
       const sh = B['frontUpr' + x].getWorldPosition(new THREE.Vector3());
       const P1 = this.aimP.clone(); P1.y = 0.8;
@@ -730,7 +808,7 @@ export class Boss {
       const P2 = new THREE.Vector3(P1.x - ox * 1.6 + fx * 0.3, 0.6, P1.z - oz * 1.6 + fz * 0.3);
       const u = clamp((t - 0.46) / 0.22, 0, 1), C = P1.clone().multiplyScalar(2).addScaledVector(P0, -0.5).addScaledVector(P2, -0.5);
       const tg = t < 0.46 ? P0 : P0.clone().multiplyScalar((1 - u) * (1 - u)).addScaledVector(C, 2 * u * (1 - u)).addScaledVector(P2, u * u);
-      ccdAim([B['frontHorselink' + x], B['frontLwr' + x], B['frontUpr' + x]], (v) => B['frontFoot' + x].getWorldPosition(v), tg, wS, [1.2, 1.4, 1.3], 5);
+      ccdAim([B['frontHorselink' + x], B['frontLwr' + x], B['frontUpr' + x]], (v) => B['frontFoot' + x].getWorldPosition(v), tg, wS, [1.2, 1.4, 1.3], 5, memS[x], dt, 45);
     }
     // ---------- Pfoten fest auf den Boden (Fuß-IK + eigene Schritte, bossbeine.js) ----------
     // Gewicht 0 = das Bein gehört gerade der Animation: Liegen, Tod, Sprung in der Luft, Satz bei der Drehung,

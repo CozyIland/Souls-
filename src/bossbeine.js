@@ -23,8 +23,9 @@ const NB = [[1, 2], [0, 3], [3, 0], [2, 1]];
 const vA = new THREE.Vector3(), vE = new THREE.Vector3(), vJ = new THREE.Vector3(), vT = new THREE.Vector3();
 const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), vC = new THREE.Vector3(), vL = new THREE.Vector3();
 const qP = new THREE.Quaternion(), qR = new THREE.Quaternion(), qF = new THREE.Quaternion(), qW = new THREE.Quaternion();
-const Y_UP = new THREE.Vector3(0, 1, 0);
+const Y_UP = new THREE.Vector3(0, 1, 0), QI = new THREE.Quaternion(), RATE = 12;   // RATE: Ausblenden der Bein-IK, wenn die Animation übernimmt (1/s)
 const sm = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
+const smoother = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * c * (c * (6 * c - 15) + 10); };
 
 /** Knochen um eine Weltachse drehen (Eltern-Weltmatrix muss aktuell sein) */
 function rotW(bone, axisW, ang) {
@@ -66,7 +67,7 @@ export class Beine {
     });
   }
 
-  reset() { for (const l of this.legs) { l.st = 'frei'; l.w = 0; l.slam = null; } }
+  reset() { for (const l of this.legs) { l.st = 'frei'; l.w = 0; l.slam = null; l.mem = null; l.acc = [0, 0, 0]; l.lat = 0; } }
 
   /** Stampfen: Pfote i soll beim nächsten Aufsetzen genau bei (x, z) landen (solange das Bein in der Luft ist) */
   slamAt(i, x, z) { if (this.legs[i]) this.legs[i].slam = { x, z }; }
@@ -86,7 +87,15 @@ export class Beine {
       l.w += (w[i] - l.w) * (1 - Math.exp(-(w[i] > l.w ? 22 : 10) * dt));   // schnell zupacken (Landung), weich loslassen
       const A = l.footB.getWorldPosition(vA);
       const contact = A.y < l.h0 + l.thr;
-      if (l.w < 0.02) { l.st = 'frei'; l.prevY = A.y; return; }
+      if (l.w < 0.02) {   // Bein gehört der Animation: gemerkte IK-Korrektur weich ausblenden (kein Sprung beim Übergeben)
+        l.st = 'frei'; l.prevY = A.y;
+        if (l.mem) {
+          const k = 1 - Math.exp(-RATE * dt);
+          l.bones.forEach((b, j) => { l.mem[j].slerp(QI, k); b.quaternion.multiply(l.mem[j]); }); l.bones[0].updateMatrixWorld(true);
+          l.acc = l.acc.map((a) => a * (1 - k)); l.lat = (l.lat || 0) * (1 - k);
+        }
+        return;
+      }
       // Tempo dieser Pfote, wenn sie am Körper hinge: Vorwärtstempo + Drehung um den Körpermittelpunkt
       const fvx = mot.vx + mot.wy * (A.z - mot.cz), fvz = mot.vz - mot.wy * (A.x - mot.cx);
       let T;
@@ -101,15 +110,16 @@ export class Beine {
         const dev = Math.hypot(A.x - l.P.x, A.z - l.P.z);
         const busy = NB[i].some((n) => this.legs[n].st === 'schritt' && this.legs[n].forced);
         if (l.hold > 0) { /* gestampft: liegen lassen */ }
-        else if (!contact) this.startStep(l, false, 0.16);                    // der Clip hebt den Fuß: weich hinterher
+        else if (!contact) this.startStep(l, false, 0.2);                     // der Clip hebt den Fuß: weich hinterher
         else if (dev > maxDev && !busy) this.startStep(l, true, stepT);       // Körper hat sich entfernt: eigener Schritt
       }
       if (l.st === 'schritt') {
         l.u += dt / l.T;
-        const e = sm(l.u);
+        const e = smoother(l.u);   // weicher Verlauf: beginnt und endet ohne Ruck (auch die Beschleunigung ist an den Enden null)
         // eigener Schritt: dorthin, wo die Pfote in einem Moment sein wird (auch durch die Drehung) – so reicht ein Schritt länger
         if (l.forced) { const k = l.T * (turning ? 1.1 : 0.55); l.E.set(A.x + fvx * k, l.h0, A.z + fvz * k); } else l.E.copy(A);
-        T = vT.copy(l.S).lerp(l.E, e); T.y += l.arc * Math.sin(Math.PI * Math.min(1, l.u));
+        const sa = Math.sin(Math.PI * Math.min(1, l.u));
+        T = vT.copy(l.S).lerp(l.E, e); T.y += l.arc * sa * sa * 1.3;   // Pfote hebt sich sanft an und setzt sanft auf
         if (l.u >= 1) {
           if (l.forced || contact) { this.plant(l, l.E.x, l.E.z, l.forced ? 1 : 0.5); T.copy(l.P); }
           else { l.st = 'frei'; T.copy(A); }
@@ -119,7 +129,7 @@ export class Beine {
       // Ziel mit dem Gewicht zwischen Animation und festem Punkt mischen; nie unter den Boden (beim Ducken sank die Pfote sonst ein)
       T.lerp(A, 1 - l.w);
       if (T.y < l.h0) T.y = l.h0;
-      this.ik(l, T, Lax);
+      this.ik(l, T, Lax, dt);
       l.err = l.footB.getWorldPosition(vE).distanceTo(T);   // wie weit die IK das Ziel verfehlt (zum Prüfen)
     });
   }
@@ -135,9 +145,15 @@ export class Beine {
   }
 
   /** Bein in seiner Ebene beugen (CCD um die Querachse), bis die Pfote am Ziel T ist; Pfote behält ihre Weltlage */
-  ik(l, T, Lax) {
+  ik(l, T, Lax, dt = 0) {
     const foot = l.footB; foot.getWorldQuaternion(qF);
-    const lim = [1.0, 1.3, 1.3], acc = [0, 0, 0];   // höchstens so weit pro Gelenk gegenüber der Animation (kein Umknicken)
+    const q0 = l.bones.map((b) => b.quaternion.clone());             // Haltung aus der Animation
+    const lim = [1.0, 1.3, 1.3];   // höchstens so weit pro Gelenk gegenüber der Animation (kein Umknicken)
+    // Warmstart: mit der Lösung vom letzten Bild beginnen (statt jedes Mal bei der Animation). CCD bleibt so in derselben Stellung
+    // und kann nicht von einem Bild zum nächsten in eine andere Lösung umspringen (das Bein ruckte bis ~11.000 rad/s²) –
+    // und erreicht das Ziel trotzdem in jedem Bild ganz (kein Nachziehen, die Pfote bleibt stehen).
+    const acc = l.mem ? l.acc.slice() : [0, 0, 0];
+    if (l.mem) { l.bones.forEach((b, j) => b.quaternion.multiply(l.mem[j])); l.bones[0].updateMatrixWorld(true); }
     for (let it = 0; it < 5; it++) {
       for (let j = 2; j >= 0; j--) {
         const b = l.bones[j];
@@ -158,9 +174,14 @@ export class Beine {
     v1.subVectors(vE, vJ); v2.subVectors(T, vJ);
     v1.addScaledVector(vL, -vL.dot(v1)); v2.addScaledVector(vL, -vL.dot(v2));
     if (v1.lengthSq() > 1e-6 && v2.lengthSq() > 1e-6) {
-      const a = Math.atan2(vC.crossVectors(v1, v2).dot(vL), v1.dot(v2));
-      rotW(up, vL, Math.max(-0.45, Math.min(0.45, a)));
+      const a = Math.max(-0.45, Math.min(0.45, Math.atan2(vC.crossVectors(v1, v2).dot(vL), v1.dot(v2))));
+      const lat = l.lat || 0, aa = Math.max(-0.6, Math.min(0.6, lat + a)) - lat;   // insgesamt höchstens ±0,6 rad seitlich
+      rotW(up, vL, aa); l.lat = lat + aa;
     }
+    // Lösung (Korrektur je Gelenk gegenüber der Animation) für den Warmstart im nächsten Bild merken
+    if (!l.mem) l.mem = l.bones.map(() => new THREE.Quaternion());
+    l.bones.forEach((b, j) => l.mem[j].copy(q0[j]).invert().multiply(b.quaternion));
+    l.acc = acc;
     // Pfote flach lassen: Weltlage wie vor der IK
     foot.parent.getWorldQuaternion(qP); foot.quaternion.copy(qP.invert().multiply(qF)); foot.updateMatrixWorld(true);
   }
@@ -171,9 +192,22 @@ export class Beine {
  * (Kopf, Hals) oder die Pfote durch den Magier hindurch (Schulter, Ellbogen, Handgelenk). chain = vom Ende zur Wurzel, lim = höchster
  * Winkel je Gelenk (rad, gegenüber der Animation), w = Gewicht 0 … 1 (0 = reine Animation). Gibt den Restabstand zurück.
  */
-const vS = new THREE.Vector3(), vG = new THREE.Vector3();
-export function ccdAim(chain, eff, T, w, lim, iters = 4) {
-  if (w <= 0.001) return Infinity;
+const vS = new THREE.Vector3(), vG = new THREE.Vector3(), qD = new THREE.Quaternion(), qI = new THREE.Quaternion();
+/**
+ * mem (optional) = Gedächtnis je Gelenk: das Ergebnis wird über die Zeit weich nachgeführt (Zeitkonstante 1/rate). CCD rechnet jedes Bild
+ * neu von der Animation aus – stößt ein Gelenk an seine Grenze, kann die Lösung von einem Bild zum nächsten umspringen (Hals ruckt).
+ * Mit Gedächtnis gleitet sie hinüber; ist das Zielen vorbei (w = 0), blendet die Korrektur sauber aus.
+ */
+export function ccdAim(chain, eff, T, w, lim, iters = 4, mem = null, dt = 0, rate = 25) {
+  const k = mem && dt > 0 ? 1 - Math.exp(-rate * dt) : 1;
+  if (w <= 0.001) {                                             // nichts zu zielen: gemerkte Korrektur weich zurück auf null
+    if (mem && mem.length) {
+      for (let j = chain.length - 1; j >= 0; j--) { const b = chain[j]; if (!b || !mem[j]) continue; mem[j].slerp(qI, k); b.quaternion.multiply(mem[j]); }
+      const root = chain[chain.length - 1]; if (root) root.updateMatrixWorld(true);
+    }
+    return Infinity;
+  }
+  const q0 = mem ? chain.map((b) => (b ? b.quaternion.clone() : null)) : null;
   eff(vS); vG.copy(vS).lerp(T, Math.min(1, w));                 // Ziel mit Gewicht: ein Stück vom Ist-Punkt Richtung T
   const acc = chain.map(() => 0);
   for (let it = 0; it < iters; it++) {
@@ -188,6 +222,15 @@ export function ccdAim(chain, eff, T, w, lim, iters = 4) {
       if (a <= 0) continue;
       acc[j] += a; rotW(b, vL.divideScalar(s), a);
     }
+  }
+  if (mem) {   // Korrektur je Gelenk (im eigenen Raum) weich nachführen statt hart übernehmen
+    for (let j = chain.length - 1; j >= 0; j--) {
+      const b = chain[j]; if (!b) continue;
+      qD.copy(q0[j]).invert().multiply(b.quaternion);
+      if (!mem[j]) mem[j] = qD.clone(); else mem[j].slerp(qD, k);
+      b.quaternion.copy(q0[j]).multiply(mem[j]);
+    }
+    const root = chain[chain.length - 1]; if (root) root.updateMatrixWorld(true);
   }
   return eff(vE).distanceTo(vG);
 }

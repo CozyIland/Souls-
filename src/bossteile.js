@@ -109,7 +109,7 @@ export class Teile {
   attack(k, hb, side = 1) {
     const by = this.by, cap = (h, r) => ({ a: h.a.clone(), b: h.b.clone(), r });
     const out = [];
-    if (k === 'bite') { const c = this.snout(hb.bite.vor, V()); out.push({ a: c, b: c.clone(), r: by.kopf.r * 0.9 * hb.bite.r }); }
+    if (k === 'bite') { const c = this.snout(hb.bite.vor, V()); out.push({ a: c, b: c.clone(), r: by.kopf.r * hb.bite.r }); }
     if (k === 'swipe') { const x = side > 0 ? 'l' : 'r'; out.push(cap(by['v' + x + 'u'], by['v' + x + 'u'].r * 1.8 * hb.swipe.r), cap(by['v' + x + 'm'], by['v' + x + 'm'].r * 1.2 * hb.swipe.r)); }
     if (k === 'stomp') for (const x of ['l', 'r']) out.push(cap(by['v' + x + 'u'], by['v' + x + 'u'].r * 2 * hb.stomp.r));
     // Ansturm: gesenkter Kopf, Hals und die Vorderbeine (wer davor steht, wird überrannt)
