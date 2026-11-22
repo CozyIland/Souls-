@@ -189,12 +189,26 @@
   Boden-Kollision `COL` beim Laden aus den Beinen berechnet (vorher ragte sie 3,2 m vor die Pfoten – nichts konnte treffen).
   Reichweiten (Treffer-Test): Biss 3–10 m bis ±30°, Prankenhieb 2–8 m bis ±60°, Stampfen 2–8 m bis ±30°, Ansturm 5–11 m, Drehung 2–4 m
   rundum, Sprung 6–18 m → danach wählt `choose(d, a)`.
-  **Kopf, Ohren, Schwanz** (`src/bosskopf.js`, Klasse `Kopf`, `this.kopf`, jedes Bild aus animate mit Kontext `KC`): Blick = Federn
-  Hals (`yN`/`pN`, langsam) + Kopf (`yH`/`pH`, schnell, deckt den Rest ab → Kopf führt, Hals folgt), Ziel `look` × `lookW` (Biss 0,6,
-  Angriff 0,7, Ansturm 0) und `down`; glattes Rauschen (`noise2`, nur in Ruhe), Kopf ruhig halten (`stab` gegen Körper-Neigung), Kopfrolle
-  `rH` um „vorn am Kopf“ (`fwdL` = Schnauzenrichtung). Lauer-Verhalten `pick` (alle 2–6 s): knurren (Kopf tief, Ohren flach, Kiefer bebt
-  `jaw`, Körper duckt sich `lower`, Geräusch), schütteln, umschauen, neigen. Ohren (`earL_01`/`earR_01`, Feder zeta 0,4 = wippt nach):
-  anlegen `pin` (Kampf), seitlich nach Kopfdrehtempo, Zucken. Schwanz als Federkette (`tail2, tail3, tail_03, tail4`, Glieder immer
+  **Kopf, Maul, Ohren, Schwanz** (`src/bosskopf.js`, Klasse `Kopf`, `this.kopf`, jedes Bild aus animate mit Kontext `KC`): Blick =
+  **Blicksprünge** (`gz`: Ziel springt erst, wenn es > 0,13 rad seitlich / 0,09 hoch abweicht oder nach 0,5–1,8 s; im Angriff stufenlos)
+  → Federn Brust (`yC`, ab 0,75 rad dreht sie mit, höchstens 0,32) + Hals (`yN`/`pN`, langsam) + Kopf (`yH`/`pH`, schnell, schießt leicht
+  über → Kopf führt, Hals folgt), zusammen bis `YAW_MAX` 1,65 rad. Ziel `look`/`down` rechnet boss.js **vom Hals-Ansatz** zur Brust des
+  Magiers (Seiten- und echter Höhenwinkel: nah unter ihm schaut er bis 0,6 rad hinunter) × `lookW` (Biss 0,6, Angriff 0,7, Ansturm 0).
+  **Neigen zur Seite des Ziels**: Kopfrolle `rH` = −0,3 × Kopfdrehung × (mehr bei tiefem Blick) → links schauen = linkes Ohr tiefer
+  (gemessen ±10–20°). Nicken um die schon gedrehten Querachsen, Rolle um die echte Kopf-Vorwärtsachse `FWD_H` (Kopf-Raum (0, −0,3, 1);
+  früher `fwdL` = Hitbox-Spitze – zeigte fast senkrecht nach unten, „Kopf schief legen“ drehte ihn darum nur, und die Ohren klappten nach
+  oben statt nach hinten). Glattes Rauschen (`noise2`, nur in Ruhe), Kopf ruhig halten (`stab`). Gemessen (40 s Umkreisen): Kopf relativ
+  zum Körper höchstens 3,6 rad/s, Beschleunigung 99 % < 11 rad/s² (kein Ruck). **Maul beim Lauern** (`mz`, `nextMaul`, Zeiten `MAUL`):
+  hecheln (Öffnung ~0,34 + Pumpen ~1,3 Hz, `pph`; Brust pumpt mit `pump`), zu (mit Schlucken: Kiefer zuckt, Kopf nickt), Lefzen lecken
+  (zweimal auf/zu); Knurren hält einen Spalt offen und bebt; ≈ 40 % der Lauerzeit zu. `kopf.jaw` = Öffnung (0 = zu). Lauer-Verhalten
+  `pick` (alle 2–6 s): knurren (Kopf tief, Ohren flach, Körper duckt sich `lower`, Geräusch), schütteln, umschauen, neigen. Ohren
+  (`earL_01`/`earR_01`, Feder zeta 0,4 = wippt nach): anlegen `pin` (Kampf, × 0,6 rad), seitlich nach Kopfdrehtempo, Zucken.
+  **Unterkiefer** (`src/bosskiefer.js`): das Modell hatte keinen (`jaw` trug 7 Punkte, `jaw_01` den ganzen Kopf → Maul immer offen).
+  `kieferSpurWeg(clips)` vor dem Binden der Clips (Spur `jaw.position` raus), `bauUnterkiefer(sk)` NACH dem Vermessen der Hitboxen:
+  Punkte unter der Maullinie (`KIEFER`, im Kopf-Raum vermessen: Mundwinkel, Zähne, Lippe, Kinn, Kehle) und vor dem Kiefergelenk hängen
+  weich an `jaw` (114 Punkte ganz), `jaw` sitzt jetzt im Gelenk (Lage + Bind-Matrix neu). boss.js dreht ihn um die Kopf-Querachse
+  (`kopf.lat`) um `ZU` (−0,46 = zu) + Öffnung: `S0.jaw` (Angriffe; Lauern 0, Schlafen 0,03) + `kopf.jaw`. Biss: auf bis 0,95, schnappt
+  auf ~0,15 zu. Schwanz als Federkette (`tail2, tail3, tail_03, tail4`, Glieder immer
   weicher → Welle): Haltung `S0.tail` + Nachschleppen bei Drehung + Pendeln + im Kampf erhoben; im Schwanzfeger nur dessen Haltung.
   Wirbelsäule biegt sich im Gang seitlich (spine1). Kurvenlage `bank` und Vor-/Zurückneigen `accL` nur beim Laufen (Vorstöße erreichen
   kurz >20 m/s – der Körper kippte sonst schlagartig).

@@ -14,6 +14,7 @@ import { clamp, lerp, damp, angDiff, TAU } from './util.js';
 import { Beine, LEG_BONES, ccdAim } from './bossbeine.js';
 import { Teile, hitsPlayer } from './bossteile.js';
 import { Kopf } from './bosskopf.js';
+import { bauUnterkiefer, kieferSpurWeg, ZU } from './bosskiefer.js';
 
 const URL = 'models/boss.glb';
 export const BOSS_NAME = 'Garm, der Aschenhund';
@@ -105,7 +106,7 @@ const ATK = {
 };
 
 const qP = new THREE.Quaternion(), qR = new THREE.Quaternion(), qH = new THREE.Quaternion();
-const vX = new THREE.Vector3(), vY = new THREE.Vector3(), vT = new THREE.Vector3();
+const vX = new THREE.Vector3(), vY = new THREE.Vector3(), vT = new THREE.Vector3(), vJ = new THREE.Vector3();
 /** Knochen um eine Achse in Weltrichtung drehen */
 function rotW(bone, axisW, ang) {
   if (!bone || Math.abs(ang) < 1e-4) return;
@@ -150,6 +151,7 @@ export class Boss {
     const holder = new THREE.Group(); holder.add(model); this.root.add(holder);
     model.position.y = FOOT * S;
     const mixer = new THREE.AnimationMixer(model);
+    kieferSpurWeg(g.animations);   // Unterkiefer (bosskiefer.js): Kiefer-Lage gehört ab jetzt dem Gelenk, nicht dem Clip
     const clip = (re) => g.animations.find((a) => re.test(a.name));
     const act = (c) => { if (!c) return null; const a = mixer.clipAction(c); a.play(); a.timeScale = 0; a.setEffectiveWeight(0); return a; };
     const B = {}; model.traverse((o) => { if (o.isBone) B[o.name] = o; });
@@ -171,6 +173,8 @@ export class Boss {
     for (const x of [M.idle, M.walk, M.run, M.run2]) if (x) x.setEffectiveWeight(0);
     M.mixer.update(0); this.root.updateMatrixWorld(true);
     this.teile = new Teile(model, B);
+    // echter Unterkiefer (erst NACH dem Vermessen der Hitboxen – die bleiben, wie sie abgestimmt sind)
+    for (const o of sk) if (!o.userData.isOutline) { const r = bauUnterkiefer(o); if (r.ok) this.kiefer = r; break; }
     // Kopf, Ohren, Schwanz: Blick, Verhalten, Nachschwingen (bosskopf.js)
     this.kopf = new Kopf(B, this.teile.ok ? this.teile.tip : null);
     this.kopf.onGrowl = () => sfx.growl(true);
@@ -363,7 +367,7 @@ export class Boss {
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     const dx = pl.pos.x - this.p.x, dz = pl.pos.z - this.p.z, d = Math.hypot(dx, dz), toP = Math.atan2(dx, dz);
     const a = angDiff(this.yaw, toP), plOk = pl.state !== 'dead';
-    this.lookYaw = a; this.lookD = d;
+    this.lookYaw = a; this.lookD = d; this.plP = pl.pos;
     let want = null, spd = 0, turn = 1, t = this.t;
     switch (this.st) {
       case 'sleep': break;
@@ -586,7 +590,7 @@ export class Boss {
     // ---------- Ganzkörper-Haltung (Halter) ----------
     let y = 0, pitch = 0, roll = 0, neck = 0, head = 0, jaw = 0.05, legF = 0, legR = 0, tail = 0, rise = 0, drop = 0, curl = 0, hroll = 0;
     switch (st) {
-      case 'sleep': neck = 0.75 + 0.08 * Math.sin(this.it * 3.1); head = 0.3; jaw = 0.12; pitch = 0.06; break; // schnüffelt am Boden (Kopf tief)
+      case 'sleep': neck = 0.75 + 0.08 * Math.sin(this.it * 3.1); head = 0.3; jaw = 0.03; pitch = 0.06; break; // schnüffelt am Boden (Kopf tief, Maul zu)
       case 'wake': { const u = sm(t / 0.9), h = bump(t, 1.25, 1.6) * (1 - bump(t, 2.6, 3.0)); // Kopf hoch, aufbäumen, heulen
         y = 0.25 * h; pitch = 0.06 * (1 - u) - 0.3 * h; neck = 0.75 * (1 - u) - 0.9 * h; head = 0.3 * (1 - u) - 0.4 * h; jaw = 0.1 + 0.6 * h; break; }
       case 'bite': case 'biteQ': case 'bite2': {
@@ -647,12 +651,13 @@ export class Boss {
         y = LP.dB * buck * (1 - fall) + LP.dY * fall; roll = -sd * (fall * 1.45 - bounce); pitch = 0.2 * buck * (1 - fall); neck = 0.3; jaw = 0.4; legF = LP.dF * buck; legR = LP.dR * buck; break; }
     }
     // Lauern: Kopf tief, angespannt, schweres Atmen; beim Knurren duckt sich der Vorderkörper (bosskopf.js)
-    if (st === 'stalk') { const low = this.kopf ? this.kopf.lower : 0; neck = 0.18 + 0.12 * low; jaw = 0.15; y = -0.1 - 0.12 * low; pitch = 0.05 * low; }
+    // (Maul beim Lauern: hecheln, schließen, schlucken, lecken – macht bosskopf.js; hier also zu)
+    if (st === 'stalk') { const low = this.kopf ? this.kopf.lower : 0; neck = 0.18 + 0.12 * low; jaw = 0; y = -0.1 - 0.12 * low; pitch = 0.05 * low; }
     // eigene Uhren, die bei Zustandswechseln NICHT auf 0 springen (früher hing z. B. der Schwanz an this.t → sprang bei jedem Angriff)
     this.clk = (this.clk || 0) + dt;
     const calm = st === 'sleep' || st === 'stalk' || st === 'wake', pant = st === 'stalk' ? 1 : 0;
     const breath = Math.sin(this.clk * (pant ? 3.4 : 1.7));
-    if (calm && !this.dead) { y += 0.035 * breath; neck -= 0.03 * breath; jaw += 0.06 * pant * (0.5 + 0.5 * breath); }
+    if (calm && !this.dead) { y += 0.035 * breath; neck -= 0.03 * breath; }
     // Prankenhieb: Pranke hoch und nach außen, dann quer nach innen-unten (als Feder-Ziele – bricht der Hieb ab, blendet die Pranke weich aus)
     let pawR = 0, pawO = 0, pawL = 0;
     if (st === 'swipe') {
@@ -725,15 +730,28 @@ export class Boss {
     // in Bissen nur bis zum Zuschnappen (danach führt das Zielen den Kopf)
     const atkNow = !!ATK[st] && st !== 'howl';
     const lookW = !alive || st === 'charge' ? 0 : st === 'spin' ? 1 - 0.8 * bump(t, 0.4, 0.5) * (1 - bump(t, 1.0, 1.15)) : isBite(st) ? 0.6 : atkNow ? 0.7 : 1;
-    const down = alive ? clamp((9 * K - (this.lookD || 9)) / (9 * K), 0, 1) * 0.35 : 0;   // nahes Ziel: Kopf tiefer
+    // Blick vom Hals-Ansatz aus (nicht von der Körpermitte – der Kopf ist 4–5 m davor): Seitenwinkel und Höhenwinkel zur Brust
+    // des Magiers. Nah unter ihm schaut er steil hinunter, weit weg leicht hoch.
+    let lookH = clamp(this.lookYaw || 0, -1.3, 1.3), down = 0;
+    if (alive && this.plP && B.neck_01) {
+      const nb = B.neck_01.getWorldPosition(vY), dx = this.plP.x - nb.x, dy = this.plP.y + 1.2 - nb.y, dz = this.plP.z - nb.z;
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), lx = Math.cos(this.yaw), lz = -Math.sin(this.yaw);   // vorn / links
+      const vf = dx * fx + dz * fz, vl = dx * lx + dz * lz, hd = Math.hypot(vf, vl);
+      lookH = Math.atan2(vl, vf);
+      down = clamp((Math.atan2(-dy, Math.max(0.5, hd)) - Math.atan2(nb.y - 1.2, 11)) * 0.9, -0.25, 0.6);
+    }
     const nod = Math.sin(this.gp * TAU * 2 + 0.6) * 0.035 * this.aw.walk;                    // Kopf nickt mit jedem Schritt
     rotW(B.neck1, X, S0.neck + nod); rotW(B.head, X, S0.head);
     if (Math.abs(S0.hroll) > 1e-4) rotW(B.head, Z, S0.hroll);                               // Kopf schräg (Biss)
     const KC = this.kc || (this.kc = {});
-    Object.assign(KC, { st, alive, calm, attack: atkNow, angry: st === 'stalk' && (this.lookD || 99) < 12, look: clamp(this.lookYaw || 0, -1.3, 1.3), lookW,
+    Object.assign(KC, { st, alive, calm, attack: atkNow, angry: st === 'stalk' && (this.lookD || 99) < 12, look: lookH, lookW,
       down, far: (this.lookD || 0) > 11, bodyRoll: r2, yawRate: this.yawRate || 0, X, Y, clk: this.clk, onGrowl: () => sfx.growl(true) });
     if (this.kopf && alive) this.kopf.update(dt, KC);
-    if (B.jaw) rotW(B.jaw, X, S0.jaw + (this.kopf && alive ? this.kopf.jaw : 0));
+    // Unterkiefer (bosskiefer.js): S0.jaw/kopf.jaw sind ÖFFNUNGEN (0 = zu) – gedreht wird um die eigene Querachse des Kopfes
+    if (B.jaw) {
+      const open = S0.jaw + (this.kopf && alive ? this.kopf.jaw : 0);
+      rotW(B.jaw, this.kopf ? this.kopf.lat(vJ) : X, (this.kiefer ? ZU : 0) + open);
+    }
     // in die Kurve biegen
     this.tb = lerp(this.tb || 0, alive ? clamp(this.yawRate * 0.12, -0.25, 0.25) : 0, damp(6, dt));
     rotW(B.chest, Y, this.tb * 0.5); rotW(B.neck1, Y, this.tb * 0.5); rotW(B.hips, Y, -this.tb * 0.3);
@@ -766,7 +784,8 @@ export class Boss {
       const tg = new THREE.Vector3(base.x + hx / hl * len * 0.95, 0.7, base.z + hz / hl * len * 0.95);
       ccdAim([B.tail4, B.tail3, B.tail2], (v) => B.tail_05.getWorldPosition(v), tg, drop > 1e-3 ? drop : 0, [0.8, 0.8, 0.9], 5, this.memTail || (this.memTail = []), dt, 45);
     }
-    if (calm && !this.dead && B.chest) rotW(B.chest, X, -0.025 * breath);
+    // Atmen; beim Hecheln pumpt die Brust im Takt des Mauls mit (bosskopf.js pump)
+    if (calm && !this.dead && B.chest) rotW(B.chest, X, -0.025 * breath - 0.014 * (this.kopf ? this.kopf.pump : 0));
     if (this.dead) { const sd = this.deadSide, lie = sm((this.deadT - 0.6) / 0.6);
       rotW(B.neck1, Z, -sd * 0.3 * lie); rotW(B.tail2, Z, sd * 0.4 * lie);
       for (const s of ['L', 'R']) { const top = (sd > 0) === (s === 'R'); rotW(B['frontUpr' + s], Z, sd * (top ? LP.tF : LP.bF) * lie); rotW(B['rearLeg' + s + '_01'], Z, sd * (top ? LP.tR : LP.bR) * lie); }
