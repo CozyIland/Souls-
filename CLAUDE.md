@@ -168,9 +168,22 @@
   (Wegschieben, Zielpunkt `pos`) fest über `COL`. `hitPhase(st, t)` → 1 holt aus / 2 trifft. `passive` = greift nicht an.
   **Fuß-IK** (`src/bossbeine.js`, Klasse `Beine`): je Bein Zustand frei → steht (Punkt P fest in der Welt, Höhe `h0` aus dem Geh-Clip
   gemessen) → Schritt (Clip hebt den Fuß: 0,16 s weich hinterher; Körper > `maxDev` (0,85 m + 0,15 × Tempo) entfernt: eigener Schritt
-  0,3 s im Bogen, Ziel vorausberechnet; Nachbarn vorn/hinten und quer schreiten nie gleichzeitig) → steht. IK: planares CCD um die
-  Querachse (Schulter/Hüfte, Ellbogen/Knie, Handgelenk/Sprunggelenk; Grenzen `lim`), seitlicher Rest NUR um die Längsachse, Pfote behält
-  ihre Weltlage, nie unter den Boden. Gewicht je Bein (boss.js animate): 0 bei Liegen/Tod/Sprung in der Luft/Satz bei der Drehung/
+  0,3 s im Bogen, Ziel vorausberechnet; Nachbarn vorn/hinten und quer schreiten nie gleichzeitig) → steht. Nie unter den Boden.
+  **Bein-Löser nach Hunde-Anatomie** (`ik`, ersetzt das CCD mit Gedächtnis; Grundlagen oben in bossbeine.js: Zehengänger, Beine als
+  gerade Säulen – X-Beine/„kuhhessig“ sind beim Hund ein Fehler –, Ellbogen hinten/Knie vorn, Pfote flach, Abrollen, Umklappen im
+  Schwung): Mittelfuß-Neigung aus der Animation, in die Beinebene gelegt → Knöchel-Ziel; Schulter/Hüfte–Ellbogen/Knie–Knöchel als
+  Zwei-Knochen-Dreieck (`aim` je Knochen) in einer Ebene durch Schulter/Hüfte und Knöchel, möglichst quer zum Körper (gerade Säule),
+  Knick-Richtung aus der Animation; reicht das Bein nicht, kippt der Mittelfuß Richtung Schulter/Hüfte (≤ 0,55 Mischung). Pfote im
+  Stand (`pw`) flach in der Stand-Lage des Geh-Clips (`qFB`, beim Laden im tiefsten Bild gemessen), Zehen in Laufrichtung (`psi`, dreht
+  auf dem Ballen nur langsam mit `PSI_RATE`), richtet sich schon kurz vor dem Aufsetzen flach aus; hinter Schulter/Hüfte rollt sie über
+  die Zehen ab (`ROLL`, Zehen bleiben liegen). Eigener Schritt: Mittelfuß/Pfote klappen (`FLEX_P`/`FLEX_F`; vorn nach hinten wie
+  beim Hund). Seitlich: tritt um ab `LAT_STEP` 0,2 m neben der Spur der Animation (bzw. `TWIST_STEP` 0,55 rad verdreht), mehr als
+  `LAT_MAX` hält sie nicht; Schrittziele bleiben in der Spur (`LAT_E`); linke/rechte Pfote nie näher als `MIN_SEP` (Prankenhieb
+  ausgenommen); zu weit draußen tritt sie auch, wenn der Nachbar gerade tritt (`must`). Gemessen (gleiches Messwerkzeug, alt → neu,
+  60 s Umkreisen / 80 s Kampf): Beine zu eng/gekreuzt 25 % / 9,9 % → 0 % / 0,6 % (nur Prankenhieb); seitlicher Knick bis 0,74 m →
+  ≤ 0,06 m; Pfote gegen Bein verdreht 73° / 172° (Mittel/95 %) → 16° / 35°; Zehen rutschen 0,45 / 2,4 m/s → 0,09 / 0,85 m/s;
+  Bein verfehlt Ziel (95 %) 0,81 m → 0. Die Animation selbst hat höchstens 3–11° nach innen, Pfoten ≥ 0,6 m auseinander.
+  Gewicht je Bein (boss.js animate): 0 bei Liegen/Tod/Sprung in der Luft/Satz bei der Drehung/
   schlagender Pranke/Aufbäumen; schnell zupacken (22), weich loslassen (10). Tritt → `onStep` → main.js: Staub, `sfx.tritt`, Beben nach
   Abstand. Beine laufen nach dem **wirklichen** Tempo (`vAct`/`va` nach der Wand; an der Wand bremst `sv`). Drehung = kleiner Satz (`hop`).
   **Drehungen immer auf Länge 1** (`rotW` in boss.js/bossbeine.js/bosskopf.js: `.normalize()`, gemerkte Korrekturen über `clean(q)`):
@@ -218,8 +231,8 @@
   (Kiefer-Feder ×2,2 steif) → (Schütteln / zweiter Biss) → zurück. Ziel 1,5 m hoch (tiefer rollt den Kopf ein). Reichweiten (Treffer-
   Test): Reißbiss 3–10 m ±30°, Schnappbiss 2–7 m ±20°, Doppelbiss 3–9 m ±30°. Phase 2: nach Biss Pranke oder Schnappbiss.
   **Zielen mit Gedächtnis**: `ccdAim(…, mem, dt, rate)` führt die Korrektur je Gelenk weich nach (Biss/Pranke/Schwanz, rate 45) und blendet
-  sie bei w = 0 aus – CCD sprang sonst zwischen Lösungen (Hals ruckte). **Fuß-IK mit Warmstart** (`l.mem`/`l.acc`/`l.lat`): startet bei
-  der Lösung vom letzten Bild → kein Umspringen, kein Nachziehen (Pfoten 0,005 m/s); Schritte mit `smoother` und sin²-Bogen.
+  sie bei w = 0 aus – CCD sprang sonst zwischen Lösungen (Hals ruckte). Beine: rechnerischer Löser ohne Gedächtnis (siehe Bein-Löser
+  oben – kann nicht zwischen Lösungen springen); Schritte mit `smoother` und sin²-Bogen.
   **Schwanzfeger** (`spin`, ersetzt den 360°-Kreisel um die Mitte): `spinP` = Richtung `s` (der LANGE Weg herum, damit der Schwanz durch
   den Magier fegt; danach schaut er ihn an), Gesamtwinkel `tot` = 2π − Winkel zum Magier (2,6 … 4,4 rad), Drehpunkt `piv` = Vorderpfoten
   (Körper wandert so, dass sie stehen bleiben; `mot.pivot` → Vorderpfoten trippeln mit). Ablauf: Ausholen 0,05–0,4 s (Hüfte −0,35 rad zur
