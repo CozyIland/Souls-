@@ -90,6 +90,11 @@ export const sfx = {
     const c = ok(); if (!c) return; const t = c.currentTime;
     tone(c, t, 0.55, 'sine', 70, 28, 1.0, 0.004); noise(c, t, 0.45, 'lowpass', 900, 120, 0.8, 0.55, 0.003);
   },
+  /** Tritt einer riesigen Pfote: tiefes, kurzes Wummern (v = Lautstärke 0 … 1, je nach Abstand) */
+  tritt(v = 1) {
+    const c = ok(); if (!c || v < 0.03) return; const t = c.currentTime;
+    tone(c, t, 0.28, 'sine', 62 + Math.random() * 10, 32, 0.55 * v, 0.006); noise(c, t, 0.2, 'lowpass', 600, 110, 0.7, 0.3 * v, 0.004);
+  },
   /** Trinken: Glucksen */
   gulp() {
     const c = ok(); if (!c) return; const t = c.currentTime;

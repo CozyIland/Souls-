@@ -152,7 +152,39 @@
   Treffer = Stoß in die Federn (`this.kick` aus `onHit`), kein Zittern. Eigene Uhr `clk` (springt nie auf 0) für Schwanz und Atmen
   (Lauern: schnelles Hecheln). Gehen: leichtes Wiegen/Auf-und-Ab (`sway`/`bob`). Vor/zurück weich (`gdir`). **Lauf-Clip ist keine saubere
   Schleife** (Meshy, Beine springen bis 13°): `seam()` misst das beim Laden, `run2` (Kopie auf Zeit 0) wird auf den letzten 14 % weich
-  übergeblendet. Gemessen (40 s Kampf, Bild für Bild): stärkster Ruck ~4400 → ~450 rad/s². NaN wird in den Federn nie übernommen. Glut steigt vom Rücken (`embers`), Licht `glow`. `onSlam` → Staub, Rütteln.
+  übergeblendet. Gemessen (40 s Kampf, Bild für Bild): stärkster Ruck ~4400 → ~450 rad/s². NaN wird in den Federn nie übernommen.
+  **Hitboxen an den Knochen** (`src/bossteile.js`, Klasse `Teile`, beim Laden in der Grundhaltung vermessen): 16 Körper-Kapseln (Kopf
+  head→Schnauzenspitze, Hals, Rumpf tail2→chest, je Bein oben/mitte/unten, Schwanz), Dicke = 70 %-Abstand der Hautpunkte, die vor allem
+  an diesen Knochen hängen (`applyBoneTransform`), Schnauzenspitze `tip` = Kopf-Hautpunkt am weitesten vom Hals (im Kopf-Raum). Magier
+  trifft: `nearest(p)` → `boss.hitR` so, dass (Abstand zu `pos`) − `radius` = Abstand zur nächsten Kapsel; Karten: `hitTest`. Boss trifft
+  (`req(k, dmg, push)` im Trefferfenster → `applyHits` nach animate): `attack(k)` = Biss Schnauze, Prankenhieb Pfote+Unterarm der
+  Schlagseite, Stampfen beide Vorderpfoten, Ansturm Kopf+Hals, Drehung Schwanz+Hinterläufe; Magier = stehende Kapsel (0,15–1,7 m, r 0,4);
+  `hitsPlayer` zieht die Form vom letzten zum jetzigen Bild durch (kein Durchtunneln). Sprung/Heulen bleiben Kreise (`HB.leap`/`HB.howl`, m).
+  `HB` = Faktoren auf die Messung (`body.dicke`, je Angriff `r`, `bite.vor`), gespeichert unter `aschenblatt-hitbox2`. Boden-Kollision
+  (Wegschieben, Zielpunkt `pos`) fest über `COL`. `hitPhase(st, t)` → 1 holt aus / 2 trifft. `passive` = greift nicht an.
+  **Fuß-IK** (`src/bossbeine.js`, Klasse `Beine`): je Bein Zustand frei → steht (Punkt P fest in der Welt, Höhe `h0` aus dem Geh-Clip
+  gemessen) → Schritt (Clip hebt den Fuß: 0,16 s weich hinterher; Körper > `maxDev` (0,85 m + 0,15 × Tempo) entfernt: eigener Schritt
+  0,3 s im Bogen, Ziel vorausberechnet; Nachbarn vorn/hinten und quer schreiten nie gleichzeitig) → steht. IK: planares CCD um die
+  Querachse (Schulter/Hüfte, Ellbogen/Knie, Handgelenk/Sprunggelenk; Grenzen `lim`), seitlicher Rest NUR um die Längsachse, Pfote behält
+  ihre Weltlage, nie unter den Boden. Gewicht je Bein (boss.js animate): 0 bei Liegen/Tod/Sprung in der Luft/Satz bei der Drehung/
+  schlagender Pranke/Aufbäumen; schnell zupacken (22), weich loslassen (10). Tritt → `onStep` → main.js: Staub, `sfx.tritt`, Beben nach
+  Abstand. Beine laufen nach dem **wirklichen** Tempo (`vAct`/`va` nach der Wand; an der Wand bremst `sv`). Drehung = kleiner Satz (`hop`).
+  Gemessen (40 s Kampf): aufgesetzte Pfote rutschte im Mittel 1,4–2,7 m/s → 0,01–0,09 m/s (Ansturm 3,7 → 0,4, Drehung 16 → 0,7).
+  **Drehen auf der Stelle**: KEIN Geh-Clip mehr (`gsp` = nur echtes Tempo), sondern Trippelschritte der IK (`turning`: kleinere Schritt-
+  grenze 0,55 m, Schritt 0,26 s, Ziel mit Pfotentempo inkl. Drehung `mot.wy` vorausberechnet); im Stand dreht er langsamer (×0,6).
+  Gemessen bei 1 rad/s: fest stehende Pfoten 0,06 m/s. **Angriffe zielen** (alle per Treffer-Test geprüft, Magier still): `planLunge` =
+  Vorstoß als feste Strecke (Root Motion, −1,5 … max m, `RE` = Reichweiten-Feinabstimmung zur Vermessung `this.reach`); `aimAt` merkt das
+  Ziel bis kurz vor dem Zuschlagen; `ccdAim` (bossbeine.js) führt Ketten: Biss = Kopf/Hals zur Brust des Magiers (Vorderkörper taucht ab),
+  Prankenhieb = Pfote auf Bahn außen-oben → durch das Ziel (0,8 m hoch) → innen-unten, Drehung = Schwanzspitze auf 0,7 m; Stampfen =
+  `beine.slamAt` (Pfoten landen links/rechts vom Ziel, 0,45 s festgehalten `hold`); Ansturm trifft mit Kopf, Hals und Vorderbeinen.
+  Boden-Kollision `COL` beim Laden aus den Beinen berechnet (vorher ragte sie 3,2 m vor die Pfoten – nichts konnte treffen).
+  Reichweiten (Treffer-Test): Biss 3–10 m bis ±30°, Prankenhieb 2–8 m bis ±60°, Stampfen 2–8 m bis ±30°, Ansturm 5–11 m, Drehung 2–4 m
+  rundum, Sprung 6–18 m → danach wählt `choose(d, a)`.
+  **Anzeige** `src/hitboxen.js` (`HitboxView`, depthTest aus): Körper-Kapseln türkis als Gitter (blinken bei Treffer `hbFlash`),
+  Angriffsformen in ihrer Farbe `ZCOL` (schwach beim Ausholen, kräftig im Treffermoment), Sprung/Heulen als Kreise am Boss, gelbe Kapsel
+  = Magier; Ansicht `hbState.view` 0 aus / 1 Körper + laufender Angriff / 2 alles. Testmenü „Boss-Hitboxen“ (`HBROWS`, `hitboxHtml`/
+  `hitboxWire` in menue.js): Ansicht, „Boss greift an“, Faktoren −/+ 0,1 bzw. Meter −/+ 0,25, Angriff vorführen (`o.bossAttack`),
+  Kopieren, Standard. Glut steigt vom Rücken (`embers`), Licht `glow`. `onSlam` → Staub, Rütteln.
   Bossleiste unten (`#bossBar`, helle Schadensanzeige `lag` läuft nach), Sieg: `#victory` „FEIND GEFÄLLT“. Kamera beim Erfassen weiter weg
   (`camDist`/`camPitch` in camera.js). Tod des Spielers → Boss `reset()`, Nebel offen.
 - **Heiltränke** (player.js): 3 pro Leben (`POTIONS`), Y / H / Handy 🧪 (`inp.heal`) → Zustand `heal` (`HEAL_T` 1,35 s, heilt `HEAL_HP` 45 bei

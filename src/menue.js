@@ -3,6 +3,24 @@
 import { STATS, MAX_LV, BASE, cost } from './stufe.js';
 import { Inventar } from './inventar.js';
 import { WAFFEN, angriff, waffenInfo } from './waffen.js';
+import { HB, HB_STD, saveHB, resetHB } from './boss.js';
+import { ZCOL, hbState, setView } from './hitboxen.js';
+
+// Boss-Hitboxen im Testmodus: [Schlüssel, Name, [[Feld, Bezeichnung, Art], …]]
+// Art 'x' = Faktor auf die aus dem Modell gemessene Größe (Schritt 0,1), 'm' = Meter (Schritt 0,25 m)
+const HBROWS = [
+  ['body', 'Körper', [['dicke', 'Dicke', 'x']]],
+  ['bite', 'Biss (Schnauze)', [['r', 'Größe', 'x'], ['vor', 'Lage', 'x']]],
+  ['swipe', 'Prankenhieb (Pfote)', [['r', 'Größe', 'x']]],
+  ['stomp', 'Stampfen (Pfoten)', [['r', 'Größe', 'x']]],
+  ['charge', 'Ansturm (Kopf)', [['r', 'Größe', 'x']]],
+  ['spin', 'Drehung (Schwanz)', [['r', 'Größe', 'x']]],
+  ['leap', 'Sprung (Boden)', [['fwd', 'Abstand', 'm'], ['r', 'innen', 'm'], ['r2', 'außen', 'm']]],
+  ['howl', 'Heulen (Boden)', [['r', 'Radius', 'm']]],
+];
+const KIND = Object.fromEntries(HBROWS.flatMap(([k, , fs]) => fs.map(([f, , a]) => [k + '.' + f, a])));
+const ATK_SHOW = [['bite', 'Biss'], ['swipe', 'Prankenhieb'], ['leap', 'Sprung'], ['charge', 'Ansturm'], ['spin', 'Drehung'], ['stomp', 'Stampfen'], ['howl', 'Heulen']];
+const num = (x, a) => (a === 'x' ? '× ' + x.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : x.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m');
 
 const TABS = ['char', 'inv', 'ctrl', 'test'];
 const $ = (id) => document.getElementById(id);
@@ -112,8 +130,16 @@ export class Menue {
       <div class="trow"><span class="tl">Springen</span><button class="sbtn" data-j="stone">Zum Seelenstein</button><button class="sbtn" data-j="truhe">Zur Truhe</button><button class="sbtn" data-j="gate">Vor das Nebeltor</button><button class="sbtn" data-j="arena">In die Arena</button></div>
       <div class="trow"><span class="tl">Truhe</span><button class="sbtn" data-chest="1">${w.truhe ? 'Wieder schließen (Schwert zurück)' : 'Noch zu'}</button></div>
       <div class="trow"><span class="tl">Neu</span><button class="sbtn" data-r="1">Alles zurücksetzen</button></div>
-      <p class="mnote">Kosten: ${Array.from({ length: MAX_LV - 1 }, (_, i) => `${i + 2}: ${cost(i + 2)}`).join(' · ')}</p>`;
-    const re = () => { this.o.apply(); this.renderTest(); this.markFocus(); };
+      <p class="mnote">Kosten: ${Array.from({ length: MAX_LV - 1 }, (_, i) => `${i + 2}: ${cost(i + 2)}`).join(' · ')}</p>
+      ${this.hitboxHtml()}`;
+    // neu zeichnen, ohne dass die Liste nach oben springt: Rollposition und gewählten Knopf behalten
+    const re = (btn) => {
+      const st = el.scrollTop, idx = btn ? this.items().indexOf(btn) : this.focus;
+      this.o.apply(); this.renderTest(); el.scrollTop = st;
+      if (idx >= 0) this.focus = idx;
+      this.markFocus();
+    };
+    this.hitboxWire(el, re);
     for (const b of el.querySelectorAll('[data-lv]')) b.onclick = () => { w.setLevel(w.lv + Number(b.dataset.lv)); re(); };
     for (const b of el.querySelectorAll('[data-b]')) b.onclick = () => { w.bump(b.dataset.b, Number(b.dataset.d)); re(); };
     for (const b of el.querySelectorAll('[data-s]')) b.onclick = () => { const n = Number(b.dataset.s); if (n) w.addSouls(n); else { w.souls = 0; w.save(); } re(); };
@@ -121,6 +147,42 @@ export class Menue {
     for (const b of el.querySelectorAll('[data-god]')) b.onclick = () => { w.god = !w.god; w.save(); re(); };
     for (const b of el.querySelectorAll('[data-chest]')) b.onclick = () => { if (w.truhe && this.o.closeChest) this.o.closeChest(); re(); };
     for (const b of el.querySelectorAll('[data-r]')) b.onclick = () => { w.reset(); w.save(); if (this.o.reset) this.o.reset(); re(); };
+  }
+
+  /** Testmodus-Abschnitt „Boss-Hitboxen“: Ansicht, Boss angreifen lassen, alle Maße −/+, Angriffe vorführen, Werte kopieren */
+  hitboxHtml() {
+    const B = this.o.boss, v = hbState.view, live = B && B.active && !B.dead;
+    const changed = (k, f) => Math.abs(HB[k][f] - HB_STD[k][f]) > 1e-6;
+    return `
+      <div class="tsec">Boss-Hitboxen</div>
+      <p class="mnote">Türkise Kapseln = sein Körper an den Knochen (dort treffen Degen und Karten, blinken bei Treffern). Farbige Kugeln =
+        womit er trifft: Schnauze, Pfote, Kopf, Schwanz – schwach beim Ausholen, kräftig im Treffermoment. Sprung und Heulen: Kreis am Boden.
+        Gelbe Kapsel = du. Größen sind Faktoren auf das, was aus dem Modell gemessen wurde (× 1 = gemessen). Änderungen wirken sofort.</p>
+      <div class="trow"><span class="tl">Anzeigen</span>${['Aus', 'Körper + Angriff', 'Alles'].map((n, i) => `<button class="sbtn${v === i ? ' on' : ''}" data-hbv="${i}">${n}</button>`).join('')}</div>
+      <div class="trow"><span class="tl">Boss greift an</span><button class="sbtn" data-pass="1">${B && B.passive ? 'AUS – einschalten' : 'AN – ausschalten'}</button></div>
+      ${HBROWS.map(([k, n, fs]) => `<div class="trow hbrow"><span class="tl"><i class="chip" style="background:${ZCOL[k]}"></i>${n}</span><div class="hbps">
+        ${fs.map(([f, fn, a]) => `<span class="hbp${changed(k, f) ? ' chg' : ''}"><em>${fn}</em><button class="sbtn sm" data-hb="${k}.${f}" data-d="-1">−</button><b>${num(HB[k][f], a)}</b><button class="sbtn sm" data-hb="${k}.${f}" data-d="1">+</button></span>`).join('')}</div></div>`).join('')}
+      <div class="trow"><span class="tl">Angriff zeigen</span>${ATK_SHOW.map(([k, n]) => `<button class="sbtn" data-atk="${k}" ${live ? '' : 'disabled'}>${n}</button>`).join('')}</div>
+      ${live ? '' : '<p class="mnote">Angriffe vorführen geht, sobald der Kampf läuft (Springen → „In die Arena“).</p>'}
+      <div class="trow"><span class="tl">Werte</span><button class="sbtn" data-hbcopy="1">Kopieren</button><button class="sbtn" data-hbstd="1">Alles auf Standard</button></div>
+      <p class="mnote hbtxt">${HBROWS.map(([k, n, fs]) => `${n}: ${fs.map(([f, fn, a]) => `${fn} ${num(HB[k][f], a)}`).join(', ')}`).join(' · ')}</p>`;
+  }
+  hitboxWire(el, re) {
+    const B = this.o.boss;
+    for (const b of el.querySelectorAll('[data-hbv]')) b.onclick = () => { setView(Number(b.dataset.hbv)); re(b); };
+    for (const b of el.querySelectorAll('[data-pass]')) b.onclick = () => { if (B) B.passive = !B.passive; re(b); };
+    for (const b of el.querySelectorAll('[data-hb]')) b.onclick = () => {
+      const [k, f] = b.dataset.hb.split('.'), d = Number(b.dataset.d), x = KIND[b.dataset.hb] === 'x', step = x ? 0.1 : 0.25;
+      const min = x ? 0.1 : f === 'fwd' ? 0 : 0.25, max = x ? 4 : 30;
+      HB[k][f] = Math.round(Math.max(min, Math.min(max, HB[k][f] + d * step)) * 100) / 100; saveHB(); re(b);
+    };
+    for (const b of el.querySelectorAll('[data-atk]')) b.onclick = () => { if (this.o.bossAttack) this.o.bossAttack(b.dataset.atk); };
+    for (const b of el.querySelectorAll('[data-hbstd]')) b.onclick = () => { resetHB(); re(b); };
+    for (const b of el.querySelectorAll('[data-hbcopy]')) b.onclick = () => {
+      const txt = el.querySelector('.hbtxt').textContent;
+      try { navigator.clipboard.writeText(txt).then(() => { b.textContent = 'Kopiert ✓'; }, () => { b.textContent = 'Text unten markieren'; }); }
+      catch (e) { b.textContent = 'Text unten markieren'; }
+    };
   }
 }
 export { BASE };

@@ -10,6 +10,7 @@ import { karteLaden } from './inventar.js';
 import { bildUrl } from './modelle.js';
 import { FogGate } from './nebel.js';
 import { Boss, BOSS_HP } from './boss.js';
+import { HitboxView } from './hitboxen.js';
 import { Player } from './player.js';
 import { OrbitCam } from './camera.js';
 import { makeComposer } from './bildfilter.js';
@@ -80,8 +81,11 @@ function gainSouls(n) {
 }
 for (const d of dogs) d.onDeath = () => gainSouls(SOULS.hund);
 boss.onDeath = () => gainSouls(SOULS.boss);
-const menue = new Menue({ werte, player, apply: applyStats, onLevel: () => sfx.heal(),
+const hbView = new HitboxView(scene, boss, player); // Boss-Hitboxen (Testmodus)
+const menue = new Menue({ werte, player, boss, apply: applyStats, onLevel: () => sfx.heal(),
   reset: () => { truhe.close(); },
+  // Testmodus: einen Boss-Angriff vorführen (nur wenn der Kampf läuft)
+  bossAttack: (k) => { if (!boss.active || boss.dead) return false; setState('play'); boss.attack(k, boss.lookYaw || 0); return true; },
   closeChest: () => { werte.truhe = false; werte.waffen = ['degen']; werte.waffe = 'degen'; werte.save(); truhe.close(); applyStats(); },
   jump: (w) => {
     const at = w === 'stone' ? [STONE.x + 0.4, STONE.z - 2.2] : w === 'gate' ? [(GATE.x0 + GATE.x1) / 2, GATE.z + 5]
@@ -100,6 +104,13 @@ boss.onSlam = (x, z, k, howl) => { // Aufschlag: Staub, Rütteln (je näher, des
   const near = Math.max(0, 1 - Math.hypot(player.pos.x - x, player.pos.z - z) / 16);
   if (!howl) { for (let i = 0; i < 3; i++) dust(new THREE.Vector3(x + (Math.random() - 0.5) * 3, 0, z + (Math.random() - 0.5) * 3), 10); sfx.boom(); }
   cam.shake(0.03 + 0.1 * k * near); rumble(0.5 + 0.5 * near, 0.6, 250);
+};
+// Tritt des Bosses (jede aufsetzende Pfote): Staub an der Pfote, dumpfes Wummern und leichtes Beben – je näher, desto stärker
+boss.onStep = (x, z, k) => {
+  const near = Math.max(0, 1 - Math.hypot(player.pos.x - x, player.pos.z - z) / 22);
+  dust(new THREE.Vector3(x, 0.05, z), Math.round(3 + 4 * k));
+  sfx.tritt(Math.min(1, (0.25 + 0.75 * near) * k));
+  if (near > 0.2) { cam.shake(0.008 + 0.025 * near * k); rumble(0.15 + 0.35 * near, 0.1, 90); }
 };
 // Heiltrank: Glucksen, warme Funken steigen auf
 const healFx = [], GLOWT = glowTex();
@@ -287,6 +298,7 @@ function frame(now) {
   if (state !== 'pause') { updateCards(dt); updateBlood(dt); updateHealFx(dt); }
   fog.update(dt);
   truhe.update(dt);
+  hbView.update(dt);
   post.render(time);
 }
 setState('title');
