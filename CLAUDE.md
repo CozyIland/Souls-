@@ -180,6 +180,12 @@
   Boden-Kollision `COL` beim Laden aus den Beinen berechnet (vorher ragte sie 3,2 m vor die Pfoten – nichts konnte treffen).
   Reichweiten (Treffer-Test): Biss 3–10 m bis ±30°, Prankenhieb 2–8 m bis ±60°, Stampfen 2–8 m bis ±30°, Ansturm 5–11 m, Drehung 2–4 m
   rundum, Sprung 6–18 m → danach wählt `choose(d, a)`.
+  **Schwanzfeger** (`spin`, ersetzt den 360°-Kreisel um die Mitte): `spinP` = Richtung `s` (der LANGE Weg herum, damit der Schwanz durch
+  den Magier fegt; danach schaut er ihn an), Gesamtwinkel `tot` = 2π − Winkel zum Magier (2,6 … 4,4 rad), Drehpunkt `piv` = Vorderpfoten
+  (Körper wandert so, dass sie stehen bleiben; `mot.pivot` → Vorderpfoten trippeln mit). Ablauf: Ausholen 0,05–0,4 s (Hüfte −0,35 rad zur
+  Gegenseite, duckt sich, Blick über die Schulter) → Schwung 0,42–1,04 s (`smoother`, höchstens ~665°/s, Hinterteil hoch, Hinterbeine in
+  der Luft, Körper krümmt sich `curl` über spine1, Schwanz schleift `tail` und wird per `ccdAim` tief geführt) → Landung ~1,0 s (Hinter-
+  beine schlagen auf, Schwanz peitscht nach `whip`). Treffer 0,5–1,02 s: Schwanz + Hinterläufe; Reichweite 2–4 m hinten, bis 5 m seitlich.
   **Anzeige** `src/hitboxen.js` (`HitboxView`, depthTest aus): Körper-Kapseln türkis als Gitter (blinken bei Treffer `hbFlash`),
   Angriffsformen in ihrer Farbe `ZCOL` (schwach beim Ausholen, kräftig im Treffermoment), Sprung/Heulen als Kreise am Boss, gelbe Kapsel
   = Magier; Ansicht `hbState.view` 0 aus / 1 Körper + laufender Angriff / 2 alles. Testmenü „Boss-Hitboxen“ (`HBROWS`, `hitboxHtml`/

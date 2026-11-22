@@ -117,7 +117,9 @@ export class Teile {
       out.push(cap(by.kopf, by.kopf.r * 1.2 * hb.charge.r), cap(by.hals, by.hals.r * 1.1 * hb.charge.r));
       for (const x of ['l', 'r']) out.push(cap(by['v' + x + 'm'], by['v' + x + 'm'].r * 1.3 * hb.charge.r), cap(by['v' + x + 'u'], by['v' + x + 'u'].r * 1.3 * hb.charge.r));
     }
-    if (k === 'spin') out.push(cap(by.schwanz, by.schwanz.r * 1.8 * hb.spin.r), cap(by.hlu, by.hlu.r * 1.5 * hb.spin.r), cap(by.hru, by.hru.r * 1.5 * hb.spin.r));
+    // Schwanzfeger: Schwanz und das ganze herumgeworfene Hinterteil (Unter- und Mittelläufe)
+    if (k === 'spin') out.push(cap(by.schwanz, by.schwanz.r * 1.8 * hb.spin.r), cap(by.hlu, by.hlu.r * 1.5 * hb.spin.r), cap(by.hru, by.hru.r * 1.5 * hb.spin.r),
+      cap(by.hlm, by.hlm.r * 1.4 * hb.spin.r), cap(by.hrm, by.hrm.r * 1.4 * hb.spin.r));
     return out;
   }
 }

@@ -79,8 +79,9 @@ export class Beine {
     if (!this.ok) return;
     // Schrittgrenze wächst mit dem Tempo: im Galopp hält die Pfote, bis der Clip sie hebt (sonst nur noch Notschritte).
     // Beim Drehen auf der Stelle ist sie kleiner → kurze Trippelschritte statt Schleifen.
-    const spd = Math.hypot(mot.vx, mot.vz), turning = Math.abs(mot.wy) > 0.25 && spd < 2.5;
-    const maxDev = (turning ? 0.55 : 0.85) + 0.15 * Math.min(spd, 14), stepT = turning ? 0.26 : 0.3;
+    // mot.pivot: Schwanzfeger – die Vorderpfoten sind der Drehpunkt und trippeln schnell auf der Stelle mit
+    const spd = Math.hypot(mot.vx, mot.vz), turning = mot.pivot || (Math.abs(mot.wy) > 0.25 && spd < 2.5);
+    const maxDev = mot.pivot ? 0.45 : (turning ? 0.55 : 0.85) + 0.15 * Math.min(spd, 14), stepT = mot.pivot ? 0.18 : turning ? 0.26 : 0.3;
     this.legs.forEach((l, i) => {
       l.w += (w[i] - l.w) * (1 - Math.exp(-(w[i] > l.w ? 22 : 10) * dt));   // schnell zupacken (Landung), weich loslassen
       const A = l.footB.getWorldPosition(vA);

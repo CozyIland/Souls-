@@ -59,6 +59,7 @@ const TURN_MAX = 1.7, TURN_ACC = 7;               // rad/s, rad/s²
 const LP = { cF: 0.8, cR: 0.3, lF: 0.7, lR: 0.2, sy: -0.15, sF: 0.2, sR: 0.1, gy: -0.65, gF: 1.05, gR: 0.15, dB: -0.45, dY: 1.05, dF: 0.6, dR: 0.6, tF: 0.8, bF: -0.2, tR: 0.75, bR: 0.3 };
 const sm = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
 const bump = (t, a, b) => sm((t - a) / Math.max(1e-3, b - a));  // 0 → 1 zwischen a und b
+const smoother = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * c * (c * (6 * c - 15) + 10); }; // langsam an, schnell, weich aus
 
 // ---------- Federn statt einfacher Glättung ----------
 // Jede Haltungsgröße hat Lage UND Tempo (gedämpfte Feder). Früher lief die Haltung dem Ziel nur hinterher: bei jedem Zustandswechsel
@@ -85,7 +86,7 @@ const ATK = {
   swipe: { T: 1.4, hit: [0.5, 0.7], dmg: 28 },
   leap: { T: 2.3, land: 1.22, dmg: 42, dmg2: 22 },
   charge: { T: 2.1, hit: [0.5, 1.55], dmg: 36 },
-  spin: { T: 1.55, hit: [0.45, 0.92], dmg: 26 },
+  spin: { T: 1.85, hit: [0.5, 1.02], dmg: 26 },
   stomp: { T: 1.95, slam: 0.9, dmg: 38 },
   howl: { T: 2.3, push: 0.6 },
 };
@@ -238,7 +239,7 @@ export class Boss {
   /** Kampf beginnt (Spieler ist durch den Nebel): aufstehen und heulen */
   start() { if (this.st === 'sleep') { this.active = true; this.go('wake'); } }
 
-  go(st) { this.st = st; this.t = 0; this.hitDone = false; this.lunge = null; this.slamSet = false; }
+  go(st) { this.st = st; this.t = 0; this.hitDone = false; this.lunge = null; this.slamSet = false; this.spinP = null; }
 
   /** Ziel für Kopf/Pfote merken (Magier, Höhe h über dem Boden) – wird bis zum Zuschlagen nachgeführt, dann festgehalten */
   aimAt(pl, h) { (this.aimP ||= new THREE.Vector3()).set(pl.pos.x, h, pl.pos.z); }
@@ -416,7 +417,13 @@ export class Boss {
         break;
       }
       case 'spin': {
-        if (t < 0.35) { want = toP; turn = 0.4; }
+        // Schwanzfeger: dreht sich um die VORDERPFOTEN (die bleiben stehen), das Hinterteil springt herum. Richtung so, dass der Schwanz
+        // durch den Magier fegt – der lange Weg herum (2π − Winkel zum Magier), am Ende schaut er ihn an.
+        if (!this.spinP) {
+          const D = angDiff(this.yaw, toP), s = Math.abs(D) > 3.0 ? (Math.random() < 0.5 ? 1 : -1) : (-Math.sign(D) || 1);
+          const piv = this.reach ? this.reach.paw : 1.65;
+          this.spinP = { s, y0: this.yaw, tot: clamp(TAU - Math.abs(D), 2.6, 4.4), piv, px: this.p.x + Math.sin(this.yaw) * piv, pz: this.p.z + Math.cos(this.yaw) * piv };
+        }
         if (t > ATK.spin.hit[0] && t < ATK.spin.hit[1]) this.req('spin', ATK.spin.dmg, 2.4);   // Schwanz und Hinterläufe
         if (t > ATK.spin.T) this.after('spin');
         break;
@@ -461,8 +468,9 @@ export class Boss {
     }
     // Drehen mit begrenztem Tempo (riesig und schwer)
     const prevYaw = this.yaw;
-    if (this.st === 'spin' && t > 0.35 && t < 0.95) { // Drehung: einmal herum (Tempo-Bogen)
-      const u = (t - 0.35) / 0.6, wv = TAU / 0.6 * 1.5 * Math.sin(Math.PI * u) * Math.PI / 3; this.yaw += wv * dt * k2; this.w = 0;
+    if (this.st === 'spin' && this.spinP) { // Schwanzfeger: Hüfte holt zur Gegenseite aus, dann schneller Schwung, weich ausgebremst
+      const P = this.spinP, PRE = 0.35;
+      this.yaw = P.y0 + P.s * (-PRE * sm((t - 0.05) / 0.35) + (P.tot + PRE) * smoother((t - 0.42) / 0.62)); this.w = 0;
     } else if (want !== null && this.st !== 'dead' && this.st !== 'stagger') {
       // im Stand dreht der Riese langsamer (sonst kommen die Pfoten mit dem Umsetzen nicht nach und schleifen)
       const still = this.st !== 'charge' ? lerp(0.6, 1, clamp((this.va || 0) / 3, 0, 1)) : 1;
@@ -474,7 +482,10 @@ export class Boss {
     // Tempo mit Trägheit wie bei den Hunden: ein Riese bremst nicht schlagartig – er rutscht ins Ausholen hinein.
     // Antreten (Vorstoß, Ansturm) darf kräftig sein, Abbremsen ist begrenzt. Im Sprung bestimmt die Flugbahn die Lage.
     const Lg = this.lunge;
-    if (Lg && t >= Lg.t0 && t <= Lg.t1 + 0.05 && dt > 0) {   // geplanter Vorstoß: Lage folgt der Kurve, Tempo ergibt sich daraus
+    if (this.st === 'spin' && this.spinP && dt > 0) {   // Drehpunkt = Vorderpfoten: der Körper wandert so, dass sie stehen bleiben
+      const P = this.spinP, nx = P.px - Math.sin(this.yaw) * P.piv, nz = P.pz - Math.cos(this.yaw) * P.piv;
+      this.v.set((nx - this.p.x) / dt, (nz - this.p.z) / dt); this.sv = 0;
+    } else if (Lg && t >= Lg.t0 && t <= Lg.t1 + 0.05 && dt > 0) {   // geplanter Vorstoß: Lage folgt der Kurve, Tempo ergibt sich daraus
       const u = clamp((t - Lg.t0) / (Lg.t1 - Lg.t0), 0, 1), e = u * u * (3 - 2 * u);
       const nx = lerp(Lg.sx, Lg.ex, e), nz = lerp(Lg.sz, Lg.ez, e);
       this.v.set((nx - this.p.x) / dt, (nz - this.p.z) / dt);
@@ -542,7 +553,7 @@ export class Boss {
     // wirkliches Tempo (nach Wand/Sprung), nicht das gewollte – sonst laufen die Beine, obwohl er nicht vorankommt
     const VA = this.vAct || this.v, sp = Math.hypot(VA.x, VA.y), fwd = VA.x * Math.sin(this.yaw) + VA.y * Math.cos(this.yaw);
     // ---------- Ganzkörper-Haltung (Halter) ----------
-    let y = 0, pitch = 0, roll = 0, neck = 0, head = 0, jaw = 0.05, legF = 0, legR = 0, tail = 0, rise = 0, drop = 0;
+    let y = 0, pitch = 0, roll = 0, neck = 0, head = 0, jaw = 0.05, legF = 0, legR = 0, tail = 0, rise = 0, drop = 0, curl = 0;
     switch (st) {
       case 'sleep': neck = 0.75 + 0.08 * Math.sin(this.it * 3.1); head = 0.3; jaw = 0.12; pitch = 0.06; break; // schnüffelt am Boden (Kopf tief)
       case 'wake': { const u = sm(t / 0.9), h = bump(t, 1.25, 1.6) * (1 - bump(t, 2.6, 3.0)); // Kopf hoch, aufbäumen, heulen
@@ -559,12 +570,24 @@ export class Boss {
         neck = 0.25 * c - 0.2 * air + 0.3 * ld; jaw = 0.2 + 0.5 * air; legF = LP.cF * c + LP.lF * ld; legR = LP.cR * c + LP.lR * ld; rise = air; break; }
       case 'charge': { const c = bump(t, 0, 0.45) * (1 - bump(t, 1.5, 2.0));
         pitch = 0.16 * c; neck = 0.75 * c; head = 0.3 * c; jaw = 0.35 * c; y = -0.25 * c; break; }   // Kopf tief: rammt auf Körperhöhe
-      case 'spin': { const c = bump(t, 0, 0.3) * (1 - bump(t, 1.0, 1.4));
-        // Drehung als kleiner Satz: duckt sich, springt beim Herumwerfen ab (die Beine verlassen den Boden – kein Schleifen), landet schwer
-        const hop = Math.sin(Math.PI * clamp((t - 0.3) / 0.7, 0, 1)), land = bump(t, 0.95, 1.05) * (1 - bump(t, 1.1, 1.5));
-        y = LP.sy * c + 0.3 * hop - 0.25 * land; pitch = 0.06 * c - 0.08 * hop + 0.08 * land; neck = 0.2 * c; jaw = 0.3; tail = 1.2 * c;
-        drop = c;   // Schwanz tief: fegt auf Körperhöhe des Magiers
-        legF = LP.sF * c + 0.35 * hop; legR = LP.sR * c + 0.3 * hop; break; }
+      case 'spin': {
+        // Schwanzfeger in drei Teilen: AUSHOLEN (duckt sich, Gewicht auf die Vorderbeine, Hüfte und Schwanz zur Gegenseite, Blick über
+        // die Schulter) → FEGEN (Hinterteil hoch und herum, Körper krümmt sich, Schwanz schleift hinterher und fegt tief) →
+        // LANDEN (Hinterbeine schlagen auf, Schwanz peitscht nach)
+        const s = this.spinP ? this.spinP.s : 1;
+        const c = bump(t, 0, 0.25) * (1 - bump(t, 1.4, 1.85));
+        const wind = bump(t, 0.05, 0.4) * (1 - bump(t, 0.42, 0.56));
+        const sweep = bump(t, 0.4, 0.52) * (1 - bump(t, 0.96, 1.12));
+        const land = bump(t, 1.0, 1.08) * (1 - bump(t, 1.16, 1.6));
+        const whip = bump(t, 0.94, 1.04) * (1 - bump(t, 1.12, 1.55));
+        y = -0.3 * wind - 0.1 * sweep - 0.22 * land;
+        pitch = 0.08 * wind + 0.14 * sweep - 0.04 * land;              // Gewicht nach vorn, Hinterteil hoch
+        roll = s * (0.1 * wind - 0.16 * sweep + 0.05 * land);
+        neck = 0.2 * c - 0.15 * wind; head = 0.1 * c; jaw = 0.15 + 0.2 * wind + 0.35 * sweep;
+        tail = s * (0.7 * wind - 1.1 * sweep + 0.9 * whip);             // erst zur Gegenseite, dann schleifend, dann peitschend
+        drop = Math.max(sweep, 0.6 * whip);                             // Schwanz tief: fegt auf Körperhöhe des Magiers
+        legF = 0.15 * wind; legR = 0.25 * wind + 0.35 * sweep;          // Hinterbeine ziehen sich im Sprung an
+        curl = s * sweep; break; }
       case 'stomp': { const r = bump(t, 0.05, 0.7) * (1 - bump(t, 0.74, 0.9)), sl = bump(t, 0.75, 0.9) * (1 - bump(t, 1.2, 1.9));
         pitch = -0.62 * r + 0.18 * sl; y = 1.0 * r - 0.35 * sl; neck = -0.35 * r + 0.35 * sl; head = -0.25 * r + 0.15 * sl; jaw = 0.25 + 0.4 * r; legF = -0.9 * r + 0.3 * sl; break; }
       case 'howl': { const h = bump(t, 0.1, 0.5) * (1 - bump(t, 1.8, 2.3)); pitch = -0.32 * h; y = 0.35 * h; neck = -0.95 * h; head = -0.45 * h; jaw = 0.08 + 0.75 * h; break; }
@@ -643,7 +666,9 @@ export class Boss {
     const X = ax(1, 0, 0), Y = ax(0, 1, 0), Z = ax(0, 0, 1);
     const alive = !this.dead && st !== 'sleep';
     // Kopf schaut zum Magier (der ist klein → Kopf etwas nach unten, wenn er nah ist)
-    const lt = alive && st !== 'spin' && st !== 'charge' ? clamp(this.lookYaw || 0, -0.9, 0.9) : 0;
+    // Kopf schaut zum Magier; beim Schwanzfeger beim Ausholen weit über die Schulter (Warnung), im Schwung kaum
+    const lt = !alive || st === 'charge' ? 0 : st === 'spin' ? clamp(this.lookYaw || 0, -1.3, 1.3) * (1 - 0.8 * bump(t, 0.4, 0.5) * (1 - bump(t, 1.0, 1.15)))
+      : clamp(this.lookYaw || 0, -0.9, 0.9);
     this.lk = lerp(this.lk || 0, lt, damp(5, dt));
     const down = alive ? clamp((9 * K - (this.lookD || 9)) / (9 * K), 0, 1) * 0.35 : 0;
     rotW(B.neck1, Y, this.lk * 0.5); rotW(B.head, Y, this.lk * 0.35);
@@ -668,6 +693,8 @@ export class Boss {
     if (S0.air > 1e-3) for (const s of ['L', 'R']) { rotW(B['frontUpr' + s], X, -0.9 * S0.air); rotW(B['rearLeg' + s + '_01'], X, 0.8 * S0.air); }
     // Schwanz (Feder: schwingt nach, springt nie); Atmen hebt den Brustkorb
     rotW(B.tail2, Y, S0.tail * 0.5); rotW(B.tail3, Y, S0.tail * 0.4); rotW(B.tail4, Y, S0.tail * 0.3);
+    // Schwanzfeger: Vorderkörper bleibt zurück, das Hinterteil wirft sich voraus (Körper krümmt sich wie ein C)
+    if (Math.abs(curl) > 1e-3 && B.spine1) rotW(B.spine1, Y, -0.32 * curl);
     // Drehung: Schwanzspitze tief auf Körperhöhe des Magiers führen (in die Richtung, in die der Schwanz gerade zeigt)
     if (drop > 1e-3 && B.tail_05) {
       M.holder.updateMatrixWorld(true);
@@ -711,15 +738,16 @@ export class Boss {
     if (this.beine && this.beine.ok) {
       let wAll = st === 'sleep' || this.dead ? 0 : st === 'wake' ? sm((t - 1.0) / 0.7) : 1;
       if (st === 'leap') wAll *= 1 - clamp(S0.air * 3, 0, 1);
-      if (st === 'spin') wAll *= 1 - bump(t, 0.28, 0.38) * (1 - bump(t, 0.92, 1.02));
       const wv = [wAll, wAll, wAll, wAll];
+      // Schwanzfeger: Vorderpfoten bleiben als Drehpunkt stehen, nur die Hinterbeine springen herum und landen wieder
+      if (st === 'spin') { const air = bump(t, 0.42, 0.48) * (1 - bump(t, 0.96, 1.02)); wv[2] *= 1 - air; wv[3] *= 1 - air; }
       const paw = clamp(Math.max((Math.abs(S0.pawR) + Math.abs(S0.pawO)) * 2.5, wS * 1.5), 0, 1);
       wv[(this.swSide || 1) > 0 ? 0 : 1] *= 1 - paw;
       // Aufbäumen vor dem Stampfen: Vorderbeine in der Luft, ab 0,82 s kommen sie herunter (dann übernimmt die IK → Pfoten aufs Ziel)
       const rear = st === 'stomp' ? bump(t, 0.1, 0.35) * (1 - bump(t, 0.8, 0.88)) : clamp(-S0.legF / 0.3, 0, 1);
       wv[0] *= 1 - rear; wv[1] *= 1 - rear;
       M.holder.updateMatrixWorld(true);
-      this.beine.solve(dt, wv, { vx: VA.x, vz: VA.y, wy: this.yawRate || 0, cx: this.p.x, cz: this.p.z }, X);
+      this.beine.solve(dt, wv, { vx: VA.x, vz: VA.y, wy: this.yawRate || 0, cx: this.p.x, cz: this.p.z, pivot: st === 'spin' && !!this.spinP }, X);
     }
     // ---------- Glut vom Rücken ----------
     const heat = this.dead ? Math.max(0, 1 - this.deadT / 6) * 0.5 : this.st === 'sleep' ? 0.35 : this.phase2 ? 1.6 : 0.75;
