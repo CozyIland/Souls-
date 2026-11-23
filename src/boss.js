@@ -68,7 +68,7 @@ const smoother = (x) => { const c = Math.min(1, Math.max(0, x)); return c * c * 
 // Jede Haltungsgröße hat Lage UND Tempo (gedämpfte Feder). Früher lief die Haltung dem Ziel nur hinterher: bei jedem Zustandswechsel
 // (Lauern → Angriff, Angriff abgebrochen) sprang das Tempo schlagartig → ruckartig und hölzern. Die Feder beschleunigt und bremst weich.
 // OM = Steifigkeit je Zustand (höher = folgt schneller), OMK = Faktor je Größe (Kopf/Hals hängen etwas nach → wirkt lebendig).
-const OM = { sleep: 5, wake: 8, stalk: 7, bite: 17, biteQ: 20, bite2: 18, swipe: 15, leap: 18, charge: 10, spin: 15, stomp: 14, howl: 9, stagger: 10, dead: 20 };
+const OM = { sleep: 5, wake: 8, stalk: 7, bite: 17, biteQ: 20, bite2: 18, swipe: 15, leap: 18, charge: 10, spin: 15, stomp: 14, howl: 9, stagger: 10, dead: 20, rage: 7 };
 const OMK = { neck: 0.85, head: 0.7, jaw: 1.6, hroll: 1.1, tail: 0.55, pawR: 1.35, pawO: 1.35, pawL: 1.35, air: 1.2, legF: 1.1, legR: 1.1 };
 const ZETA = 0.88;           // knapp unter 1: kommt ohne Zappeln an, schwingt aber ganz leicht aus (wirkt schwer und organisch)
 const POSE = ['y', 'pitch', 'roll', 'neck', 'head', 'jaw', 'hroll', 'legF', 'legR', 'tail', 'pawR', 'pawO', 'pawL', 'air'];
@@ -104,6 +104,10 @@ const ATK = {
   stomp: { T: 1.95, slam: 0.9, dmg: 38 },
   howl: { T: 2.3, push: 0.6 },
 };
+// Phasenwechsel „Wutgeheul“ (kein Angriff – unverwundbar): hinsetzen bis sit, Geheul ab roar, Druckwelle bei wave, Feuer ab ignite,
+// aufstehen ab up, fertig bei T. Phase 2: Schaden × P2_DMG, alles × P2_SPEED schneller, kurze Pausen, öfter Kombos
+const RAGE = { T: 4.0, sit: 0.9, roar: 1.15, wave: 1.35, ignite: 1.3, up: 3.1 };
+const P2_DMG = 1.35, P2_SPEED = 1.28;
 
 const qP = new THREE.Quaternion(), qR = new THREE.Quaternion(), qH = new THREE.Quaternion();
 const vX = new THREE.Vector3(), vY = new THREE.Vector3(), vT = new THREE.Vector3(), vJ = new THREE.Vector3();
@@ -245,7 +249,7 @@ export class Boss {
 
   reset() {
     this.p.set(this.home.x, 0, this.home.z); this.yaw = this.home.yaw;
-    this.hp = BOSS_HP; this.dead = false; this.active = false; this.phase2 = false;
+    this.hp = BOSS_HP; this.dead = false; this.active = false; this.phase2 = false; this.burn = 0;
     this.st = 'sleep'; this.t = 0; this.v.set(0, 0); this.sv = 0; this.w = 0; this.yawRate = 0;
     this.cd = 1.2; this.poise = 0; this.poiseT = 0; this.flinch = 0; this.hitDone = false; this.combo = 0;
     this.deadT = 0; this.pooled = false; this.gp = 0; this.aw = { idle: 1, walk: 0, run: 0 }; this.lag = BOSS_HP;
@@ -282,13 +286,15 @@ export class Boss {
   /** Treffer vom Magier */
   onHit(dmg, dir, heavy, poiseDmg) {
     if (this.dead || this.st === 'sleep') return;
+    if (this.st === 'rage') { this.hbFlash = 1; this.immune = 0.25; sfx.thud(); return; }   // Wutgeheul: kein Schaden (Funken/dumpfer Ton)
     this.hp = Math.max(0, this.hp - dmg);
     this.flinch = heavy ? 0.35 : 0.22; this.hitDir = dir.clone(); this.lagHold = 0.7; this.hbFlash = 1; // Hitbox blinkt (Testmodus)
     // Treffer-Reaktion: ein Stoß in die Haltungs-Federn (Kopf und Körper zucken weg und federn zurück – kein Zittern, kein Sprung)
     const k = heavy ? 1 : 0.6, side = dir && Number.isFinite(dir.x) ? Math.sign(dir.x * Math.cos(this.yaw) - dir.z * Math.sin(this.yaw)) || 1 : 1;
     this.kick = { p: (this.kick ? this.kick.p : 0) + 0.9 * k, r: (this.kick ? this.kick.r : 0) + 0.55 * k * side, n: (this.kick ? this.kick.n : 0) + 1.6 * k };
     if (this.hp <= 0) { this.dead = true; this.go('dead'); this.deadSide = Math.random() < 0.5 ? 1 : -1; sfx.roar(true); if (this.onDeath) this.onDeath(this); return; }
-    if (!this.phase2 && this.hp <= BOSS_HP * 0.5 && this.st !== 'stagger') { this.phase2 = true; this.go('howl'); sfx.roar(false); return; }
+    // Phase 2: er setzt sich, heult (unverwundbar) und fängt Feuer – danach brennt er, trifft härter und greift schneller nach
+    if (!this.phase2 && this.hp <= BOSS_HP * 0.5) { this.phase2 = true; this.poise = 0; this.combo = 0; this.go('rage'); return; }
     this.poise += poiseDmg != null ? poiseDmg : (heavy ? 30 : dmg); this.poiseT = 0;
     if (this.poise >= POISE_MAX && this.st !== 'leap' && this.st !== 'howl') { this.poise = 0; this.go('stagger'); sfx.yelp(true); }
   }
@@ -332,6 +338,7 @@ export class Boss {
     if (Math.hypot(dx, dz) > r) return false;
     if (Math.hypot(dx, dz) < 0.3) { dx = pl.pos.x - this.p.x; dz = pl.pos.z - this.p.z; } // Treffer direkt am Magier: vom Boss weg stoßen
     const l = Math.hypot(dx, dz) || 1;
+    if (this.phase2) dmg = Math.round(dmg * P2_DMG);   // brennend: härtere Treffer
     const ok = pl.damage(dmg, new THREE.Vector3(dx / l * push, 0, dz / l * push)); // in der Rolle (unverwundbar) geht er daneben
     if (ok) { this.hitDone = true; sfx.bite(); }
     return ok;
@@ -360,7 +367,7 @@ export class Boss {
 
   update(dt, pl) {
     if (!this.mm) return;
-    const k2 = this.phase2 ? 1.22 : 1;                 // Phase 2: alles etwas schneller
+    const k2 = this.phase2 ? P2_SPEED : 1;             // Phase 2: alles schneller
     this.t += dt * (ATK[this.st] ? k2 : 1);
     this.flinch = Math.max(0, this.flinch - dt);
     this.poiseT += dt; if (this.poiseT > POISE_WAIT) this.poise = Math.max(0, this.poise - POISE_REGEN * dt);
@@ -490,6 +497,14 @@ export class Boss {
         break;
       }
       case 'stagger': if (t > 2.4) { this.go('stalk'); this.cd = 0.5; } break;
+      case 'rage': {   // Wutgeheul (Phasenwechsel): kurz zum Magier drehen, hinsetzen, Kopf in den Himmel, heulen, Feuer, aufstehen
+        if (t < 0.35) { want = toP; turn = 0.8; }
+        if (t > RAGE.roar && !this.roared) { this.roared = true; sfx.roar(false); }
+        if (t > RAGE.wave && !this.pushed) { this.pushed = true; if (this.onSlam) this.onSlam(this.p.x, this.p.z, 0.8, true);
+          if (d < HB.howl.r && plOk) pl.damage(8, new THREE.Vector3(dx / (d || 1) * 2.8, 0, dz / (d || 1) * 2.8)); }
+        if (t > RAGE.T) { this.pushed = false; this.roared = false; this.go('stalk'); this.cd = 0.5; }
+        break;
+      }
       case 'dead':
         this.deadT += dt;
         if (this.deadT > 1.6 && !this.pooled) { this.pooled = true; pool(this.p.x - fz * 1.2 * (this.deadSide || 1), this.p.z + fx * 1.2 * (this.deadSide || 1), 3.2); }
@@ -561,14 +576,15 @@ export class Boss {
 
   /** nach einem Angriff: Kombo (Phase 2) oder kurz lauern */
   after(k) {
-    if (this.phase2 && this.combo < 1 && Math.random() < 0.55 && (isBite(k) || k === 'swipe')) {
+    // Phase 2: bis zu zwei Folgeangriffe direkt hintereinander, kaum Pause dazwischen
+    if (this.phase2 && this.combo < 2 && Math.random() < (this.combo ? 0.45 : 0.75) && (isBite(k) || k === 'swipe')) {
       // Phase 2: nachsetzen – nach einem Biss Pranke oder schneller Schnappbiss, nach der Pranke die andere Pranke
       this.combo++;
       const nx = k === 'swipe' ? 'swipe' : k !== 'biteQ' && Math.random() < 0.45 ? 'biteQ' : 'swipe';
       this.attack(nx, this.lookYaw, k === 'swipe' ? -this.swSide : null); return;
     }
     this.combo = 0; this.go('stalk');
-    this.cd = (this.phase2 ? 0.5 : 0.9) + Math.random() * (this.phase2 ? 0.6 : 0.9);
+    this.cd = (this.phase2 ? 0.25 : 0.9) + Math.random() * (this.phase2 ? 0.35 : 0.9);
     if (k === 'leap' || k === 'charge') this.cd += 0.3;
   }
   attack(k, a, forceSide) {
@@ -588,6 +604,7 @@ export class Boss {
     // wirkliches Tempo (nach Wand/Sprung), nicht das gewollte – sonst laufen die Beine, obwohl er nicht vorankommt
     const VA = this.vAct || this.v, sp = Math.hypot(VA.x, VA.y), fwd = VA.x * Math.sin(this.yaw) + VA.y * Math.cos(this.yaw);
     // ---------- Ganzkörper-Haltung (Halter) ----------
+    this.sitK = 0; this.howlK = 0;
     let y = 0, pitch = 0, roll = 0, neck = 0, head = 0, jaw = 0.05, legF = 0, legR = 0, tail = 0, rise = 0, drop = 0, curl = 0, hroll = 0;
     switch (st) {
       case 'sleep': neck = 0.75 + 0.08 * Math.sin(this.it * 3.1); head = 0.3; jaw = 0.03; pitch = 0.06; break; // schnüffelt am Boden (Kopf tief, Maul zu)
@@ -645,6 +662,10 @@ export class Boss {
       case 'stomp': { const r = bump(t, 0.05, 0.7) * (1 - bump(t, 0.74, 0.9)), sl = bump(t, 0.75, 0.9) * (1 - bump(t, 1.2, 1.9));
         pitch = -0.62 * r + 0.18 * sl; y = 1.0 * r - 0.35 * sl; neck = -0.35 * r + 0.35 * sl; head = -0.25 * r + 0.15 * sl; jaw = 0.25 + 0.4 * r; legF = -0.9 * r + 0.3 * sl; break; }
       case 'howl': { const h = bump(t, 0.1, 0.5) * (1 - bump(t, 1.8, 2.3)); pitch = -0.32 * h; y = 0.35 * h; neck = -0.95 * h; head = -0.45 * h; jaw = 0.08 + 0.75 * h; break; }
+      case 'rage': {   // hinsetzen (Hinterteil sinkt, Hinterbeine knicken ganz ein, Brust hebt sich), Kopf in den Himmel, Maul weit auf
+        const s = bump(t, 0.1, RAGE.sit) * (1 - bump(t, RAGE.up, RAGE.T - 0.1)), h = bump(t, RAGE.roar - 0.3, RAGE.roar + 0.2) * (1 - bump(t, RAGE.up - 0.5, RAGE.up));
+        pitch = -0.42 * s - 0.08 * h; y = -0.5 * s; legR = 1.15 * s; neck = -0.3 * s - 0.85 * h; head = -0.1 * s - 0.4 * h;
+        jaw = 0.05 + 0.9 * h + 0.04 * h * Math.sin(t * 31); this.sitK = s; this.howlK = h; break; }
       case 'stagger': { const s1 = bump(t, 0, 0.35) * (1 - bump(t, 1.8, 2.4)); pitch = 0.32 * s1; y = LP.gy * s1; roll = 0.12 * s1; neck = 0.5 * s1; head = 0.2 * s1; jaw = 0.5 * s1; legF = LP.gF * s1; legR = LP.gR * s1; break; }
       case 'dead': { const T = this.deadT, sd = this.deadSide, buck = sm(T / 0.5), f = clamp((T - 0.35) / 0.55, 0, 1), fall = f * f;
         const bounce = Math.sin(clamp((T - 0.9) / 0.35, 0, 1) * Math.PI) * 0.08 * (1 - sm((T - 0.9) / 0.5));
@@ -696,7 +717,7 @@ export class Boss {
     // Drehen auf der Stelle spielt KEINEN Geh-Clip mehr (die Beine liefen sonst vorwärts, während der Körper sich dreht → Rutschen);
     // stattdessen setzen die Beine selbst um (Trippelschritte in bossbeine.js)
     const gsp = sp;
-    const still = st === 'sleep' || st === 'dead' || st === 'leap' || st === 'stagger' || st === 'howl' || st === 'stomp' || st === 'wake';
+    const still = st === 'sleep' || st === 'dead' || st === 'leap' || st === 'stagger' || st === 'howl' || st === 'stomp' || st === 'wake' || st === 'rage';
     // solange er noch in Bewegung ist (ins Ausholen hineinrutschen, Ducken vor dem Sprung, Herumdrehen), laufen die Beine mit
     const legOk = !still || (st === 'leap' && t < 0.6) || (st === 'stomp' && t < 0.3) || (st === 'wake' && t > 0.9);
     const run = sm((sp - 4.5) / 2.5), walk = legOk ? sm((gsp - 0.25) / 0.6) * (1 - run) : 0;
@@ -729,7 +750,7 @@ export class Boss {
     // Blickstärke: beim Ansturm nicht (Kopf rammt), beim Schwanzfeger weit über die Schulter beim Ausholen, im Schwung kaum,
     // in Bissen nur bis zum Zuschnappen (danach führt das Zielen den Kopf)
     const atkNow = !!ATK[st] && st !== 'howl';
-    const lookW = !alive || st === 'charge' ? 0 : st === 'spin' ? 1 - 0.8 * bump(t, 0.4, 0.5) * (1 - bump(t, 1.0, 1.15)) : isBite(st) ? 0.6 : atkNow ? 0.7 : 1;
+    const lookW = !alive || st === 'charge' ? 0 : st === 'rage' ? 1 - this.howlK : st === 'spin' ? 1 - 0.8 * bump(t, 0.4, 0.5) * (1 - bump(t, 1.0, 1.15)) : isBite(st) ? 0.6 : atkNow ? 0.7 : 1;
     // Blick vom Hals-Ansatz aus (nicht von der Körpermitte – der Kopf ist 4–5 m davor): Seitenwinkel und Höhenwinkel zur Brust
     // des Magiers. Nah unter ihm schaut er steil hinunter, weit weg leicht hoch.
     let lookH = clamp(this.lookYaw || 0, -1.3, 1.3), down = 0;
@@ -835,6 +856,7 @@ export class Boss {
     if (this.beine && this.beine.ok) {
       let wAll = st === 'sleep' || this.dead ? 0 : st === 'wake' ? sm((t - 1.0) / 0.7) : 1;
       const wv = [wAll, wAll, wAll, wAll];
+      wv[2] *= 1 - this.sitK; wv[3] *= 1 - this.sitK;   // sitzt: Hinterbeine gehören der Sitz-Haltung
       // Sprung: Flughaltung der Beine (Gewicht weich an beim Absprung, weich aus kurz vor der Landung); Flug u = 0 … 1
       const landT = ATK.leap.land, fly = st === 'leap' ? { k: sm((t - 0.56) / 0.1) * (1 - sm((t - (landT - 0.07)) / 0.09)), u: clamp((t - 0.6) / (landT - 0.6), 0, 1) } : null;
       // Gehen/Rennen: Vorderbeine im eigenen Gang (Takt aus dem Clip); mit Schwelle, damit er nicht hin- und herschaltet
@@ -870,5 +892,45 @@ export class Boss {
       e.life -= dt; e.s.position.addScaledVector(e.v, dt); e.v.x += Math.sin(this.t * 3 + e.max * 9) * dt * 0.8;
       e.s.material.opacity = Math.sin(Math.PI * clamp(1 - e.life / e.max, 0, 1)) * 0.9;
     }
+    this.fire(dt, B);
+  }
+
+  /**
+   * Phase 2: er brennt. Feuer zündet beim Wutgeheul (RAGE.ignite) und wächst in ~1 s; Flammen züngeln vom ganzen Körper hoch
+   * (gelb → orange → dunkelrot, steigen auf, werden größer und verblassen), Randlicht glüht orange, Licht flackert.
+   */
+  fire(dt, B) {
+    const want = this.phase2 && !this.dead && (this.st !== 'rage' || this.t > RAGE.ignite) ? 1 : 0;
+    this.burn = (this.burn || 0) + (want - (this.burn || 0)) * (1 - Math.exp(-(want ? 1.8 : 0.8) * dt));
+    const b = this.burn, u = this.mat && this.mat.userData.u;
+    if (u) {
+      u.uRim.value = 0.55 + 0.9 * b; u.uRimCol.value.setHex(0xff8a4a).lerp(FIRE_RIM, b);
+      u.uGlow.value += 2.4 * b * (0.8 + 0.2 * Math.sin(this.clk * 13));
+    }
+    if (b > 0.01) this.glow.intensity += b * 9 * (0.75 + 0.25 * Math.sin(this.clk * 17) * Math.sin(this.clk * 5.3));
+    if (!this.flames) {   // einmal anlegen
+      const tex = glowTex(); this.flames = [];
+      for (let i = 0; i < 90; i++) {
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xffb040, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+        s.visible = false; this.scene.add(s); this.flames.push({ s, life: 0, max: 1, v: new THREE.Vector3(), sz: 1 });
+      }
+    }
+    const src = [B.chest, B.spine2, B.spine1, B.hips, B.neck1, B.head, B.tail2, B.tail3, B.frontUprL, B.frontUprR, B.rearLegL_01, B.rearLegR_01, B.frontLwrL, B.frontLwrR].filter(Boolean);
+    for (const f of this.flames) {
+      if (f.life <= 0) {
+        if (b > 0.02 && Math.random() < dt * 22 * b) {
+          src[Math.floor(Math.random() * src.length)].getWorldPosition(f.s.position);
+          f.s.position.x += (Math.random() - 0.5) * 1.3; f.s.position.y += Math.random() * 0.8; f.s.position.z += (Math.random() - 0.5) * 1.3;
+          f.v.set((Math.random() - 0.5) * 0.5, 1.6 + Math.random() * 1.8, (Math.random() - 0.5) * 0.5);
+          f.life = f.max = 0.35 + Math.random() * 0.45; f.sz = (0.7 + Math.random() * 0.9) * (0.6 + 0.4 * b); f.s.visible = true;
+        } else { f.s.visible = false; continue; }
+      }
+      f.life -= dt; const a = clamp(1 - f.life / f.max, 0, 1);
+      f.s.position.addScaledVector(f.v, dt); f.v.x += Math.sin(this.clk * 6 + f.max * 17) * dt * 2;   // züngelt
+      f.s.scale.set(f.sz * (0.6 + 0.7 * a), f.sz * (0.9 + 1.4 * a), 1);                               // wird länger nach oben
+      f.s.material.color.setHex(0xffd27a).lerp(FIRE_MID, Math.min(1, a * 1.6)).lerp(FIRE_END, Math.max(0, a * 1.6 - 0.6));
+      f.s.material.opacity = Math.sin(Math.PI * Math.min(1, a * 1.15)) * 0.85 * (0.5 + 0.5 * b);
+    }
   }
 }
+const FIRE_RIM = new THREE.Color(0xff5a14), FIRE_MID = new THREE.Color(0xff6a1a), FIRE_END = new THREE.Color(0x7a1408);

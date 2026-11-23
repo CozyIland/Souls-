@@ -9,6 +9,7 @@ import { sfx } from './ton.js';
 import { pool } from './blut.js';
 import { resolve } from './kollision.js';
 import { clamp, lerp, damp, angDiff, TAU } from './util.js';
+import { Beine, LEG_BONES } from './bossbeine.js';
 
 const HP = 60;
 // Sperrlinie vor dem Nebeltor (main.js setzt z): Hunde kommen nie in den Bossraum – auch nicht im Sprung oder Sprint.
@@ -44,6 +45,10 @@ const TROT = { off: [0, 0.5, 0.5, 0], kr: 0.255, kf: 0.295, foldR: -0.6, foldF: 
 const GALO = { off: [0, 0.09, 0.48, -0.43], kr: 0.288, kf: 0.168, foldR: -0.9, foldF: 1.1, from: 2.8, span: 1.1 };
 const WALK = { k: 1.15, grow: 0.25 }; // Schrittlänge des Geh-Clips (× DOG_STRIDE·DOG_S) und Zuwachs mit dem Tempo
 let RL0 = 0.5; // Phase im Clip, in der das linke Hinterbein mitten im Bodenkontakt ist (beim Laden gemessen)
+// Standmitte je Bein (VL, VR, HL, HR) in der Schrittphase gph – linkes Hinterbein bei 0,5 (= Standmitte im Clip).
+// Gehen = Viertakt (links hinten → links vorn → rechts hinten → rechts vorn), Trab = diagonale Paare, Galopp = aus GALO.off
+const GAIT_MID = { walk: [0.75, 0.25, 0.5, 0], trot: [0, 0.5, 0.5, 0], galo: [0.02, 0.93, 0.5, 0.41] };
+const frac1 = (x) => x - Math.floor(x);
 // Leichenhaltung: Beine zum Boden kippen (f/r = vorn/hinten, b/t = unten/oben), Rücken, Hals, Kopf, Schwanz, Anheben
 const D = { fb: 0.4, ft: 0.7, rb: 0.15, rt: 0.6, sp: 0.15, nk: 0.15, hd: 0.1, t2: 0.3, t3: 0.1, by: 0.02 };
 const DOG_URL = 'models/hund.glb', DOG_S = 0.72, DOG_FOOT = 0.67, DOG_STRIDE = 1.3, DOG_C = 0.42;
@@ -160,9 +165,20 @@ class Dog {
     if (act) { act.play(); act.timeScale = 0; }
     const B = {}; model.traverse((o) => { if (o.isBone) B[o.name] = o; });
     const ctl = ['head', 'neck1', 'frontUprR', 'frontLwrR', 'frontUprL', 'frontLwrL', 'rearLegR_01', 'rearLegL_01', 'rearLwrR', 'rearLwrL',
-      'rearHorselinkR', 'rearHorselinkL', 'frontHorselinkR', 'frontHorselinkL', 'spine1', 'spine2', 'chest', 'hips', 'tail2', 'tail3', 'tail4'].map((n) => B[n]).filter(Boolean);
+      'rearHorselinkR', 'rearHorselinkL', 'frontHorselinkR', 'frontHorselinkL', 'spine1', 'spine2', 'chest', 'hips', 'tail2', 'tail3', 'tail4',
+      ...LEG_BONES].filter((n, i, a) => a.indexOf(n) === i).map((n) => B[n]).filter(Boolean);
     for (const b of ctl) b.userData.base = b.quaternion.clone();
     this.mm = { model, holder, mixer, act, dur: clip ? clip.duration : 1, mats, B, ctl };
+    // Beine wie beim Boss (bossbeine.js): Pfoten stehen fest, Beine als gerade Säulen, eigener Hunde-Gang (Gehen/Trab/Galopp)
+    if (act) {
+      const be = new Beine(B);
+      if (be.ok) {
+        holder.position.y = DOG_C; this.m.root.updateMatrixWorld(true);   // Pfoten beim Vermessen auf Bodenhöhe (wie im Spiel)
+        be.measure({ walk: act, holder, mixer });
+        act.setEffectiveWeight(0); for (const b of ctl) b.quaternion.copy(b.userData.base);
+        this.beine = be;
+      }
+    }
     if (act && B.rearFootL && !Dog.rlDone) { // einmal: wann steht das linke Hinterbein am tiefsten (Mitte der Standphase)?
       Dog.rlDone = true; const V = new THREE.Vector3(); let best = 9;
       act.setEffectiveWeight(1);
@@ -201,6 +217,29 @@ class Dog {
       this.flinch = 0.28; // nur kurz zusammenzucken, Angriff läuft weiter
       if (this.st !== 'leap') { this.v.x += dir.x * 1.2; this.v.y += dir.z * 1.2; }
     }
+  }
+
+  /**
+   * Beine wie beim Boss (bossbeine.js): stehende Pfoten bleiben liegen, Beine als gerade Säulen, Pfoten flach und abrollend.
+   * Beim Laufen eigener Hunde-Gang im Takt der Gangart: Gehen = Viertakt, Trab = diagonale Paare, Galopp = Rotationsgalopp
+   * (Standmitte je Bein in der Schrittphase gph; linkes Hinterbein bei 0,5 wie im Clip). Im Sprung, am Boden liegend und tot
+   * gehören die Beine der Haltung aus dem Code; beim Tatzenschlag die schlagende rechte Vorderpfote.
+   */
+  legsIK(dt, sp, gsp, Le, fwdS) {
+    const M = this.mm, st = this.st;
+    const on = !this.dead && st !== 'leap' && st !== 'down' ? 1 : 0;
+    const w = [on, st === 'swipe' ? 0 : on, on, on];
+    M.holder.updateMatrixWorld(true); M.holder.getWorldQuaternion(qH);
+    const X = new THREE.Vector3(1, 0, 0).applyQuaternion(qH), Y = new THREE.Vector3(0, 1, 0).applyQuaternion(qH), Z = new THREE.Vector3(0, 0, 1).applyQuaternion(qH);
+    const gw = this.gw || 0, gm = this.gm || 0;
+    this.gaitOn = this.gaitOn ? fwdS > 0.2 && this.aw > 0.2 : fwdS > 0.45 && this.aw > 0.4;
+    let gait = null;
+    if (this.gaitOn && on) {
+      // Standmitte je Bein (VL, VR, HL, HR) für Gehen, Trab, Galopp – stufenlos gemischt wie die Gangarten selbst
+      const mix = (i) => { const a = GAIT_MID.walk[i], b = GAIT_MID.trot[i], c = GAIT_MID.galo[i]; const ab = frac1(a + (frac1(b - a + 0.5) - 0.5) * gw); return frac1(ab + (frac1(c - ab + 0.5) - 0.5) * gm); };
+      gait = { ph: this.gph || 0, mid: [0, 1, 2, 3].map(mix), duty: lerp(lerp(0.6, 0.45, gw), 0.3, gm), run: gm, v: Math.max(gw < 0.5 ? gsp : sp, 0.3), vx: this.va.x, vz: this.va.y, L: Le };
+    }
+    this.beine.solve(dt, w, { vx: this.va.x, vz: this.va.y, wy: this.yawRate || 0, cx: this.p.x, cz: this.p.z, gait, X, Y, Z }, X);
   }
 
   /** Spieler tot: zurück zum Streunen */
@@ -585,6 +624,7 @@ class Dog {
       if (M.act) { M.act.time = tt * M.dur; M.act.setEffectiveWeight(this.aw * (1 - (this.gw || 0))); M.mixer.update(0); }
       for (const b of M.ctl) b.userData.base.copy(b.quaternion);
       this.bones(dt);
+      if (this.beine) this.legsIK(dt, sp, gsp, Le, fwdS);
     }
     // tot: bleibt als Leiche liegen (verschwindet erst, wenn er neu erscheint)
   }

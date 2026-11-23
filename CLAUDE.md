@@ -114,6 +114,12 @@
   Beine schwingen als Rotationsgalopp (Hinterbeine fast zusammen, Vorderbeine halbe Phase später, beim Vorschwingen angewinkelt),
   Rücken beugt/streckt sich, Kopf hält dagegen, Schwanz weht; Schweben/Schaukeln am Halter. Ruhe: schnüffeln, Schwanz wedeln;
   Lauern: schweres Atmen. Alle per Code bewegten Knochen stehen in `ctl` (werden vor dem Mixer zurückgesetzt).
+  **Beine wie beim Boss** (`legsIK`, `this.beine` = `Beine` aus bossbeine.js, gleiches Meshy-Skelett): stehende Pfoten bleiben liegen,
+  Beine als gerade Säulen, Pfoten flach und abrollend; beim Laufen eigener Gang im Takt der Gangart (`GAIT_MID`: Gehen Viertakt, Trab
+  diagonal, Galopp aus `GALO.off`, gemischt mit `gw`/`gm`; Standanteil 0,6 → 0,45 → 0,3; Phase `gph`). Im Sprung, am Boden liegend und
+  tot gehören die Beine dem Code, beim Tatzenschlag die rechte Vorderpfote. Alle Meter-Grenzen in bossbeine.js skalieren mit `k`
+  (= Beinlänge / 3,07 m; Hund ≈ 0,22). Ruhepunkt ohne Steh-Clip aus der Standmitte des Geh-Clips. Gemessen beim Jagen (4,4 m/s):
+  Zehen am Boden rutschen im Mittel 0,3 → 0,07 m/s.
   **Haltung** (unsichtbare Leiste `poise`, `POISE_MAX` 40, erholt sich nach `POISE_WAIT`): nur wenn sie voll ist → hurt/down,
   sonst kurzes Zucken `flinch` und der Angriff läuft weiter; Haltungsschaden je Angriff `ATTACKS[k].poise`, Karte 5.
   Körperhaltung wird weich nachgeführt (`sm`) · hurt (zuckt weg von der Trefferrichtung `hx`/`hz`, Kopf reißt zurück) · down (schwerer
@@ -146,7 +152,12 @@
   Zustände: sleep (schnüffelt) → wake (Kopf hoch, heulen) → stalk (herankommen/umkreisen/zurückweichen, Abklingzeit `cd`) → Angriffe `ATK`
   (`choose(d, a)` nach Abstand/Winkel): bite (zurückziehen, vorstoßen), swipe (Pranke links/rechts holt aus und fegt), leap (ducken, Sprung
   zur Stelle des Spielers, Aufschlag mit Flächenschaden), charge (Ansturm, endet an der Wand), spin (wer hinter ihm steht: einmal herum),
-  stomp (aufbäumen, Vorderpfoten aufschlagen); Phase 2 bei 50 % (`howl`: Druckwelle, schneller ×1,22, Kombos, mehr Glut). Haltung
+  stomp (aufbäumen, Vorderpfoten aufschlagen); **Phase 2 bei 50 %**: Zustand `rage` (Zeiten `RAGE`, 4 s, **unverwundbar** – Treffer
+  prallen ab, `sfx.thud`): kurz zum Magier drehen, hinsetzen (Hinterteil sinkt, Hinterbeine knicken ein und gehören der Haltung `sitK`,
+  Vorderbeine bleiben stehen), Kopf in den Himmel und heulen (`howlK`, Maul weit auf), Druckwelle, Feuer zündet (`RAGE.ignite`),
+  aufstehen. Danach **brennt** er (`fire()`, `burn` 0 … 1: 90 Flammen-Sprites züngeln von Rumpf, Hals, Kopf, Beinen und Schwanz,
+  gelb → orange → dunkelrot; Randlicht orange `FIRE_RIM`, mehr Glut, flackerndes Licht), trifft härter (`P2_DMG` ×1,35 in `strike`),
+  ist schneller (`P2_SPEED` ×1,28), kaum Pause (0,25–0,6 s) und bis zu zwei Folgeangriffe hintereinander. Haltung
   `POISE_MAX` → stagger. Treffer: Kapsel-Körper (`axisPoint`, `hitTest` für Karten, `radius` für den Degen, `pos` = nächster Körperpunkt für
   Zielerfassung), schiebt den Magier aus dem Körper, bleibt in der Arena. `strike` trifft nur, wenn `player.damage` greift (Rolle weicht aus).
   Haltungen über den Halter (`y`, Neigung) + Knochen (`rotW`: Kopf/Hals schauen zum Magier, Kiefer, Beine einknicken `fold`, Pranke);

@@ -124,8 +124,10 @@ export class Beine {
       P: new THREE.Vector3(), S: new THREE.Vector3(), E: new THREE.Vector3(), u: 0, T: 0.3, arc: 0, forced: false, prevY: 0,
       h0: 0, thr: 0.3, len: 1, qFB: new THREE.Quaternion(), toeL: new THREE.Vector3(0, 0.1, 0),
     }));
+    this.legs.forEach((l, i) => { l.i = i; });
     this.ok = this.legs.every((l) => l.bones.every(Boolean) && l.footB);
     this.onStep = null;
+    this.k = 1;   // Größe: Meter-Grenzen (Spur, Abstand, Schritthöhe …) sind für den Boss (Beinlänge ~3,1 m) – Hunde: kleiner
   }
 
   /**
@@ -146,8 +148,11 @@ export class Beine {
     solo(walk);
     const lw = lowest(walk);
     this.legs.forEach((l, j) => {
-      l.h0 = lw[j].mn; l.thr = Math.max(0.12, 0.3 * (lw[j].mx - lw[j].mn));
       at(walk, lw[j].f);
+      l.bones[0].getWorldPosition(vJ); l.len = vJ.distanceTo(l.footB.getWorldPosition(vE)) || 1;
+      l.h0 = lw[j].mn; l.thr = Math.max(0.04 * l.len, 0.3 * (lw[j].mx - lw[j].mn));
+      // Ruhepunkt (falls es keinen Steh-Clip gibt): Pfote zur Schulter/Hüfte in der Standmitte des Geh-Clips (Körper-Raum)
+      { const inv = new THREE.Matrix4().copy(M.holder.matrixWorld).invert(), p = vE.clone().applyMatrix4(inv), s = vJ.clone().applyMatrix4(inv); l.rest = { x: p.x - s.x, z: p.z - s.z }; }
       M.holder.getWorldQuaternion(qP); l.footB.getWorldQuaternion(qW);
       l.qFB.copy(qP).invert().multiply(qW);                                   // Pfote im Stand, relativ zum Körper
       if (l.toeB) l.toeL.copy(l.toeB.position);                                 // Pfote → Zehen (im Raum der Pfote)
@@ -177,12 +182,14 @@ export class Beine {
         const p = l.footB.getWorldPosition(vA).applyMatrix4(inv), s = l.bones[0].getWorldPosition(vJ).applyMatrix4(inv);
         l.rest = { x: p.x - s.x, z: p.z - s.z };
       });
-      // links/rechts gleich (die Ruhehaltung des Clips steht schief: eine Vorderpfote vor, eine zurück) – Mittelwert, gespiegelt
-      for (const [a, c] of [[0, 1], [2, 3]]) {
-        const A1 = this.legs[a].rest, C1 = this.legs[c].rest, x = (A1.x - C1.x) / 2, z = (A1.z + C1.z) / 2;
-        this.legs[a].rest = { x, z }; this.legs[c].rest = { x: -x, z };
-      }
     }
+    // links/rechts gleich (die Ruhehaltung des Clips steht schief: eine Vorderpfote vor, eine zurück) – Mittelwert, gespiegelt
+    for (const [a, c] of [[0, 1], [2, 3]]) {
+      const A1 = this.legs[a].rest, C1 = this.legs[c].rest, x = (A1.x - C1.x) / 2, z = (A1.z + C1.z) / 2;
+      this.legs[a].rest = { x, z }; this.legs[c].rest = { x: -x, z };
+    }
+    // Größe gegenüber dem Boss (dessen Beine ~3,07 m) – alle Meter-Grenzen skalieren damit
+    this.k = this.legs.reduce((s, l) => s + l.len, 0) / this.legs.length / 3.07;
     solo(null);
   }
 
@@ -210,7 +217,7 @@ export class Beine {
     if (mot.X && mot.Y && mot.Z) qH.setFromRotationMatrix(mH.makeBasis(mot.X, mot.Y, mot.Z)); else qH.identity();   // Körper-Lage
     const spd = Math.hypot(mot.vx, mot.vz), turning = mot.pivot || (Math.abs(mot.wy) > 0.25 && spd < 2.5);
     this.spd = spd;
-    const maxDev = mot.pivot ? 0.45 : (turning ? 0.55 : 0.85) + 0.15 * Math.min(spd, 14), stepT = mot.pivot ? 0.18 : turning ? 0.26 : 0.3;
+    const K = this.k, maxDev = K * (mot.pivot ? 0.45 : (turning ? 0.55 : 0.85) + 0.15 * Math.min(spd / K, 14)), stepT = mot.pivot ? 0.18 : turning ? 0.26 : 0.3;
     this.legs.forEach((l, i) => {
       l.w += (w[i] - l.w) * (1 - Math.exp(-(w[i] > l.w ? 22 : 10) * dt));   // schnell zupacken (Landung), weich loslassen
       const A = l.footB.getWorldPosition(vA);
@@ -234,10 +241,10 @@ export class Beine {
         const lat = Math.abs((l.P.x - A.x) * Xh.x + (l.P.z - A.z) * Xh.z);   // seitlich neben ihrer Spur (→ X-Beine)
         const twist = Math.abs(angD(l.psi, psiB));                           // Körper hat sich über der Pfote gedreht
         const busy = NB[i].some((n) => this.legs[n].st === 'schritt' && this.legs[n].forced);        // viel zu weit weg (schnelles Drehen): tritt auch, wenn der Nachbar gerade tritt – sonst würde die Pfote mitgeschleift
-        const must = lat > LAT_MAX * 0.85 || dev > maxDev * 1.6;
+        const must = lat > LAT_MAX * K * 0.85 || dev > maxDev * 1.6;
         if (l.hold > 0) { /* gestampft: liegen lassen */ }
         else if (!contact) this.startStep(l, false, 0.2);                     // der Clip hebt den Fuß: weich hinterher
-        else if ((dev > maxDev || lat > LAT_STEP || twist > TWIST_STEP) && (!busy || must)) this.startStep(l, true, stepT);   // eigener Schritt
+        else if ((dev > maxDev || lat > LAT_STEP * K || twist > TWIST_STEP) && (!busy || must)) this.startStep(l, true, stepT);   // eigener Schritt
       }
       if (l.st === 'schritt' && !gaitNow) {
         l.u += dt / l.T;
@@ -246,7 +253,7 @@ export class Beine {
         if (l.forced && !l.gait) {   // (ein Schwung aus dem eigenen Gang behält sein Ziel, wenn der Gang endet)
           const k = l.T * (turning ? 1.1 : 0.55); l.E.set(A.x + fvx * k, l.h0, A.z + fvz * k);
           // in der eigenen Spur bleiben: beim Drehen lag das vorausberechnete Ziel sonst quer unter dem Körper (Beine überkreuzt)
-          const ex = (l.E.x - A.x) * Xh.x + (l.E.z - A.z) * Xh.z, ec = clampN(ex, -LAT_E, LAT_E);
+          const ex = (l.E.x - A.x) * Xh.x + (l.E.z - A.z) * Xh.z, ec = clampN(ex, -LAT_E * K, LAT_E * K);
           l.E.x -= Xh.x * (ex - ec); l.E.z -= Xh.z * (ex - ec);
         } else if (!l.forced) l.E.copy(A);
         const sa = Math.sin(Math.PI * Math.min(1, l.u));
@@ -282,13 +289,13 @@ export class Beine {
       if (l.st === 'steht') l.psi += clampN(angD(l.psi, psiB), -PSI_RATE * dt, PSI_RATE * dt); else l.psi = psiB;
       // nie weiter als LAT_MAX neben ihre Spur (bis dahin hat sie längst umgetreten) → das Bein bleibt eine gerade Säule
       // (nicht im eigenen Gang: dort ist die Spur der Ruhepunkt unter Schulter/Hüfte, nicht der zappelige Clip – sonst rutschte sie)
-      const dx = (T.x - A.x) * Xh.x + (T.z - A.z) * Xh.z, cx = gaitNow ? dx : clampN(dx, -LAT_MAX, LAT_MAX);
+      const dx = (T.x - A.x) * Xh.x + (T.z - A.z) * Xh.z, cx = gaitNow ? dx : clampN(dx, -LAT_MAX * K, LAT_MAX * K);
       if (dx !== cx) { T.x -= Xh.x * (dx - cx); T.z -= Xh.z * (dx - cx); }
       // linke und rechte Pfote nie übereinander: Mindestabstand quer zur anderen Pfote desselben Paars (gilt auch fürs Schrittziel)
       const o = this.legs[i ^ 1], side = i % 2 === 0 ? 1 : -1;   // 0/2 = links (+X), 1/3 = rechts
       if (o.w > 0.02 && !(gaitNow && l.st === 'steht')) {   // (im eigenen Gang nur das Schrittziel – eine stehende Pfote rutschte sonst)
         o.footB.getWorldPosition(vE);
-        const sep = side * ((T.x - vE.x) * Xh.x + (T.z - vE.z) * Xh.z), need = l.front ? MIN_SEP[0] : MIN_SEP[1];
+        const sep = side * ((T.x - vE.x) * Xh.x + (T.z - vE.z) * Xh.z), need = (l.front ? MIN_SEP[0] : MIN_SEP[1]) * K;
         if (sep < need) { const k = side * (need - sep); T.x += Xh.x * k; T.z += Xh.z * k; if (l.st === 'schritt') { l.E.x += Xh.x * k; l.E.z += Xh.z * k; } }
       }
       // Ziel mit dem Gewicht zwischen Animation und festem Punkt mischen; nie unter den Boden (beim Ducken sank die Pfote sonst ein)
@@ -309,7 +316,9 @@ export class Beine {
   gaitLeg(l, g, A) {
     // Standanteil: nach Gangart, aber nie so lang, dass die Pfote weiter als ~eine Beinlänge unter dem Körper durchwandert
     // (sonst reichte das Bein am Ende nicht mehr hin und die Pfote rutschte mit) – wie beim Hund: schneller = kürzer am Boden
-    const mid = lerpPhase(l.gpMid[0], l.gpMid[1], g.run), d = Math.max(0.15, Math.min(DUTY[0] + (DUTY[1] - DUTY[0]) * g.run, 0.9 * l.len / Math.max(0.5, g.L)));
+    // (g.mid/g.duty: Takt und Standanteil von außen – die Hunde mischen Gehen, Trab und Galopp selbst)
+    const mid = g.mid ? g.mid[l.i] : lerpPhase(l.gpMid[0], l.gpMid[1], g.run);
+    const d = Math.max(0.15, Math.min(g.duty ?? DUTY[0] + (DUTY[1] - DUTY[0]) * g.run, 0.9 * l.len / Math.max(0.05, g.L)));
     const ph = frac(g.ph - mid + d / 2);                       // 0 … d = Stand, d … 1 = Schwung
     const cyc = g.L / Math.max(0.3, g.v);                      // Sekunden je Schrittzyklus
     if (ph < d) {                                              // Stand
@@ -348,7 +357,7 @@ export class Beine {
     if (this.onStep && (was === 'schritt' || hard > 0.02)) this.onStep(x, z, l.front ? 1 : 0.8);
   }
   startStep(l, forced, T) {
-    l.st = 'schritt'; l.forced = forced; l.u = 0; l.T = T; l.S.copy(l.P); l.arc = forced ? 0.55 : 0; l.lamCarry = l.lam || 0;
+    l.st = 'schritt'; l.forced = forced; l.u = 0; l.T = T; l.S.copy(l.P); l.arc = forced ? 0.55 * this.k : 0; l.lamCarry = l.lam || 0;
   }
 
   /**
