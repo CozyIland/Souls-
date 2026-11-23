@@ -183,6 +183,19 @@
   60 s Umkreisen / 80 s Kampf): Beine zu eng/gekreuzt 25 % / 9,9 % → 0 % / 0,6 % (nur Prankenhieb); seitlicher Knick bis 0,74 m →
   ≤ 0,06 m; Pfote gegen Bein verdreht 73° / 172° (Mittel/95 %) → 16° / 35°; Zehen rutschen 0,45 / 2,4 m/s → 0,09 / 0,85 m/s;
   Bein verfehlt Ziel (95 %) 0,81 m → 0. Die Animation selbst hat höchstens 3–11° nach innen, Pfoten ≥ 0,6 m auseinander.
+  **Eigener Gang der Vorderbeine** (`gaitLeg`, boss.js übergibt `mot.gait` beim Gehen/Rennen mit Schwelle `gaitOn`): die Vorderbeine der
+  Meshy-Clips passen nicht zum Tempo (linke Vorderpfote schob sich im Renn-Clip am Boden 0,45 m nach VORN, im Geh-Clip 0,6 statt 3,2 m
+  zurück; beide Vorderpfoten setzten gleichzeitig auf) → festgehalten zogen sie hektisch nach. Takt wie beim Hund ab der Standmitte des
+  linken Hinterbeins (`gpMid`: Gehen = Viertakt +¼/+¾, Galopp = Vorderpaar +0,42/+0,55), Standanteil `DUTY` 0,62 → 0,34, Pfote setzt
+  dort auf, wo die Schulter (Ruhepunkt `rest`, links/rechts gemittelt) in der Mitte des nächsten Standes ist → steht fest, kein
+  Nachziehen; Schwung im sin²-Bogen (`LIFT` × Beinlänge), Klappen im Galopp stärker (`FOLD_RUN`), Abrollen geht ohne Pause ins Umklappen
+  über (`lamCarry`), schneller = länger abrollen. **Eigene Haltung** `proc` (Gang + Sprung): alle drei Beinknochen aus der Stand-Haltung
+  (`qBB`/`dirB`, `place`), Knick-Richtung fest (Ellbogen hinten/Knie vorn), Pfote aus `qPl0` – nichts mehr vom zappeligen Clip.
+  Reichweiten-Korrektur stufenlos (Halbierungssuche; Stufen ließen das Bein zucken). Gemessen beim Rennen (Mittelfuß + Pfote relativ
+  zum Körper, Beschleunigung 95 %): vorn 277 / 342 → 126 / 72 rad/s² (Clip allein 77 / 65).
+  **Sprung** (`flyPose`, `mot.fly` = {k, u} aus boss.js, Beine bleiben dabei in der Bein-Rechnung): Schlüssel `FLY` (Catmull-Rom `curve`)
+  – vorn unter die Brust falten → nach vorn strecken → zur Landung nach vorn-unten greifen; hinten nach dem Abdruck gestreckt nach hinten
+  → unter den Bauch → unter den Körper. Vorher hingen die Beine schlaff und wurden zu 19 % zum alten Standpunkt am Boden gezogen.
   Gewicht je Bein (boss.js animate): 0 bei Liegen/Tod/Sprung in der Luft/Satz bei der Drehung/
   schlagender Pranke/Aufbäumen; schnell zupacken (22), weich loslassen (10). Tritt → `onStep` → main.js: Staub, `sfx.tritt`, Beben nach
   Abstand. Beine laufen nach dem **wirklichen** Tempo (`vAct`/`va` nach der Wand; an der Wand bremst `sv`). Drehung = kleiner Satz (`hop`).

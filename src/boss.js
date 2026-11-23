@@ -167,7 +167,7 @@ export class Boss {
     const ctl = ['head', 'neck1', 'neck_01', 'jaw', 'chest', 'spine1', 'spine2', 'hips', 'tail2', 'tail3', 'tail4', ...Kopf.BONES, ...LEG_BONES];
     M.ctl = [...new Set(ctl)].map((n) => B[n]).filter(Boolean);
     // Beine: Bodenhöhe der Pfoten messen (Fuß-IK, bossbeine.js); Tritt → Staub/Geräusch über onStep
-    this.beine = new Beine(B); this.beine.measure(M, M.walk);
+    this.beine = new Beine(B); this.beine.measure(M);
     this.beine.onStep = (x, z, k) => { if (this.onStep) this.onStep(x, z, k * (this.st === 'charge' ? 1.4 : 1)); };
     // Körperteile vermessen (Grundhaltung): Kapseln für Treffer in beide Richtungen (bossteile.js)
     for (const x of [M.idle, M.walk, M.run, M.run2]) if (x) x.setEffectiveWeight(0);
@@ -767,7 +767,7 @@ export class Boss {
       rotW(up, Z, -s * S0.pawO); rotW(up, X, S0.pawR); rotW(lo, X, S0.pawL);
     }
     // Sprung: Vorderbeine vor, Hinterbeine zurück
-    if (S0.air > 1e-3) for (const s of ['L', 'R']) { rotW(B['frontUpr' + s], X, -0.9 * S0.air); rotW(B['rearLeg' + s + '_01'], X, 0.8 * S0.air); }
+    // (Beine im Flug: Flughaltung der Bein-Rechnung, bossbeine.js flyPose – unter die Brust falten / nach hinten strecken → Landung)
     // Schwanz als Federkette (bosskopf.js): Haltung aus dem Körper + Nachschleppen bei Drehungen + Pendeln; schläft er, hängt er
     if (this.kopf && alive) this.kopf.tail(dt, KC, S0.tail, 0);
     else { rotW(B.tail2, Y, S0.tail * 0.5); rotW(B.tail3, Y, S0.tail * 0.4); rotW(B.tail4, Y, S0.tail * 0.3); }
@@ -833,8 +833,13 @@ export class Boss {
     // die schlagende Pranke beim Prankenhieb, beide Vorderbeine beim Aufbäumen vor dem Stampfen.
     if (this.beine && this.beine.ok) {
       let wAll = st === 'sleep' || this.dead ? 0 : st === 'wake' ? sm((t - 1.0) / 0.7) : 1;
-      if (st === 'leap') wAll *= 1 - clamp(S0.air * 3, 0, 1);
       const wv = [wAll, wAll, wAll, wAll];
+      // Sprung: Flughaltung der Beine (Gewicht weich an beim Absprung, weich aus kurz vor der Landung); Flug u = 0 … 1
+      const landT = ATK.leap.land, fly = st === 'leap' ? { k: sm((t - 0.56) / 0.1) * (1 - sm((t - (landT - 0.07)) / 0.09)), u: clamp((t - 0.6) / (landT - 0.6), 0, 1) } : null;
+      // Gehen/Rennen: Vorderbeine im eigenen Gang (Takt aus dem Clip); mit Schwelle, damit er nicht hin- und herschaltet
+      const gw = this.aw.walk + this.aw.run;
+      this.gaitOn = this.gaitOn ? gw > 0.2 && fwd > 0.15 : gw > 0.45 && fwd > 0.4;
+      const gait = this.gaitOn && legOk && (st === 'stalk' || st === 'charge' || st === 'wake') ? { ph: this.gp, run, v: Math.max(sp, 0.3), vx: VA.x, vz: VA.y, L } : null;
       // Schwanzfeger: Vorderpfoten bleiben als Drehpunkt stehen, nur die Hinterbeine springen herum und landen wieder
       if (st === 'spin') { const air = bump(t, 0.42, 0.48) * (1 - bump(t, 0.96, 1.02)); wv[2] *= 1 - air; wv[3] *= 1 - air; }
       const paw = clamp(Math.max((Math.abs(S0.pawR) + Math.abs(S0.pawO)) * 2.5, wS * 1.5), 0, 1);
@@ -843,7 +848,7 @@ export class Boss {
       const rear = st === 'stomp' ? bump(t, 0.1, 0.35) * (1 - bump(t, 0.8, 0.88)) : clamp(-S0.legF / 0.3, 0, 1);
       wv[0] *= 1 - rear; wv[1] *= 1 - rear;
       M.holder.updateMatrixWorld(true);
-      this.beine.solve(dt, wv, { vx: VA.x, vz: VA.y, wy: this.yawRate || 0, cx: this.p.x, cz: this.p.z, pivot: st === 'spin' && !!this.spinP }, X);
+      this.beine.solve(dt, wv, { vx: VA.x, vz: VA.y, wy: this.yawRate || 0, cx: this.p.x, cz: this.p.z, pivot: st === 'spin' && !!this.spinP, gait, fly, X, Y, Z }, X);
     }
     // ---------- Glut vom Rücken ----------
     const heat = this.dead ? Math.max(0, 1 - this.deadT / 6) * 0.5 : this.st === 'sleep' ? 0.35 : this.phase2 ? 1.6 : 0.75;

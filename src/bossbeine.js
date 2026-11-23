@@ -89,6 +89,33 @@ const TWIST_STEP = 0.55;                  // so weit darf sich der Körper über
 const PSI_RATE = 0.25;                    // stehende Pfote dreht sich auf dem Ballen nur wenig mit (rad/s)
 const ROLL = 0.45;                        // Abrollen: so weit hebt sich der Ballen hinter Schulter/Hüfte (rad)
 const FLEX_P = [1.05, 0.35], FLEX_F = [0.95, 0.45];   // eigener Schritt: Mittelfuß / Pfote klappen (vorn, hinten)
+// Eigener Gang der Vorderbeine beim Gehen/Rennen (gaitLeg) – die Vorderbeine der Meshy-Clips passen nicht zum Tempo (linke
+// Vorderpfote schob sich im Renn-Clip am Boden sogar nach vorn), festgehalten mussten sie danach hektisch nachziehen.
+// Standanteil (Gehen → Galopp; beim Hund ~0,6 → ~0,3) und Schritthöhe (× Beinlänge; im Galopp hebt er die Pfoten hoch an)
+const DUTY = [0.62, 0.34], LIFT = [0.12, 0.24], FOLD_RUN = 0.45;
+// Sprung (flyPose): Haltung über den Flug u (0 = Absprung … 1 = Landung): [u, vor, unter (beides × Beinlänge, ab Schulter/Hüfte),
+// Mittelfuß klappen, Pfote klappen (rad)]. Vorn: unter die Brust falten → nach vorn strecken → zur Landung nach vorn-unten greifen.
+// Hinten: nach dem Abdruck gestreckt nach hinten → unter den Bauch nachziehen → zur Landung unter den Körper.
+const FLY = {
+  front: [[0, 0.15, 0.8, 0.3, 0.2], [0.25, 0.22, 0.45, 1.55, 1.0], [0.6, 0.55, 0.7, 0.55, 0.35], [0.88, 0.42, 0.93, 0.1, 0], [1, 0.32, 0.98, 0, 0]],
+  hind: [[0, -0.5, 0.82, 0.85, 0.5], [0.25, -0.68, 0.62, 0.95, 0.6], [0.6, -0.05, 0.55, -0.15, 0.2], [0.88, 0.05, 0.9, 0, 0], [1, 0, 0.97, 0, 0]],
+};
+const frac = (x) => x - Math.floor(x);
+const lerpPhase = (a, b, t) => frac(a + (frac(b - a + 0.5) - 0.5) * t);   // auf dem Kreis (0 … 1) mischen
+/** Werte zwischen Schlüsseln [u, …] weich (Catmull-Rom: Tempo stetig, kein Halt an den Schlüsseln) */
+function curve(keys, u) {
+  u = clampN(u, keys[0][0], keys[keys.length - 1][0]);
+  let k = 0; while (k < keys.length - 2 && u > keys[k + 1][0]) k++;
+  const a = keys[Math.max(0, k - 1)], p0 = keys[k], p1 = keys[k + 1], b = keys[Math.min(keys.length - 1, k + 2)];
+  const h = p1[0] - p0[0] || 1, t = (u - p0[0]) / h, t2 = t * t, t3 = t2 * t;
+  const out = [];
+  for (let j = 1; j < p0.length; j++) {
+    const m0 = (p1[j] - a[j]) / ((p1[0] - a[0]) || 1) * h, m1 = (b[j] - p0[j]) / ((b[0] - p0[0]) || 1) * h;
+    out.push((2 * t3 - 3 * t2 + 1) * p0[j] + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * p1[j] + (t3 - t2) * m1);
+  }
+  return out;
+}
+const vR = new THREE.Vector3(), qH = new THREE.Quaternion(), mH = new THREE.Matrix4(), qPl0 = new THREE.Quaternion();
 
 export class Beine {
   constructor(B) {
@@ -105,25 +132,56 @@ export class Beine {
    * Aus dem Geh-Clip messen (Halter steht dabei auf 0): Bodenhöhe der Pfoten im Stand, Hubhöhe, Beinlänge und die STAND-LAGE der
    * Pfote (im Bild, in dem sie am tiefsten ist) relativ zum Körper – so liegt sie im Stand später flach wie im Clip.
    */
-  measure(M, walk) {
+  measure(M) {
+    const walk = M.walk;
     if (!this.ok || !walk) return;
-    for (const x of [M.idle, M.walk, M.run, M.run2]) if (x) x.setEffectiveWeight(0);
-    walk.setEffectiveWeight(1);
-    const N = 40, ys = this.legs.map(() => []), dur = walk.getClip().duration;
-    for (let i = 0; i < N; i++) {
-      walk.time = i / N * dur; M.mixer.update(0); M.holder.updateMatrixWorld(true);
-      this.legs.forEach((l, j) => ys[j].push(l.footB.getWorldPosition(vA).y));
-    }
+    const solo = (a) => { for (const x of [M.idle, M.walk, M.run, M.run2]) if (x) x.setEffectiveWeight(x === a ? 1 : 0); };
+    const at = (a, f) => { a.time = f * a.getClip().duration; M.mixer.update(0); M.holder.updateMatrixWorld(true); };
+    // tiefster Punkt jeder Pfote im Clip (Bild-Anteil 0…1) = Mitte ihres Standes
+    const lowest = (a) => {
+      const N = 40, ys = this.legs.map(() => []);
+      for (let i = 0; i < N; i++) { at(a, i / N); this.legs.forEach((l, j) => ys[j].push(l.footB.getWorldPosition(vA).y)); }
+      return ys.map((y) => ({ mn: Math.min(...y), mx: Math.max(...y), f: y.indexOf(Math.min(...y)) / N }));
+    };
+    solo(walk);
+    const lw = lowest(walk);
     this.legs.forEach((l, j) => {
-      const mn = Math.min(...ys[j]), mx = Math.max(...ys[j]);
-      l.h0 = mn; l.thr = Math.max(0.12, 0.3 * (mx - mn));
-      walk.time = ys[j].indexOf(mn) / N * dur; M.mixer.update(0); M.holder.updateMatrixWorld(true);
+      l.h0 = lw[j].mn; l.thr = Math.max(0.12, 0.3 * (lw[j].mx - lw[j].mn));
+      at(walk, lw[j].f);
       M.holder.getWorldQuaternion(qP); l.footB.getWorldQuaternion(qW);
       l.qFB.copy(qP).invert().multiply(qW);                                   // Pfote im Stand, relativ zum Körper
       if (l.toeB) l.toeL.copy(l.toeB.position);                                 // Pfote → Zehen (im Raum der Pfote)
       l.bones[0].getWorldPosition(vJ); l.len = vJ.distanceTo(l.footB.getWorldPosition(vE)) || 1;
+      // Stand-Haltung jedes Beinknochens (Körper-Raum: Lage + Richtung zum nächsten Gelenk) und Mittelfuß-Richtung: Grundlage im
+      // eigenen Gang und im Sprung (statt der unruhigen Clip-Vorderbeine, die von Bild zu Bild kippten und sich verdrehten)
+      const qi = qP.clone().invert(), ch = [l.bones[1], l.bones[2], l.footB];
+      l.qBB = l.bones.map((b) => b.getWorldQuaternion(new THREE.Quaternion()).premultiply(qi));
+      l.dirB = l.bones.map((b, k) => ch[k].getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize().applyQuaternion(qi));
+      l.dPB = l.dirB[2].clone();
     });
-    walk.setEffectiveWeight(0);
+    // Vorderbeine im eigenen Gang (gaitLeg): Takt eines echten Hundes, ausgehend von der Standmitte des linken Hinterbeins im Clip
+    // (Gehen: Clip-Zeit = gp; Rennen: Clip-Zeit = gp − phW + phR, siehe boss.js animate). In den Meshy-Clips setzten beide
+    // Vorderpfoten gleichzeitig auf. Gehen = Viertakt (links hinten → links vorn +¼ → rechts hinten → rechts vorn +¾),
+    // Galopp = Rotation (Vorderpaar knapp ½ Zyklus nach dem Hinterpaar, die zweite Pfote kurz danach)
+    let hlR = lw[2].f;
+    if (M.run) { solo(M.run); const lr = lowest(M.run); hlR = (lr[2].f + (M.phW || 0) - (M.phR || 0) + 2) % 1; }
+    const hlW = lw[2].f;
+    this.legs.forEach((l, j) => { l.gpMid = j === 0 ? [frac(hlW + 0.25), frac(hlR + 0.42)] : j === 1 ? [frac(hlW + 0.75), frac(hlR + 0.55)] : [lw[j].f, lw[j].f]; });
+    // Ruhepunkt: wo die Pfote im Stehen unter Schulter/Hüfte steht (quer x, vorn z; im Körper-Raum)
+    if (M.idle) {
+      solo(M.idle); at(M.idle, 0);
+      const inv = new THREE.Matrix4().copy(M.holder.matrixWorld).invert();
+      this.legs.forEach((l) => {
+        const p = l.footB.getWorldPosition(vA).applyMatrix4(inv), s = l.bones[0].getWorldPosition(vJ).applyMatrix4(inv);
+        l.rest = { x: p.x - s.x, z: p.z - s.z };
+      });
+      // links/rechts gleich (die Ruhehaltung des Clips steht schief: eine Vorderpfote vor, eine zurück) – Mittelwert, gespiegelt
+      for (const [a, c] of [[0, 1], [2, 3]]) {
+        const A1 = this.legs[a].rest, C1 = this.legs[c].rest, x = (A1.x - C1.x) / 2, z = (A1.z + C1.z) / 2;
+        this.legs[a].rest = { x, z }; this.legs[c].rest = { x: -x, z };
+      }
+    }
+    solo(null);
   }
 
   reset() { for (const l of this.legs) { l.st = 'frei'; l.w = 0; l.pw = 0; l.slam = null; } }
@@ -144,7 +202,12 @@ export class Beine {
     // Schrittgrenze wächst mit dem Tempo: im Galopp hält die Pfote, bis der Clip sie hebt (sonst nur noch Notschritte).
     // Beim Drehen auf der Stelle ist sie kleiner → kurze Trippelschritte statt Schleifen.
     // mot.pivot: Schwanzfeger – die Vorderpfoten sind der Drehpunkt und trippeln schnell auf der Stelle mit
+    // mot.gait: Gehen/Rennen { ph (Schrittphase gp), run (0 … 1), v (m/s), vx, vz, L (Schrittlänge) } → Vorderbeine im eigenen Gang
+    // mot.fly: Sprung { k (Gewicht 0 … 1), u (Flug 0 … 1) } + mot.X/Y/Z (Körperachsen) → Flughaltung
+    const gait = mot.gait || null, fly = mot.fly && mot.fly.k > 0.001 ? mot.fly : null;
+    if (mot.X && mot.Y && mot.Z) qH.setFromRotationMatrix(mH.makeBasis(mot.X, mot.Y, mot.Z)); else qH.identity();   // Körper-Lage
     const spd = Math.hypot(mot.vx, mot.vz), turning = mot.pivot || (Math.abs(mot.wy) > 0.25 && spd < 2.5);
+    this.spd = spd;
     const maxDev = mot.pivot ? 0.45 : (turning ? 0.55 : 0.85) + 0.15 * Math.min(spd, 14), stepT = mot.pivot ? 0.18 : turning ? 0.26 : 0.3;
     this.legs.forEach((l, i) => {
       l.w += (w[i] - l.w) * (1 - Math.exp(-(w[i] > l.w ? 22 : 10) * dt));   // schnell zupacken (Landung), weich loslassen
@@ -157,7 +220,10 @@ export class Beine {
       // Stampfen: erst wenn das Bein wirklich herunterkommt (Gewicht steigt), kracht die Pfote genau dort hin
       if (l.slam && w[i] > 0.5) { this.plant(l, l.slam.x, l.slam.z, 1); l.slam = null; l.w = Math.max(l.w, 0.35); l.hold = 0.45; }
       l.hold = Math.max(0, (l.hold || 0) - dt);   // gestampfte Pfote bleibt kurz liegen (der Clip würde sie sonst gleich wieder anheben)
-      if (l.st === 'frei') {
+      if (!l.lastT) l.lastT = A.clone();
+      const gaitNow = !!(gait && l.front && !fly);
+      if (gaitNow) T = this.gaitLeg(l, gait, A);   // Vorderbeine beim Gehen/Rennen: eigener, ruhiger Hunde-Gang
+      else if (l.st === 'frei') {
         T = vT.copy(A);
         if (contact) { this.plant(l, A.x, A.z, l.prevY - A.y); T.copy(l.P); }
       } else if (l.st === 'steht') {
@@ -165,29 +231,44 @@ export class Beine {
         const dev = Math.hypot(A.x - l.P.x, A.z - l.P.z);
         const lat = Math.abs((l.P.x - A.x) * Xh.x + (l.P.z - A.z) * Xh.z);   // seitlich neben ihrer Spur (→ X-Beine)
         const twist = Math.abs(angD(l.psi, psiB));                           // Körper hat sich über der Pfote gedreht
-        const busy = NB[i].some((n) => this.legs[n].st === 'schritt' && this.legs[n].forced);
-        // viel zu weit weg (schnelles Drehen): tritt auch, wenn der Nachbar gerade tritt – sonst würde die Pfote mitgeschleift
+        const busy = NB[i].some((n) => this.legs[n].st === 'schritt' && this.legs[n].forced);        // viel zu weit weg (schnelles Drehen): tritt auch, wenn der Nachbar gerade tritt – sonst würde die Pfote mitgeschleift
         const must = lat > LAT_MAX * 0.85 || dev > maxDev * 1.6;
         if (l.hold > 0) { /* gestampft: liegen lassen */ }
         else if (!contact) this.startStep(l, false, 0.2);                     // der Clip hebt den Fuß: weich hinterher
         else if ((dev > maxDev || lat > LAT_STEP || twist > TWIST_STEP) && (!busy || must)) this.startStep(l, true, stepT);   // eigener Schritt
       }
-      if (l.st === 'schritt') {
+      if (l.st === 'schritt' && !gaitNow) {
         l.u += dt / l.T;
         const e = smoother(l.u);   // weicher Verlauf: beginnt und endet ohne Ruck (auch die Beschleunigung ist an den Enden null)
         // eigener Schritt: dorthin, wo die Pfote in einem Moment sein wird (auch durch die Drehung) – so reicht ein Schritt länger
-        if (l.forced) {
+        if (l.forced && !l.gait) {   // (ein Schwung aus dem eigenen Gang behält sein Ziel, wenn der Gang endet)
           const k = l.T * (turning ? 1.1 : 0.55); l.E.set(A.x + fvx * k, l.h0, A.z + fvz * k);
           // in der eigenen Spur bleiben: beim Drehen lag das vorausberechnete Ziel sonst quer unter dem Körper (Beine überkreuzt)
           const ex = (l.E.x - A.x) * Xh.x + (l.E.z - A.z) * Xh.z, ec = clampN(ex, -LAT_E, LAT_E);
           l.E.x -= Xh.x * (ex - ec); l.E.z -= Xh.z * (ex - ec);
-        } else l.E.copy(A);
+        } else if (!l.forced) l.E.copy(A);
         const sa = Math.sin(Math.PI * Math.min(1, l.u));
         T = vT.copy(l.S).lerp(l.E, e); T.y += l.arc * sa * sa * 1.3;   // Pfote hebt sich sanft an und setzt sanft auf
         if (l.u >= 1) {
           if (l.forced || contact) { this.plant(l, l.E.x, l.E.z, l.forced ? 1 : 0.5); T.copy(l.P); }
           else { l.st = 'frei'; T.copy(A); }
         }
+      }
+      // eigene Haltung statt Clip (proc): im eigenen Gang und im Sprung kommen Mittelfuß- und Pfotenlage aus der ruhigen Stand-Haltung
+      // (+ Klappen) – die Vorderbeine der Meshy-Clips zappeln (Pfote drehte sich beim Abheben in Sekundenbruchteilen um)
+      l.proc = (l.proc || 0) + ((gaitNow || fly ? 1 : 0) - (l.proc || 0)) * (1 - Math.exp(-6 * dt));
+      // Klappen im Schwung (eigener Schritt / eigener Gang): Mittelfuß und Pfote wie beim echten Hund
+      const sw = l.st === 'schritt' && l.forced ? Math.sin(Math.PI * Math.min(1, l.u)) : 0, f = l.front ? 0 : 1;
+      const runK = l.gait && gait ? 1 + FOLD_RUN * gait.run : 1;   // im Galopp klappt die Vorderpfote stärker
+      l.fxP = FLEX_P[f] * sw * runK; l.fxF = FLEX_F[f] * sw * runK;
+      // Abrollen geht ohne Pause ins Umklappen über: der Ballen-Winkel beim Abheben klingt im ersten Drittel des Schwungs aus
+      // (vorher sprang die Pfote erst flach zurück und klappte dann wieder um – zappelig)
+      if (l.st === 'schritt' && l.lamCarry) l.fxF += l.lamCarry * (1 - sm(l.u / 0.35));
+      // Sprung: Beine in der Flughaltung (unter die Brust falten / nach hinten strecken → zur Landung greifen); hebt vom Boden ab
+      if (fly) {
+        const fp = this.flyPose(l, fly, mot);
+        T.lerp(fp, fly.k); l.fxP += (l.flyP - l.fxP) * fly.k; l.fxF += (l.flyF - l.fxF) * fly.k;
+        if (fly.k > 0.3) { l.st = 'frei'; l.gait = false; }
       }
       l.prevY = A.y;
       // Pfote flach (pw): steht sie, liegt sie flach auf; sonst folgt sie dem Bein. Kurz VOR dem Aufsetzen richtet sie sich schon
@@ -210,19 +291,75 @@ export class Beine {
       // Ziel mit dem Gewicht zwischen Animation und festem Punkt mischen; nie unter den Boden (beim Ducken sank die Pfote sonst ein)
       T.lerp(A, 1 - l.w);
       if (T.y < l.h0) T.y = l.h0;
+      l.lastT.copy(T);
       this.ik(l, T, Lax);
       l.err = l.footB.getWorldPosition(vE).distanceTo(T);   // wie weit die IK das Ziel verfehlt (zum Prüfen)
     });
   }
 
+  /**
+   * Vorderbein im eigenen Hunde-Gang: Takt aus dem Clip (Standmitte gpMid, Gehen/Rennen gemischt), Standanteil nach Tempo.
+   * Stand: Pfote fest. Schwung: von der Abhebestelle im weichen Bogen dorthin, wo die Schulter in der Mitte des nächsten Standes
+   * sein wird (Ruhepunkt `rest` + Tempo × Zeit) – so wandert die stehende Pfote genau so weit nach hinten, wie der Körper vorankommt,
+   * und muss nie nachgezogen werden. Handgelenk und Pfote klappen im Schwung (im Galopp stärker), Pfote hebt sich höher.
+   */
+  gaitLeg(l, g, A) {
+    const mid = lerpPhase(l.gpMid[0], l.gpMid[1], g.run), d = DUTY[0] + (DUTY[1] - DUTY[0]) * g.run;
+    const ph = frac(g.ph - mid + d / 2);                       // 0 … d = Stand, d … 1 = Schwung
+    const cyc = g.L / Math.max(0.3, g.v);                      // Sekunden je Schrittzyklus
+    if (ph < d) {                                              // Stand
+      if (l.st !== 'steht') { const p = l.st === 'schritt' && l.gait ? l.E : l.lastT; this.plant(l, p.x, p.z, 1); }
+      return vT.copy(l.P);
+    }
+    const s = (ph - d) / (1 - d);
+    if (l.st !== 'schritt' || !l.gait) {                       // abheben (auch mitten im Schwung, wenn der Gang gerade beginnt)
+      l.S.copy(l.st === 'steht' ? l.P : l.lastT); l.S.y = l.h0;
+      l.lamCarry = l.st === 'steht' ? l.lam || 0 : 0;
+      l.st = 'schritt'; l.forced = true; l.gait = true; l.arc = 0;
+    }
+    l.u = s; l.T = (1 - d) * cyc;
+    // Ziel: Ruhepunkt unter der Schulter, mitbewegt bis zur Mitte des nächsten Standes; im Galopp etwas zur Mitte (eine Spur)
+    l.bones[0].getWorldPosition(vR);
+    const rx = l.rest ? l.rest.x * (1 - 0.25 * g.run) : 0, rz = l.rest ? l.rest.z : 0, tr = (1 - s) * (1 - d) * cyc + 0.5 * d * cyc;
+    l.E.set(vR.x + Xh.x * rx + Zh.x * rz + g.vx * tr, l.h0, vR.z + Xh.z * rx + Zh.z * rz + g.vz * tr);
+    const sa = Math.sin(Math.PI * s), lift = l.len * (LIFT[0] + (LIFT[1] - LIFT[0]) * g.run);
+    const T = vT.copy(l.S).lerp(l.E, smoother(s)); T.y = l.h0 + lift * sa * sa;
+    return T;
+  }
+
+  /** Flughaltung eines Beins im Sprung (FLY): Ziel der Pfote im Körper-Raum ab Schulter/Hüfte, dazu Klappen von Mittelfuß/Pfote */
+  flyPose(l, fly, mot) {
+    const [fw, dn, p, fo] = curve(l.front ? FLY.front : FLY.hind, fly.u);
+    l.flyP = p; l.flyF = fo;
+    l.bones[0].getWorldPosition(vR);
+    const rx = l.rest ? l.rest.x : 0;
+    return vR.addScaledVector(mot.Z, fw * l.len).addScaledVector(mot.Y, -dn * l.len).addScaledVector(mot.X, rx);
+  }
+
   plant(l, x, z, hard) {
     const was = l.st;
-    l.st = 'steht'; l.P.set(x, l.h0, z);
+    l.st = 'steht'; l.P.set(x, l.h0, z); l.gait = false; l.lamCarry = 0;
     // Tritt: nur wenn der Fuß wirklich heruntergekommen ist (aus der Luft oder aus einem Schritt)
     if (this.onStep && (was === 'schritt' || hard > 0.02)) this.onStep(x, z, l.front ? 1 : 0.8);
   }
   startStep(l, forced, T) {
-    l.st = 'schritt'; l.forced = forced; l.u = 0; l.T = T; l.S.copy(l.P); l.arc = forced ? 0.55 : 0;
+    l.st = 'schritt'; l.forced = forced; l.u = 0; l.T = T; l.S.copy(l.P); l.arc = forced ? 0.55 : 0; l.lamCarry = l.lam || 0;
+  }
+
+  /**
+   * Knochen k des Beins so drehen, dass sein nächstes Gelenk am Ziel liegt. Normal: kürzester Bogen ab der Clip-Haltung (die
+   * Verdrehung aus der Animation bleibt). Eigene Haltung (proc): ab der Stand-Haltung (qBB/dirB) – keine Clip-Verdrehung.
+   */
+  place(l, k, child, target) {
+    const bone = l.bones[k];
+    aim(bone, child, target);
+    if (!(l.proc > 1e-3) || !l.qBB) return;
+    bone.getWorldQuaternion(qSw); bone.getWorldPosition(aO);
+    v1.copy(l.dirB[k]).applyQuaternion(qH); v2.subVectors(target, aO);
+    if (v2.lengthSq() < 1e-12) return;
+    qL.setFromUnitVectors(v1.normalize(), v2.normalize()).multiply(qY.copy(qH).multiply(l.qBB[k]));   // Stand-Haltung → Ziel
+    qSw.slerp(qL, l.proc);
+    bone.parent.getWorldQuaternion(qP); bone.quaternion.copy(qP.invert().multiply(qSw)).normalize(); bone.updateMatrixWorld(true);
   }
 
   /**
@@ -230,18 +367,19 @@ export class Beine {
    * Lax = Querachse des Körpers (Welt, mit Neigung).
    */
   ik(l, T, Lax) {
-    const [b0, b1, b2] = l.bones, foot = l.footB, f = l.front ? 0 : 1;
+    const [b0, b1, b2] = l.bones, foot = l.footB;
     const q0 = [b0.quaternion.clone(), b1.quaternion.clone(), b2.quaternion.clone(), foot.quaternion.clone()];   // Animation
     b0.getWorldPosition(J0); b1.getWorldPosition(J1); b2.getWorldPosition(J2); foot.getWorldPosition(J3);
     const L0 = J0.distanceTo(J1), L1 = J1.distanceTo(J2), L2 = J2.distanceTo(J3);
     if (L0 < 1e-5 || L1 < 1e-5 || L2 < 1e-5) return;
-    // eigener Schritt (Trippeln, Umtreten): Mittelfuß und Pfote klappen im Schwung wie beim echten Hund
-    const s = l.st === 'schritt' && l.forced ? Math.sin(Math.PI * Math.min(1, l.u)) : 0;
     // ---- Pfote im Stand: flach wie im Geh-Clip, Zehen in Laufrichtung (psi); hinter Schulter/Hüfte rollt sie über die Zehen ab ----
-    qY.setFromAxisAngle(Y_UP, l.psi); qPl.copy(qY).multiply(l.qFB);
+    qY.setFromAxisAngle(Y_UP, l.psi); qPl.copy(qY).multiply(l.qFB); qPl0.copy(qPl);
+    l.lam = 0;
     if (l.pw > 1e-3) {
       const off = ((T.x - J0.x) * Zh.x + (T.z - J0.z) * Zh.z) / l.len;   // < 0: Pfote hinter Schulter/Hüfte
-      const lam = ROLL * sm((-off - 0.12) / 0.3) * l.pw;
+      // schneller = früher und über eine längere Strecke abrollen (sonst kippte die Pfote beim Rennen in Sekundenbruchteilen)
+      const rk = Math.min(1, this.spd / 8), lam = ROLL * sm((-off - 0.12 * (1 - rk)) / (0.3 + 0.3 * rk)) * l.pw;
+      l.lam = lam;
       if (lam > 1e-3) {
         foot.getWorldScale(sc);
         toeV.copy(l.toeL).multiply(sc).applyQuaternion(qPl); toeP.copy(T).add(toeV);   // Zehen bleiben liegen …
@@ -251,17 +389,25 @@ export class Beine {
       }
     }
     // ---- Mittelfuß: Neigung aus der Animation, aber in der Beinebene (nicht seitlich verdreht) ----
-    dP.subVectors(J3, J2); dP.addScaledVector(Xh, -dP.dot(Xh)).normalize();
-    if (s) dP.applyAxisAngle(Xh, FLEX_P[f] * s);                     // vorn: Handgelenk klappt nach hinten, hinten: Sprunggelenk beugt
+    dP.subVectors(J3, J2).normalize();
+    if (l.proc > 1e-3 && l.dPB) dP.lerp(vC.copy(l.dPB).applyQuaternion(qH), l.proc).normalize();   // eigene Haltung statt Clip
+    dP.addScaledVector(Xh, -dP.dot(Xh)).normalize();
+    // Klappen (eigener Schritt/Gang, Sprung; l.fxP aus solve): vorn klappt das Handgelenk nach hinten, hinten beugt das Sprunggelenk
+    if (l.fxP) dP.applyAxisAngle(Xh, l.fxP);
     A2.copy(T).addScaledVector(dP, -L2);                             // wo das Hand-/Sprunggelenk sein muss
     // reicht das Bein nicht: Mittelfuß um die Pfote Richtung Schulter/Hüfte kippen (Ballen hebt sich), höchstens ~0,6 rad
     const maxR = (L0 + L1) * 0.995;
     if (A2.distanceTo(J0) > maxR) {
+      // stufenlos (Halbierungssuche): mit festen Stufen sprang der Mittelfuß, sobald eine Stufe wechselte – das Bein zuckte
       wD.subVectors(T, J0).normalize();
-      for (let k = 1; k <= 6 && A2.distanceTo(J0) > maxR; k++) {
-        vC.copy(dP).lerp(wD, k / 6 * 0.55).normalize(); A2.copy(T).addScaledVector(vC, -L2);
-        if (k === 6 || A2.distanceTo(J0) <= maxR) dP.copy(vC);
+      let lo = 0, hi = 0.55;
+      vC.copy(dP).lerp(wD, hi).normalize(); A2.copy(T).addScaledVector(vC, -L2);
+      if (A2.distanceTo(J0) > maxR) lo = hi;
+      else for (let it = 0; it < 14; it++) {
+        const m = (lo + hi) / 2; vC.copy(dP).lerp(wD, m).normalize(); A2.copy(T).addScaledVector(vC, -L2);
+        if (A2.distanceTo(J0) > maxR) lo = m; else hi = m;
       }
+      dP.lerp(wD, lo === 0.55 ? lo : hi).normalize(); A2.copy(T).addScaledVector(dP, -L2);
     }
     // ---- Zwei-Knochen-Dreieck in der Beinebene: Ebene enthält Schulter/Hüfte und Knöchel und steht möglichst quer zum Körper ----
     let d = A2.distanceTo(J0);
@@ -274,18 +420,24 @@ export class Beine {
     nP.copy(Lax).addScaledVector(uD, -Lax.dot(uD)); if (nP.lengthSq() < 1e-8) nP.copy(Xh); nP.normalize();
     // Knick-Richtung aus der Animation (Ellbogen nach hinten, Knie nach vorn), in die Ebene gelegt
     pole.subVectors(J1, J0); pole.addScaledVector(uD, -pole.dot(uD)); pole.addScaledVector(nP, -pole.dot(nP));
-    if (pole.lengthSq() < 1e-10) { pole.copy(Zh).multiplyScalar(l.front ? -1 : 1); pole.addScaledVector(uD, -pole.dot(uD)); pole.addScaledVector(nP, -pole.dot(nP)); }
+    // eigene Haltung (Gang/Sprung): Knick-Richtung fest wie beim Hund (Ellbogen hinten, Knie vorn) – die Clip-Vorderbeine kippten
+    // ihren Ellbogen von Bild zu Bild, das ganze Bein ruckte mit
+    if (l.proc > 1e-3 || pole.lengthSq() < 1e-10) {
+      wD.set(0, 0, l.front ? -1 : 1).applyQuaternion(qH); wD.addScaledVector(uD, -wD.dot(uD)); wD.addScaledVector(nP, -wD.dot(nP));
+      if (wD.lengthSq() > 1e-10) { wD.normalize(); if (pole.lengthSq() < 1e-10) pole.copy(wD); else pole.normalize().lerp(wD, l.proc); }
+    }
     pole.normalize();
     const dd = clampN(d, Math.abs(L0 - L1) + 1e-4, L0 + L1 - 1e-4);
     const cosA = clampN((L0 * L0 + dd * dd - L1 * L1) / (2 * L0 * dd), -1, 1), sinA = Math.sqrt(1 - cosA * cosA);
     N1.copy(J0).addScaledVector(uD, cosA * L0).addScaledVector(pole, sinA * L0);
     N2.copy(J0).addScaledVector(uD, dd);
     N3.copy(N2).addScaledVector(dP, L2);
-    aim(b0, b1, N1); aim(b1, b2, N2); aim(b2, foot, N3);
+    this.place(l, 0, b1, N1); this.place(l, 1, b2, N2); this.place(l, 2, foot, N3);
     // ---- Pfote: im Schwung wie in der Animation (vorn klappt sie beim eigenen Schritt nach hinten, hinten hängen die Zehen),
     //      im Stand flach (qPl); dazwischen weich ----
     foot.getWorldQuaternion(qSw);
-    if (s) { qL.setFromAxisAngle(Xh, FLEX_F[f] * s); qSw.premultiply(qL); }
+    if (l.proc > 1e-3) qSw.slerp(qPl0, l.proc);                       // eigene Haltung: Pfote in Stand-Lage (+ Klappen) statt Clip
+    if (l.fxF) { qL.setFromAxisAngle(Xh, l.fxF); qSw.premultiply(qL); }
     qSw.slerp(qPl, l.pw);
     foot.parent.getWorldQuaternion(qP); foot.quaternion.copy(qP.invert().multiply(qSw)).normalize();
     // Gewicht: zwischen Animation und Lösung (w < 1 beim Übergeben an die Animation, z. B. Pranke/Sprung)
