@@ -183,6 +183,10 @@
   60 s Umkreisen / 80 s Kampf): Beine zu eng/gekreuzt 25 % / 9,9 % → 0 % / 0,6 % (nur Prankenhieb); seitlicher Knick bis 0,74 m →
   ≤ 0,06 m; Pfote gegen Bein verdreht 73° / 172° (Mittel/95 %) → 16° / 35°; Zehen rutschen 0,45 / 2,4 m/s → 0,09 / 0,85 m/s;
   Bein verfehlt Ziel (95 %) 0,81 m → 0. Die Animation selbst hat höchstens 3–11° nach innen, Pfoten ≥ 0,6 m auseinander.
+  **Alle vier Beine im eigenen Gang** (auch hinten: Takt der Clip-Hinterbeine, rechts hinten +½ beim Gehen / +0,12 im Galopp,
+  `LIFT_H` niedriger): Standanteil höchstens 0,9 × Beinlänge / Schrittlänge (sonst reichte das Bein am Ende nicht hin und die Pfote
+  rutschte – schneller = kürzer am Boden); im eigenen Gang keine Spur-Grenze zum Clip (`LAT_MAX`) und kein Mindestabstand an der
+  stehenden Pfote (schob sie seitlich). Gemessen Rennen: hinten 168/177 → 75/87 rad/s² (Clip 102/95), stehende Pfoten 0 m/s im Mittel.
   **Eigener Gang der Vorderbeine** (`gaitLeg`, boss.js übergibt `mot.gait` beim Gehen/Rennen mit Schwelle `gaitOn`): die Vorderbeine der
   Meshy-Clips passen nicht zum Tempo (linke Vorderpfote schob sich im Renn-Clip am Boden 0,45 m nach VORN, im Geh-Clip 0,6 statt 3,2 m
   zurück; beide Vorderpfoten setzten gleichzeitig auf) → festgehalten zogen sie hektisch nach. Takt wie beim Hund ab der Standmitte des
@@ -226,7 +230,9 @@
   oben statt nach hinten). Glattes Rauschen (`noise2`, nur in Ruhe), Kopf ruhig halten (`stab`). Gemessen (40 s Umkreisen): Kopf relativ
   zum Körper höchstens 3,6 rad/s, Beschleunigung 99 % < 11 rad/s² (kein Ruck). **Maul beim Lauern** (`mz`, `nextMaul`, Zeiten `MAUL`):
   hecheln (Öffnung ~0,34 + Pumpen ~1,3 Hz, `pph`; Brust pumpt mit `pump`), zu (mit Schlucken: Kiefer zuckt, Kopf nickt), Lefzen lecken
-  (zweimal auf/zu); Knurren hält einen Spalt offen und bebt; ≈ 40 % der Lauerzeit zu. `kopf.jaw` = Öffnung (0 = zu). Lauer-Verhalten
+  (zweimal auf/zu); Knurren hält einen Spalt offen und bebt; ≈ 40 % der Lauerzeit zu. Hecheln deutlich (Ausschlag 0,15). Beim
+  Laufen (`move`/`run`/`gp` aus KC): Maul weiter offen (0,4–0,52) und auf/zu im Schritt-Takt (Galopp: ein Atemzug je Sprung, Gehen
+  zwei je Zyklus, Ausschlag bis 0,3). `kopf.jaw` = Öffnung (0 = zu). Lauer-Verhalten
   `pick` (alle 2–6 s): knurren (Kopf tief, Ohren flach, Körper duckt sich `lower`, Geräusch), schütteln, umschauen, neigen. Ohren
   (`earL_01`/`earR_01`, Feder zeta 0,4 = wippt nach): anlegen `pin` (Kampf, × 0,6 rad), seitlich nach Kopfdrehtempo, Zucken.
   **Unterkiefer** (`src/bosskiefer.js`): das Modell hatte keinen (`jaw` trug 7 Punkte, `jaw_01` den ganzen Kopf → Maul immer offen).

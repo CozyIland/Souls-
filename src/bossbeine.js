@@ -92,7 +92,7 @@ const FLEX_P = [1.05, 0.35], FLEX_F = [0.95, 0.45];   // eigener Schritt: Mittel
 // Eigener Gang der Vorderbeine beim Gehen/Rennen (gaitLeg) – die Vorderbeine der Meshy-Clips passen nicht zum Tempo (linke
 // Vorderpfote schob sich im Renn-Clip am Boden sogar nach vorn), festgehalten mussten sie danach hektisch nachziehen.
 // Standanteil (Gehen → Galopp; beim Hund ~0,6 → ~0,3) und Schritthöhe (× Beinlänge; im Galopp hebt er die Pfoten hoch an)
-const DUTY = [0.62, 0.34], LIFT = [0.12, 0.24], FOLD_RUN = 0.45;
+const DUTY = [0.62, 0.34], LIFT = [0.12, 0.24], LIFT_H = [0.09, 0.17], FOLD_RUN = 0.45;   // LIFT_H: Hinterpfoten heben sich weniger
 // Sprung (flyPose): Haltung über den Flug u (0 = Absprung … 1 = Landung): [u, vor, unter (beides × Beinlänge, ab Schulter/Hüfte),
 // Mittelfuß klappen, Pfote klappen (rad)]. Vorn: unter die Brust falten → nach vorn strecken → zur Landung nach vorn-unten greifen.
 // Hinten: nach dem Abdruck gestreckt nach hinten → unter den Bauch nachziehen → zur Landung unter den Körper.
@@ -166,7 +166,9 @@ export class Beine {
     let hlR = lw[2].f;
     if (M.run) { solo(M.run); const lr = lowest(M.run); hlR = (lr[2].f + (M.phW || 0) - (M.phR || 0) + 2) % 1; }
     const hlW = lw[2].f;
-    this.legs.forEach((l, j) => { l.gpMid = j === 0 ? [frac(hlW + 0.25), frac(hlR + 0.42)] : j === 1 ? [frac(hlW + 0.75), frac(hlR + 0.55)] : [lw[j].f, lw[j].f]; });
+    // Hinterbeine ebenso (Takt der Clip-Hinterbeine bleibt): rechts hinten beim Gehen ½ später, im Galopp knapp danach (+0,12)
+    const MID = [[0.25, 0.42], [0.75, 0.55], [0, 0], [0.5, 0.12]];
+    this.legs.forEach((l, j) => { l.gpMid = [frac(hlW + MID[j][0]), frac(hlR + MID[j][1])]; });
     // Ruhepunkt: wo die Pfote im Stehen unter Schulter/Hüfte steht (quer x, vorn z; im Körper-Raum)
     if (M.idle) {
       solo(M.idle); at(M.idle, 0);
@@ -221,7 +223,7 @@ export class Beine {
       if (l.slam && w[i] > 0.5) { this.plant(l, l.slam.x, l.slam.z, 1); l.slam = null; l.w = Math.max(l.w, 0.35); l.hold = 0.45; }
       l.hold = Math.max(0, (l.hold || 0) - dt);   // gestampfte Pfote bleibt kurz liegen (der Clip würde sie sonst gleich wieder anheben)
       if (!l.lastT) l.lastT = A.clone();
-      const gaitNow = !!(gait && l.front && !fly);
+      const gaitNow = !!(gait && !fly);
       if (gaitNow) T = this.gaitLeg(l, gait, A);   // Vorderbeine beim Gehen/Rennen: eigener, ruhiger Hunde-Gang
       else if (l.st === 'frei') {
         T = vT.copy(A);
@@ -279,11 +281,12 @@ export class Beine {
       l.pw += (pwT - l.pw) * (1 - Math.exp(-(pwT > l.pw ? 25 : 14) * dt));
       if (l.st === 'steht') l.psi += clampN(angD(l.psi, psiB), -PSI_RATE * dt, PSI_RATE * dt); else l.psi = psiB;
       // nie weiter als LAT_MAX neben ihre Spur (bis dahin hat sie längst umgetreten) → das Bein bleibt eine gerade Säule
-      const dx = (T.x - A.x) * Xh.x + (T.z - A.z) * Xh.z, cx = clampN(dx, -LAT_MAX, LAT_MAX);
+      // (nicht im eigenen Gang: dort ist die Spur der Ruhepunkt unter Schulter/Hüfte, nicht der zappelige Clip – sonst rutschte sie)
+      const dx = (T.x - A.x) * Xh.x + (T.z - A.z) * Xh.z, cx = gaitNow ? dx : clampN(dx, -LAT_MAX, LAT_MAX);
       if (dx !== cx) { T.x -= Xh.x * (dx - cx); T.z -= Xh.z * (dx - cx); }
       // linke und rechte Pfote nie übereinander: Mindestabstand quer zur anderen Pfote desselben Paars (gilt auch fürs Schrittziel)
       const o = this.legs[i ^ 1], side = i % 2 === 0 ? 1 : -1;   // 0/2 = links (+X), 1/3 = rechts
-      if (o.w > 0.02) {
+      if (o.w > 0.02 && !(gaitNow && l.st === 'steht')) {   // (im eigenen Gang nur das Schrittziel – eine stehende Pfote rutschte sonst)
         o.footB.getWorldPosition(vE);
         const sep = side * ((T.x - vE.x) * Xh.x + (T.z - vE.z) * Xh.z), need = l.front ? MIN_SEP[0] : MIN_SEP[1];
         if (sep < need) { const k = side * (need - sep); T.x += Xh.x * k; T.z += Xh.z * k; if (l.st === 'schritt') { l.E.x += Xh.x * k; l.E.z += Xh.z * k; } }
@@ -304,7 +307,9 @@ export class Beine {
    * und muss nie nachgezogen werden. Handgelenk und Pfote klappen im Schwung (im Galopp stärker), Pfote hebt sich höher.
    */
   gaitLeg(l, g, A) {
-    const mid = lerpPhase(l.gpMid[0], l.gpMid[1], g.run), d = DUTY[0] + (DUTY[1] - DUTY[0]) * g.run;
+    // Standanteil: nach Gangart, aber nie so lang, dass die Pfote weiter als ~eine Beinlänge unter dem Körper durchwandert
+    // (sonst reichte das Bein am Ende nicht mehr hin und die Pfote rutschte mit) – wie beim Hund: schneller = kürzer am Boden
+    const mid = lerpPhase(l.gpMid[0], l.gpMid[1], g.run), d = Math.max(0.15, Math.min(DUTY[0] + (DUTY[1] - DUTY[0]) * g.run, 0.9 * l.len / Math.max(0.5, g.L)));
     const ph = frac(g.ph - mid + d / 2);                       // 0 … d = Stand, d … 1 = Schwung
     const cyc = g.L / Math.max(0.3, g.v);                      // Sekunden je Schrittzyklus
     if (ph < d) {                                              // Stand
@@ -322,7 +327,7 @@ export class Beine {
     l.bones[0].getWorldPosition(vR);
     const rx = l.rest ? l.rest.x * (1 - 0.25 * g.run) : 0, rz = l.rest ? l.rest.z : 0, tr = (1 - s) * (1 - d) * cyc + 0.5 * d * cyc;
     l.E.set(vR.x + Xh.x * rx + Zh.x * rz + g.vx * tr, l.h0, vR.z + Xh.z * rx + Zh.z * rz + g.vz * tr);
-    const sa = Math.sin(Math.PI * s), lift = l.len * (LIFT[0] + (LIFT[1] - LIFT[0]) * g.run);
+    const LI = l.front ? LIFT : LIFT_H, sa = Math.sin(Math.PI * s), lift = l.len * (LI[0] + (LI[1] - LI[0]) * g.run);
     const T = vT.copy(l.S).lerp(l.E, smoother(s)); T.y = l.h0 + lift * sa * sa;
     return T;
   }

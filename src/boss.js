@@ -745,7 +745,8 @@ export class Boss {
     if (Math.abs(S0.hroll) > 1e-4) rotW(B.head, Z, S0.hroll);                               // Kopf schräg (Biss)
     const KC = this.kc || (this.kc = {});
     Object.assign(KC, { st, alive, calm, attack: atkNow, angry: st === 'stalk' && (this.lookD || 99) < 12, look: lookH, lookW,
-      down, far: (this.lookD || 0) > 11, bodyRoll: r2, yawRate: this.yawRate || 0, X, Y, clk: this.clk, onGrowl: () => sfx.growl(true) });
+      down, far: (this.lookD || 0) > 11, bodyRoll: r2, yawRate: this.yawRate || 0, X, Y, clk: this.clk, onGrowl: () => sfx.growl(true),
+      move: clamp(sp / 2.5, 0, 1), run: this.aw.run, gp: this.gp });
     if (this.kopf && alive) this.kopf.update(dt, KC);
     // Unterkiefer (bosskiefer.js): S0.jaw/kopf.jaw sind ÖFFNUNGEN (0 = zu) – gedreht wird um die eigene Querachse des Kopfes
     if (B.jaw) {

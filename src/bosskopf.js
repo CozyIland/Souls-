@@ -114,7 +114,7 @@ export class Kopf {
     if (maulOn) {
       const Mz = this.mz; Mz.t += dt;
       if (Mz.t >= Mz.T) this.nextMaul(c);
-      if (Mz.k === 'hecheln') { mB = 0.34 + 0.06 * noise2(c.clk * 0.45, this.seed + 51); mA = c.angry ? 0.06 : 0.09; }
+      if (Mz.k === 'hecheln') { mB = 0.3 + 0.06 * noise2(c.clk * 0.45, this.seed + 51); mA = c.angry ? 0.1 : 0.15; }   // deutlich auf/zu
       else if (Mz.k === 'zu') {
         mB = 0.012;
         // Schlucken: kurz nach dem Schließen zuckt der Kiefer, der Kopf nickt einmal (Stoß in die Kopf-Feder)
@@ -123,11 +123,17 @@ export class Kopf {
       } else if (Mz.k === 'lecken') { mB = 0.03; mX = 0.17 * (pulse(Mz.t, 0.08, 0.3) + pulse(Mz.t, 0.42, 0.64)); }
       if (growl) { mB = mB * (1 - growl) + 0.16 * growl; mA *= 1 - growl; mX *= 1 - growl; }   // Knurren: Spalt offen, bebt
     }
+    // Laufen: Maul weiter offen und deutlich auf und zu im Schritt-Takt (im Galopp ein Atemzug je Sprung) – auch wenn er gerade
+    // „zu“ hatte; je schneller, desto weiter
+    const mv = maulOn ? clamp(c.move || 0, 0, 1) : 0, rn = clamp(c.run || 0, 0, 1);
+    if (mv > 0.01) { mB += (0.4 + 0.12 * rn - mB) * mv; mA += (0.14 + 0.16 * rn - mA) * mv; mX *= 1 - mv; }
     spring(this.mBase, mB, 6.5, 0.9, dt);                     // auf/zu in ~0,4 s, ohne Ruck
     spring(this.mAmp, mA, 3.5, 1, dt);
     this.pph += dt * 2 * Math.PI * (1.3 + 0.25 * noise2(c.clk * 0.3, this.seed + 61));   // Hecheln: nie ganz gleichmäßig
-    const pant = Math.max(0, this.mAmp.x) * (0.5 + 0.5 * Math.sin(this.pph));
-    this.pump = this.mAmp.x / 0.09 * Math.sin(this.pph);       // Brust pumpt mit (boss.js)
+    spring(this.mvS = this.mvS || S(), mv, 4, 1, dt);
+    const step = Math.sin(2 * Math.PI * (c.gp || 0) * (rn > 0.5 ? 1 : 2) + 0.8);       // Schritt-Takt (Gehen: zweimal je Zyklus)
+    const pant = Math.max(0, this.mAmp.x) * (0.5 + 0.5 * ((1 - this.mvS.x) * Math.sin(this.pph) + this.mvS.x * step));
+    this.pump = this.mAmp.x / 0.15 * (1 - this.mvS.x) * Math.sin(this.pph);   // Brust pumpt im Stehen mit (boss.js)
     spring(this.jawS, eJ + mX, 26, 0.6, dt);
     spring(this.lowS, eLow, 5, 0.95, dt);
     this.jaw = Math.max(0, this.mBase.x + pant) + this.jawS.x; this.lower = this.lowS.x;
