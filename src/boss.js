@@ -15,6 +15,8 @@ import { Beine, LEG_BONES, ccdAim } from './bossbeine.js';
 import { Teile, hitsPlayer } from './bossteile.js';
 import { Kopf } from './bosskopf.js';
 import { bauUnterkiefer, kieferSpurWeg, ZU } from './bosskiefer.js';
+import { glaetten } from './glaetten.js';
+import { Feuer } from './feuer.js';
 
 const URL = 'models/boss.glb';
 export const BOSS_NAME = 'Garm, der Aschenhund';
@@ -146,6 +148,8 @@ export class Boss {
     model.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
+      // glätten (glaetten.js): grobes Meshy-Modell (3000 Dreiecke, harte Facetten) → unterteilt, gerundet, weich schattiert
+      if (o.isSkinnedMesh) o.geometry = glaetten(o.geometry, { stufen: 1, kraft: 0.6, knick: 1.2 });
       // Anime-Material mit Randlicht und glühenden Augen/Glutrissen (toon.js toonFigur); Glut folgt der Hitze (animate)
       o.material = this.mat = toonFigur(o.material, { glow: 2.2 });
     });
@@ -908,29 +912,12 @@ export class Boss {
       u.uGlow.value += 2.4 * b * (0.8 + 0.2 * Math.sin(this.clk * 13));
     }
     if (b > 0.01) this.glow.intensity += b * 9 * (0.75 + 0.25 * Math.sin(this.clk * 17) * Math.sin(this.clk * 5.3));
-    if (!this.flames) {   // einmal anlegen
-      const tex = glowTex(); this.flames = [];
-      for (let i = 0; i < 90; i++) {
-        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xffb040, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
-        s.visible = false; this.scene.add(s); this.flames.push({ s, life: 0, max: 1, v: new THREE.Vector3(), sz: 1 });
-      }
-    }
-    const src = [B.chest, B.spine2, B.spine1, B.hips, B.neck1, B.head, B.tail2, B.tail3, B.frontUprL, B.frontUprR, B.rearLegL_01, B.rearLegR_01, B.frontLwrL, B.frontLwrR].filter(Boolean);
-    for (const f of this.flames) {
-      if (f.life <= 0) {
-        if (b > 0.02 && Math.random() < dt * 22 * b) {
-          src[Math.floor(Math.random() * src.length)].getWorldPosition(f.s.position);
-          f.s.position.x += (Math.random() - 0.5) * 1.3; f.s.position.y += Math.random() * 0.8; f.s.position.z += (Math.random() - 0.5) * 1.3;
-          f.v.set((Math.random() - 0.5) * 0.5, 1.6 + Math.random() * 1.8, (Math.random() - 0.5) * 0.5);
-          f.life = f.max = 0.35 + Math.random() * 0.45; f.sz = (0.7 + Math.random() * 0.9) * (0.6 + 0.4 * b); f.s.visible = true;
-        } else { f.s.visible = false; continue; }
-      }
-      f.life -= dt; const a = clamp(1 - f.life / f.max, 0, 1);
-      f.s.position.addScaledVector(f.v, dt); f.v.x += Math.sin(this.clk * 6 + f.max * 17) * dt * 2;   // züngelt
-      f.s.scale.set(f.sz * (0.6 + 0.7 * a), f.sz * (0.9 + 1.4 * a), 1);                               // wird länger nach oben
-      f.s.material.color.setHex(0xffd27a).lerp(FIRE_MID, Math.min(1, a * 1.6)).lerp(FIRE_END, Math.max(0, a * 1.6 - 0.6));
-      f.s.material.opacity = Math.sin(Math.PI * Math.min(1, a * 1.15)) * 0.85 * (0.5 + 0.5 * b);
-    }
+    // Flammenzungen + Rauch (feuer.js): steigen von Rücken, Hals, Kopf, Beinen und Schwanz auf, wehen beim Laufen nach hinten
+    if (!this.feuer) this.feuer = new Feuer(this.scene);
+    if (!this.fireSrc) this.fireSrc = [B.chest, B.spine2, B.spine1, B.hips, B.neck1, B.head, B.tail2, B.tail3, B.frontUprL, B.frontUprR,
+      B.rearLegL_01, B.rearLegR_01, B.frontLwrL, B.frontLwrR, B.rearLwrL, B.rearLwrR].filter(Boolean).map((bo) => ({ bo, p: new THREE.Vector3() }));
+    for (const q of this.fireSrc) q.bo.getWorldPosition(q.p);
+    this.feuer.update(dt, b, this.fireSrc.map((q) => q.p), 1.5, this.vAct || this.v);
   }
 }
-const FIRE_RIM = new THREE.Color(0xff5a14), FIRE_MID = new THREE.Color(0xff6a1a), FIRE_END = new THREE.Color(0x7a1408);
+const FIRE_RIM = new THREE.Color(0xff5a14);

@@ -142,7 +142,11 @@
 - `src/nebel.js` – `FogGate`: drei Shader-Lagen wabernder Nebel (fbm, weiche Ränder, am Boden dichter) + Licht; `touches(p)` → main.js lässt
   den Magier langsam hindurchgehen (`passT`, Steuerung ruht), danach `seal()` (Wand von innen, Kollision) und `boss.start()`; wer hindurchrollt,
   löst es auch aus. Tod: `reset()` (offen); Sieg: `vanish()` (löst sich auf).
-- `src/boss.js` – **Boss „Garm, der Aschenhund“** (`models/boss.glb`, Meshy, Clips dog_idle/dog_walk/dog_run), Größe `S` 4,3 (Kopf ≈ 5,4 m,
+- `src/glaetten.js` – `glaetten(geo, {stufen, kraft, knick})`: grobe Meshy-Figuren beim Laden glätten – Loop-artig unterteilen (je ×4
+  Dreiecke, Punkte rücken zur runden Form, `kraft` mischt mit bloßem Unterteilen, damit Zähne/Stacheln bleiben; über die an der Lage
+  verschweißte Oberfläche, Bildnähte bleiben getrennt; Bildkoordinaten und Knochen-Gewichte werden mitgeteilt) + weiche Normalen (nur
+  Kanten schärfer als `knick` bleiben hart). Boss: 3060 Dreiecke mit harten Facetten (Normalen im Mittel 86° auseinander) → 12 240, rund.
+- `src/boss.js` – **Boss „Garm, der Aschenhund“** (`models/boss.glb`, Meshy, Clips dog_idle/dog_walk/dog_run; beim Laden geglättet), Größe `S` 4,3 (Kopf ≈ 5,4 m,
   gut 3× der Magier), alle Reichweiten × `K`. 640 Leben (`BOSS_HP`). Clips nach Tempo gemischt, Schrittlänge beim Laden aus den Hinterpfoten
   gemessen (`stride` – die Vorderzehen krümmen sich im Schwung nach unten), Gehen und Rennen in derselben Schrittphase (`stancePhase`,
   `phW`/`phR`). **Bewegung wie bei den Hunden**: Drehtempo/-beschleunigung begrenzt; Drehen auf der Stelle = Gehschritte (`gsp` ≤ 3 m/s,
@@ -155,8 +159,10 @@
   stomp (aufbäumen, Vorderpfoten aufschlagen); **Phase 2 bei 50 %**: Zustand `rage` (Zeiten `RAGE`, 4 s, **unverwundbar** – Treffer
   prallen ab, `sfx.thud`): kurz zum Magier drehen, hinsetzen (Hinterteil sinkt, Hinterbeine knicken ein und gehören der Haltung `sitK`,
   Vorderbeine bleiben stehen), Kopf in den Himmel und heulen (`howlK`, Maul weit auf), Druckwelle, Feuer zündet (`RAGE.ignite`),
-  aufstehen. Danach **brennt** er (`fire()`, `burn` 0 … 1: 90 Flammen-Sprites züngeln von Rumpf, Hals, Kopf, Beinen und Schwanz,
-  gelb → orange → dunkelrot; Randlicht orange `FIRE_RIM`, mehr Glut, flackerndes Licht), trifft härter (`P2_DMG` ×1,35 in `strike`),
+  aufstehen. Danach **brennt** er (`fire()`, `burn` 0 … 1; **`src/feuer.js`** Klasse `Feuer`: Flammenzungen als aufrechte Blätter im
+  Shader – unten breit, oben spitz, Rauschen wandert nach oben (züngelt), Farbe nach Hitze weiß-gelb → orange → dunkelrot, Kern > 1 für
+  den Leuchtschein; dazu dunkler Rauch; je ein InstancedMesh; Quellen = Knochen von Rumpf, Hals, Kopf, Beinen, Schwanz, wehen beim
+  Laufen nach hinten; Randlicht orange `FIRE_RIM`, mehr Glut, flackerndes Licht), trifft härter (`P2_DMG` ×1,35 in `strike`),
   ist schneller (`P2_SPEED` ×1,28), kaum Pause (0,25–0,6 s) und bis zu zwei Folgeangriffe hintereinander. Haltung
   `POISE_MAX` → stagger. Treffer: Kapsel-Körper (`axisPoint`, `hitTest` für Karten, `radius` für den Degen, `pos` = nächster Körperpunkt für
   Zielerfassung), schiebt den Magier aus dem Körper, bleibt in der Arena. `strike` trifft nur, wenn `player.damage` greift (Rolle weicht aus).
